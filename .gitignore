@@ -16,3 +16,9 @@ yarn-error.log*
 
 # turbo/monorepo
 .turbo/
+
+# autoloop artifacts
+/autoloop_artifacts/
+
+# claude local iteration logs
+/.claude/iterations/
