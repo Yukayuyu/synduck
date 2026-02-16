@@ -4,20 +4,25 @@ on:
   pull_request:
     paths:
       - 'infra/terraform/**'
-      - '.github/workflows/terraform-plan.yml'
+      - '.github/workflows/terraform-*.yml'
 
 permissions:
+  id-token: write
   contents: read
 
 jobs:
-  plan:
+  plan-dev:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: infra/terraform
-
+        working-directory: infra/terraform/envs/dev
     steps:
       - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::406428899591:role/synduck-gha-tf-dev
+          aws-region: ap-northeast-1
 
       - uses: hashicorp/setup-terraform@v3
         with:
