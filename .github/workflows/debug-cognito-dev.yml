@@ -1,0 +1,49 @@
+name: Debug Cognito Client (dev)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-northeast-1
+      TF_DIR: infra/terraform/envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::406428899591:role/synduck-gha-tf-dev
+          aws-region: ap-northeast-1
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform outputs
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init -input=false
+          echo "pool_id=$(terraform output -raw cognito_user_pool_id)" >> $GITHUB_OUTPUT
+          echo "client_id=$(terraform output -raw cognito_user_pool_client_id)" >> $GITHUB_OUTPUT
+          echo "web_url=$(terraform output -raw web_url)" >> $GITHUB_OUTPUT
+          echo "cognito_domain=$(terraform output -raw cognito_domain)" >> $GITHUB_OUTPUT
+
+      - name: Describe user pool client
+        run: |
+          aws cognito-idp describe-user-pool-client \
+            --user-pool-id "${{ steps.tf.outputs.pool_id }}" \
+            --client-id "${{ steps.tf.outputs.client_id }}" \
+            --query 'UserPoolClient.{ClientId:ClientId,CallbackURLs:CallbackURLs,LogoutURLs:LogoutURLs,AllowedOAuthFlows:AllowedOAuthFlows,AllowedOAuthScopes:AllowedOAuthScopes,SupportedIdentityProviders:SupportedIdentityProviders}' \
+            --output json
+
+      - name: Expected redirect URIs
+        run: |
+          echo "Expected CloudFront redirect: ${{ steps.tf.outputs.web_url }}/auth/callback.html"
+          echo "Expected localhost redirect: http://localhost:3000/auth/callback"
+          echo "Cognito domain: ${{ steps.tf.outputs.cognito_domain }}"
