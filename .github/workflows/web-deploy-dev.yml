@@ -1,0 +1,62 @@
+name: Web Deploy (dev)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/web-deploy-dev.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: web-deploy-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ap-northeast-1
+      TF_DIR: infra/terraform/envs/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::406428899591:role/synduck-gha-tf-dev
+          aws-region: ap-northeast-1
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform output (web)
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init -input=false
+          echo "bucket=$(terraform output -raw web_bucket_name)" >> $GITHUB_OUTPUT
+          echo "dist_id=$(terraform output -raw web_cloudfront_distribution_id)" >> $GITHUB_OUTPUT
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Build (static export)
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync apps/web/out "s3://${{ steps.tf.outputs.bucket }}" --delete
+
+      - name: CloudFront invalidation
+        run: |
+          aws cloudfront create-invalidation --distribution-id "${{ steps.tf.outputs.dist_id }}" --paths '/*'

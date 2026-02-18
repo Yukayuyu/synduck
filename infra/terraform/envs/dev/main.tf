@@ -422,3 +422,7 @@ output "web_cloudfront_domain" {
 output "web_url" {
   value = local.web_url
 }
+
+output "web_cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.web.id
+}
