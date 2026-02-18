@@ -165,6 +165,12 @@ resource "aws_apigatewayv2_route" "nodes_post" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+
+resource "aws_apigatewayv2_route" "nodes_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /nodes"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
 resource "aws_apigatewayv2_route" "edges_get" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /edges"
@@ -179,6 +185,12 @@ resource "aws_apigatewayv2_route" "edges_post" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+
+resource "aws_apigatewayv2_route" "edges_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /edges"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.http.id
   name        = "$default"
