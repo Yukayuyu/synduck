@@ -70,7 +70,7 @@ jobs:
           NEXT_PUBLIC_API_BASE_URL: ${{ steps.tf.outputs.api_base }}
           NEXT_PUBLIC_COGNITO_DOMAIN: ${{ steps.tf.outputs.cognito_domain }}
           NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ steps.tf.outputs.cognito_client_id }}
-          NEXT_PUBLIC_COGNITO_REDIRECT_URI: ${{ steps.tf.outputs.web_url }}/auth/callback
+          NEXT_PUBLIC_COGNITO_REDIRECT_URI: ${{ steps.tf.outputs.web_url }}/auth/callback/
           NEXT_PUBLIC_COGNITO_LOGOUT_URI: ${{ steps.tf.outputs.web_url }}/
         run: |
           npm ci

@@ -237,8 +237,8 @@ resource "aws_cognito_user_pool_client" "web" {
   supported_identity_providers         = ["COGNITO"]
 
   callback_urls = [
-    "http://localhost:3000/auth/callback",
-    "${local.web_url}/auth/callback"
+    "http://localhost:3000/auth/callback/",
+    "${local.web_url}/auth/callback/"
   ]
 
   logout_urls = [
@@ -298,7 +298,7 @@ output "cognito_jwks_url" {
 
 output "cognito_hosted_ui_login_url" {
   description = "Hosted UI login URL (OAuth2 code flow)"
-  value       = "${local.cognito_domain}/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:3000/auth/callback"
+  value       = "${local.cognito_domain}/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:3000/auth/callback/"
 }
 
 # --- Web static hosting (S3 + CloudFront) ---
