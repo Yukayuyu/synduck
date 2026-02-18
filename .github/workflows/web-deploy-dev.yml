@@ -33,13 +33,19 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform output (web)
+      - name: Terraform output (dev)
         id: tf
         working-directory: ${{ env.TF_DIR }}
         run: |
           terraform init -input=false
+
           echo "bucket=$(terraform output -raw web_bucket_name)" >> $GITHUB_OUTPUT
           echo "cf_domain=$(terraform output -raw web_cloudfront_domain)" >> $GITHUB_OUTPUT
+
+          echo "web_url=$(terraform output -raw web_url)" >> $GITHUB_OUTPUT
+          echo "api_base=$(terraform output -raw http_api_url)" >> $GITHUB_OUTPUT
+          echo "cognito_domain=$(terraform output -raw cognito_domain)" >> $GITHUB_OUTPUT
+          echo "cognito_client_id=$(terraform output -raw cognito_user_pool_client_id)" >> $GITHUB_OUTPUT
 
       - name: Resolve CloudFront distribution id
         id: cf
@@ -60,6 +66,12 @@ jobs:
 
       - name: Build (static export)
         working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_BASE_URL: ${{ steps.tf.outputs.api_base }}
+          NEXT_PUBLIC_COGNITO_DOMAIN: ${{ steps.tf.outputs.cognito_domain }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ steps.tf.outputs.cognito_client_id }}
+          NEXT_PUBLIC_COGNITO_REDIRECT_URI: ${{ steps.tf.outputs.web_url }}/auth/callback
+          NEXT_PUBLIC_COGNITO_LOGOUT_URI: ${{ steps.tf.outputs.web_url }}/
         run: |
           npm ci
           npm run build
