@@ -11,6 +11,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 
 import { fetchEdges, fetchNodes } from '@/lib/api';
+import { config } from '@/lib/config';
 
 type Status = 'idle' | 'loading' | 'error';
 
@@ -23,8 +24,19 @@ function hashToUnit(s: string) {
 function defaultPos(id: string) {
   const u1 = hashToUnit(id + ':x');
   const u2 = hashToUnit(id + ':y');
-  // spread them a bit
   return { x: (u1 - 0.5) * 900, y: (u2 - 0.5) * 600 };
+}
+
+async function tryFetchJson(url: string) {
+  const res = await fetch(url, { cache: 'no-store' });
+  const text = await res.text();
+  let json: unknown = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = { raw: text };
+  }
+  return { ok: res.ok, status: res.status, json };
 }
 
 export function GraphView() {
@@ -32,6 +44,17 @@ export function GraphView() {
   const [error, setError] = useState<string>('');
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  const debug = useMemo(() => {
+    const apiBase = config.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    return {
+      href: typeof window !== 'undefined' ? window.location.href : '',
+      apiBase,
+      nodesUrl: apiBase ? apiBase.replace(/\/$/, '') + '/nodes' : '',
+      edgesUrl: apiBase ? apiBase.replace(/\/$/, '') + '/edges' : '',
+      healthUrl: apiBase ? apiBase.replace(/\/$/, '') + '/health' : '',
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -45,23 +68,32 @@ export function GraphView() {
         data: { label: n.label },
       }));
 
-      // Treat as undirected visually, but ReactFlow edges are directed.
       const nextEdges: Edge[] = es.map((e) => ({
         id: e.id,
         source: e.from,
         target: e.to,
         label: e.note || undefined,
-        animated: false,
       }));
 
       setNodes(nextNodes);
       setEdges(nextEdges);
       setStatus('idle');
     } catch (e) {
+      // Attempt to surface actionable info (CORS / wrong endpoint / network)
+      let extra = '';
+      try {
+        if (debug.healthUrl) {
+          const h = await tryFetchJson(debug.healthUrl);
+          extra += `\nhealth: ${h.status} ok=${String(h.ok)} body=${JSON.stringify(h.json)}`;
+        }
+      } catch (e2) {
+        extra += `\nhealth_fetch_error: ${String(e2)}`;
+      }
+
       setStatus('error');
-      setError(String(e));
+      setError(`${String(e)}${extra}`);
     }
-  }, []);
+  }, [debug.healthUrl]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -84,7 +116,13 @@ export function GraphView() {
       </div>
 
       {status === 'error' ? (
-        <pre style={{ whiteSpace: 'pre-wrap', color: '#b00' }}>{error}</pre>
+        <>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#b00' }}>{error}</pre>
+          <details>
+            <summary>debug</summary>
+            <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(debug, null, 2)}</pre>
+          </details>
+        </>
       ) : null}
 
       <div style={{ height: 520, width: '100%', border: '1px solid #333', borderRadius: 8, overflow: 'hidden' }}>
@@ -96,7 +134,7 @@ export function GraphView() {
       </div>
 
       <p style={{ color: '#666', marginTop: 8 }}>
-        MVP: random-ish layout per node id. Next step: persist positions + simple auto-layout.
+        MVP: deterministic layout per node id. Next step: persist positions + simple auto-layout.
       </p>
     </section>
   );
