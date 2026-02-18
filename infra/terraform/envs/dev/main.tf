@@ -136,3 +136,99 @@ output "http_api_url" {
   value       = aws_apigatewayv2_api.http.api_endpoint
   description = "Base URL for the HTTP API (AWS default domain)"
 }
+
+# --- Cognito (Hosted UI, password auth) ---
+resource "aws_cognito_user_pool" "users" {
+  name = "${local.project}-${local.env}-users"
+
+  auto_verified_attributes = ["email"]
+
+  username_attributes = ["email"]
+
+  password_policy {
+    minimum_length    = 10
+    require_lowercase = true
+    require_numbers   = true
+    require_symbols   = false
+    require_uppercase = true
+  }
+
+  tags = {
+    Project = local.project
+    Env     = local.env
+  }
+}
+
+resource "aws_cognito_user_pool_client" "web" {
+  name         = "${local.project}-${local.env}-web"
+  user_pool_id = aws_cognito_user_pool.users.id
+
+  generate_secret = false
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  supported_identity_providers         = ["COGNITO"]
+
+  callback_urls = [
+    "http://localhost:3000/auth/callback"
+  ]
+
+  logout_urls = [
+    "http://localhost:3000/"
+  ]
+
+  explicit_auth_flows = [
+    "ALLOW_USER_PASSWORD_AUTH",
+    "ALLOW_USER_SRP_AUTH",
+    "ALLOW_REFRESH_TOKEN_AUTH"
+  ]
+
+  prevent_user_existence_errors = "ENABLED"
+
+  access_token_validity  = 60
+  id_token_validity      = 60
+  refresh_token_validity = 30
+
+  token_validity_units {
+    access_token  = "minutes"
+    id_token      = "minutes"
+    refresh_token = "days"
+  }
+}
+
+resource "aws_cognito_user_pool_domain" "hosted" {
+  domain       = "synduck-dev-auth-001"
+  user_pool_id = aws_cognito_user_pool.users.id
+}
+
+locals {
+  cognito_domain = "https://${aws_cognito_user_pool_domain.hosted.domain}.auth.ap-northeast-1.amazoncognito.com"
+  cognito_issuer = "https://cognito-idp.ap-northeast-1.amazonaws.com/${aws_cognito_user_pool.users.id}"
+  cognito_jwks   = "${local.cognito_issuer}/.well-known/jwks.json"
+}
+
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.users.id
+}
+
+output "cognito_user_pool_client_id" {
+  value = aws_cognito_user_pool_client.web.id
+}
+
+output "cognito_domain" {
+  value = local.cognito_domain
+}
+
+output "cognito_issuer" {
+  value = local.cognito_issuer
+}
+
+output "cognito_jwks_url" {
+  value = local.cognito_jwks
+}
+
+output "cognito_hosted_ui_login_url" {
+  description = "Hosted UI login URL (OAuth2 code flow)"
+  value       = "${local.cognito_domain}/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:3000/auth/callback"
+}
