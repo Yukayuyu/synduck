@@ -19,9 +19,6 @@ concurrency:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra/terraform/envs/dev
 
     steps:
       - uses: actions/checkout@v4
@@ -35,5 +32,20 @@ jobs:
         with:
           terraform_version: 1.6.6
 
-      - run: terraform init -input=false
-      - run: terraform apply -auto-approve -input=false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: infra/terraform/envs/dev/mvp_lambda/package-lock.json
+
+      - name: Install Lambda deps (for archive_file)
+        working-directory: infra/terraform/envs/dev/mvp_lambda
+        run: npm ci
+
+      - name: Terraform init
+        working-directory: infra/terraform/envs/dev
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: infra/terraform/envs/dev
+        run: terraform apply -auto-approve -input=false
