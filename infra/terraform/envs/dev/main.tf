@@ -234,11 +234,13 @@ resource "aws_cognito_user_pool_client" "web" {
   supported_identity_providers         = ["COGNITO"]
 
   callback_urls = [
-    "http://localhost:3000/auth/callback"
+    "http://localhost:3000/auth/callback",
+    "${local.web_url}/auth/callback"
   ]
 
   logout_urls = [
-    "http://localhost:3000/"
+    "http://localhost:3000/",
+    "${local.web_url}/"
   ]
 
   explicit_auth_flows = [
@@ -294,4 +296,126 @@ output "cognito_jwks_url" {
 output "cognito_hosted_ui_login_url" {
   description = "Hosted UI login URL (OAuth2 code flow)"
   value       = "${local.cognito_domain}/login?client_id=${aws_cognito_user_pool_client.web.id}&response_type=code&scope=openid+email+profile&redirect_uri=http://localhost:3000/auth/callback"
+}
+
+# --- Web static hosting (S3 + CloudFront) ---
+resource "aws_s3_bucket" "web" {
+  bucket        = "${local.project}-${local.env}-web-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+
+  tags = {
+    Project = local.project
+    Env     = local.env
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "web" {
+  bucket = aws_s3_bucket.web.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "web" {
+  bucket = aws_s3_bucket.web.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_cloudfront_origin_access_control" "web" {
+  name                              = "${local.project}-${local.env}-web-oac"
+  description                       = "OAC for S3 origin"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "web" {
+  enabled             = true
+  comment             = "${local.project}-${local.env}-web"
+  default_root_object = "index.html"
+
+  origin {
+    domain_name              = aws_s3_bucket.web.bucket_regional_domain_name
+    origin_id                = "s3-web"
+    origin_access_control_id = aws_cloudfront_origin_access_control.web.id
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "s3-web"
+
+    viewer_protocol_policy = "redirect-to-https"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    min_ttl     = 0
+    default_ttl = 3600
+    max_ttl     = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  tags = {
+    Project = local.project
+    Env     = local.env
+  }
+}
+
+data "aws_iam_policy_document" "web_bucket_policy" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.web.arn}/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.web.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "web" {
+  bucket = aws_s3_bucket.web.id
+  policy = data.aws_iam_policy_document.web_bucket_policy.json
+
+  depends_on = [aws_s3_bucket_public_access_block.web]
+}
+
+locals {
+  web_url = "https://${aws_cloudfront_distribution.web.domain_name}"
+}
+
+output "web_bucket_name" {
+  value = aws_s3_bucket.web.bucket
+}
+
+output "web_cloudfront_domain" {
+  value = aws_cloudfront_distribution.web.domain_name
+}
+
+output "web_url" {
+  value = local.web_url
 }

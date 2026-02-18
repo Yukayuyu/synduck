@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { exchangeCodeForToken, setAccessToken } from '@/lib/auth';
 
 export default function AuthCallbackPage() {
   const [status, setStatus] = useState<'working' | 'ok' | 'error'>('working');
-  const [detail, setDetail] = useState<unknown>(null);
+  const [detail, setDetail] = useState<string>('');
 
   useEffect(() => {
     const run = async () => {
@@ -12,22 +13,20 @@ export default function AuthCallbackPage() {
       const code = url.searchParams.get('code');
       if (!code) {
         setStatus('error');
-        setDetail({ error: 'missing_code' });
+        setDetail('missing_code');
         return;
       }
 
-      const res = await fetch(`/api/auth/token?code=${encodeURIComponent(code)}`);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      try {
+        const access = await exchangeCodeForToken(code);
+        setAccessToken(access);
+        setStatus('ok');
+        window.history.replaceState({}, '', '/');
+        window.location.href = '/';
+      } catch (e) {
         setStatus('error');
-        setDetail(json);
-        return;
+        setDetail(String(e));
       }
-
-      setStatus('ok');
-      // Clean up URL and go home
-      window.history.replaceState({}, '', '/');
-      window.location.href = '/';
     };
 
     void run();
@@ -36,9 +35,8 @@ export default function AuthCallbackPage() {
   return (
     <main style={{ padding: 24 }}>
       <h1>Signing in…</h1>
-      {status === 'error' ? (
-        <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(detail, null, 2)}</pre>
-      ) : null}
+      <p>Status: {status}</p>
+      {status === 'error' ? <pre style={{ whiteSpace: 'pre-wrap' }}>{detail}</pre> : null}
     </main>
   );
 }

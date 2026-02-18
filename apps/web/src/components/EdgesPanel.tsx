@@ -1,22 +1,17 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem } from '@/lib/api';
+import { isLoggedIn } from '@/lib/auth';
 
-type NodeItem = { id: string; label: string };
-
-type EdgeItem = { id: string; from: string; to: string; note?: string };
-
-type NodesResp = { items?: NodeItem[] };
-
-type EdgesResp = { ok?: boolean; items?: EdgeItem[]; error?: string };
-
-export function EdgesPanel({ canEdit }: { canEdit: boolean }) {
+export function EdgesPanel() {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [edges, setEdges] = useState<EdgeItem[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState('');
+  const [canEdit, setCanEdit] = useState(false);
 
   const labelById = useMemo(() => {
     const m = new Map<string, string>();
@@ -25,36 +20,27 @@ export function EdgesPanel({ canEdit }: { canEdit: boolean }) {
   }, [nodes]);
 
   const load = async () => {
-    const [nRes, eRes] = await Promise.all([
-      fetch('/api/nodes', { cache: 'no-store' }),
-      fetch('/api/edges', { cache: 'no-store' }),
-    ]);
-    const nJson = (await nRes.json().catch(() => ({}))) as NodesResp;
-    const eJson = (await eRes.json().catch(() => ({}))) as EdgesResp;
-    setNodes(nJson.items || []);
-    setEdges(eJson.items || []);
+    const [n, e] = await Promise.all([fetchNodes(), fetchEdges()]);
+    setNodes(n);
+    setEdges(e);
   };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanEdit(isLoggedIn());
     void load();
   }, []);
 
   const add = async () => {
     setStatus('saving…');
-    const res = await fetch('/api/edges', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from, to, note }),
-    });
-    const json = (await res.json().catch(() => ({}))) as EdgesResp;
-    if (!res.ok) {
-      setStatus(`error: ${json.error || res.status}`);
-      return;
+    try {
+      await createEdge({ from, to, note });
+      setNote('');
+      setStatus('saved');
+      await load();
+    } catch (e) {
+      setStatus(`error: ${String(e)}`);
     }
-    setNote('');
-    setStatus('saved');
-    await load();
   };
 
   return (
