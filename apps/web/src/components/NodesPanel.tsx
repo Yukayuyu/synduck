@@ -1,44 +1,38 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createNode, fetchNodes, NodeItem } from '@/lib/api';
+import { isLoggedIn } from '@/lib/auth';
 
-type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
-
-type NodesResp = { ok?: boolean; items?: NodeItem[]; error?: string };
-
-export function NodesPanel({ canEdit }: { canEdit: boolean }) {
+export function NodesPanel() {
   const [items, setItems] = useState<NodeItem[]>([]);
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<string>('');
+  const [canEdit, setCanEdit] = useState(false);
 
   const load = async () => {
-    const res = await fetch('/api/nodes', { cache: 'no-store' });
-    const json = (await res.json().catch(() => ({}))) as NodesResp;
-    setItems(json.items || []);
+    const nodes = await fetchNodes();
+    setItems(nodes);
   };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanEdit(isLoggedIn());
     void load();
   }, []);
 
   const add = async () => {
     setStatus('saving…');
-    const res = await fetch('/api/nodes', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label, note }),
-    });
-    const json = (await res.json().catch(() => ({}))) as NodesResp;
-    if (!res.ok) {
-      setStatus(`error: ${json.error || res.status}`);
-      return;
+    try {
+      await createNode({ label, note });
+      setLabel('');
+      setNote('');
+      setStatus('saved');
+      await load();
+    } catch (e) {
+      setStatus(`error: ${String(e)}`);
     }
-    setLabel('');
-    setNote('');
-    setStatus('saved');
-    await load();
   };
 
   return (
