@@ -66,6 +66,29 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+
+resource "aws_iam_role_policy" "lambda_ddb" {
+  name = "${local.project}-${local.env}-lambda-ddb"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:Scan",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem"
+        ]
+        Resource = aws_dynamodb_table.sessions.arn
+      }
+    ]
+  })
+}
+
 resource "aws_lambda_function" "api" {
   function_name = "${local.project}-${local.env}-api"
   role          = aws_iam_role.lambda_exec.arn
@@ -107,10 +130,36 @@ resource "aws_apigatewayv2_integration" "lambda" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_authorizer" "jwt" {
+  api_id           = aws_apigatewayv2_api.http.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "${local.project}-${local.env}-jwt"
+
+  jwt_configuration {
+    issuer   = local.cognito_issuer
+    audience = [aws_cognito_user_pool_client.web.id]
+  }
+}
+
 resource "aws_apigatewayv2_route" "health" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /health"
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "nodes_get" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /nodes"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "nodes_post" {
+  api_id             = aws_apigatewayv2_api.http.id
+  route_key          = "POST /nodes"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
 resource "aws_apigatewayv2_stage" "default" {
