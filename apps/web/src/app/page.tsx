@@ -2,6 +2,7 @@ import styles from './page.module.css';
 import { LoginControls } from './LoginControls';
 import { NodesPanel } from '@/components/NodesPanel';
 import { EdgesPanel } from '@/components/EdgesPanel';
+import { GraphView } from '@/components/GraphView';
 
 export default function Home() {
   return (
@@ -13,6 +14,8 @@ export default function Home() {
         <LoginControls />
         <p style={{ color: '#888' }}>Anonymous users can view. Logged-in users can edit.</p>
       </section>
+
+      <GraphView />
 
       <NodesPanel />
       <EdgesPanel />
