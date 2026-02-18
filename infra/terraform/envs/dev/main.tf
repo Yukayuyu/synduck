@@ -1,3 +1,6 @@
+
+data "aws_caller_identity" "current" {}
+
 # synduck dev environment
 # MVP target: API Gateway (HTTP) + Lambda + DynamoDB
 
