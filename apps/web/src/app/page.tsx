@@ -2,6 +2,7 @@ import styles from './page.module.css';
 import { cookies } from 'next/headers';
 import { LoginControls } from './LoginControls';
 import { NodesPanel } from '@/components/NodesPanel';
+import { EdgesPanel } from '@/components/EdgesPanel';
 
 async function getHealth() {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -28,6 +29,8 @@ export default async function Home() {
 
       <NodesPanel canEdit={loggedIn} />
 
+      <EdgesPanel canEdit={loggedIn} />
+
       <section style={{ maxWidth: 720, width: '100%' }}>
         <h2>Auth</h2>
         <p>loggedIn: {String(loggedIn)}</p>
@@ -35,6 +38,8 @@ export default async function Home() {
       </section>
 
       <NodesPanel canEdit={loggedIn} />
+
+      <EdgesPanel canEdit={loggedIn} />
 
       <section style={{ maxWidth: 720, width: '100%' }}>
         <h2>Next</h2>

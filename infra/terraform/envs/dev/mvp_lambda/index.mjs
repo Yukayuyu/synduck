@@ -15,6 +15,14 @@ function json(statusCode, body) {
   };
 }
 
+function isNodePk(pk) {
+  return typeof pk === 'string' && pk.startsWith('node#');
+}
+
+function isEdgePk(pk) {
+  return typeof pk === 'string' && pk.startsWith('edge#');
+}
+
 export const handler = async (event) => {
   const method = event?.requestContext?.http?.method || event?.httpMethod;
   const path = event?.rawPath || event?.path || '/';
@@ -28,20 +36,23 @@ export const handler = async (event) => {
   const table = process.env.SESSIONS_TABLE;
   if (!table) return json(500, { ok: false, error: 'missing_table' });
 
+  // ---- Nodes (public read / auth write) ----
   if (method === 'GET' && path === '/nodes') {
     const res = await ddb
       .scan({
         TableName: table,
-        Limit: 50,
+        Limit: 200,
       })
       .promise();
 
-    const items = (res.Items || []).map((it) => ({
-      id: it.pk,
-      label: it.label,
-      note: it.note,
-      createdAt: it.createdAt,
-    }));
+    const items = (res.Items || [])
+      .filter((it) => isNodePk(it.pk))
+      .map((it) => ({
+        id: it.pk,
+        label: it.label,
+        note: it.note,
+        createdAt: it.createdAt,
+      }));
 
     return json(200, { ok: true, items });
   }
@@ -67,6 +78,62 @@ export const handler = async (event) => {
         Item: {
           pk: id,
           label,
+          note,
+          createdAt,
+        },
+      })
+      .promise();
+
+    return json(201, { ok: true, id });
+  }
+
+  // ---- Edges (public read / auth write) ----
+  if (method === 'GET' && path === '/edges') {
+    const res = await ddb
+      .scan({
+        TableName: table,
+        Limit: 500,
+      })
+      .promise();
+
+    const items = (res.Items || [])
+      .filter((it) => isEdgePk(it.pk))
+      .map((it) => ({
+        id: it.pk,
+        from: it.from,
+        to: it.to,
+        note: it.note,
+        createdAt: it.createdAt,
+      }));
+
+    return json(200, { ok: true, items });
+  }
+
+  if (method === 'POST' && path === '/edges') {
+    let payload;
+    try {
+      payload = JSON.parse(event?.body || '{}');
+    } catch {
+      return json(400, { ok: false, error: 'invalid_json' });
+    }
+
+    const from = String(payload?.from || '').trim();
+    const to = String(payload?.to || '').trim();
+    const note = String(payload?.note || '').trim();
+
+    if (!from || !to) return json(400, { ok: false, error: 'missing_endpoints' });
+    if (from === to) return json(400, { ok: false, error: 'self_edge_not_allowed' });
+
+    const id = `edge#${Date.now()}#${Math.random().toString(16).slice(2)}`;
+    const createdAt = new Date().toISOString();
+
+    await ddb
+      .put({
+        TableName: table,
+        Item: {
+          pk: id,
+          from,
+          to,
           note,
           createdAt,
         },
