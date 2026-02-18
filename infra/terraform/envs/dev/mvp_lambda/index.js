@@ -1,6 +1,7 @@
-const AWS = require('aws-sdk');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 
-const ddb = new AWS.DynamoDB.DocumentClient();
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 function json(statusCode, body) {
   return {
@@ -37,14 +38,13 @@ exports.handler = async (event) => {
   const table = process.env.SESSIONS_TABLE;
   if (!table) return json(500, { ok: false, error: 'missing_table' });
 
-  // ---- Nodes (public read / auth write) ----
   if (method === 'GET' && path === '/nodes') {
-    const res = await ddb
-      .scan({
+    const res = await ddb.send(
+      new ScanCommand({
         TableName: table,
         Limit: 200,
-      })
-      .promise();
+      }),
+    );
 
     const items = (res.Items || [])
       .filter((it) => isNodePk(it.pk))
@@ -73,29 +73,23 @@ exports.handler = async (event) => {
     const id = `node#${Date.now()}#${Math.random().toString(16).slice(2)}`;
     const createdAt = new Date().toISOString();
 
-    await ddb
-      .put({
+    await ddb.send(
+      new PutCommand({
         TableName: table,
-        Item: {
-          pk: id,
-          label,
-          note,
-          createdAt,
-        },
-      })
-      .promise();
+        Item: { pk: id, label, note, createdAt },
+      }),
+    );
 
     return json(201, { ok: true, id });
   }
 
-  // ---- Edges (public read / auth write) ----
   if (method === 'GET' && path === '/edges') {
-    const res = await ddb
-      .scan({
+    const res = await ddb.send(
+      new ScanCommand({
         TableName: table,
         Limit: 500,
-      })
-      .promise();
+      }),
+    );
 
     const items = (res.Items || [])
       .filter((it) => isEdgePk(it.pk))
@@ -128,18 +122,12 @@ exports.handler = async (event) => {
     const id = `edge#${Date.now()}#${Math.random().toString(16).slice(2)}`;
     const createdAt = new Date().toISOString();
 
-    await ddb
-      .put({
+    await ddb.send(
+      new PutCommand({
         TableName: table,
-        Item: {
-          pk: id,
-          from,
-          to,
-          note,
-          createdAt,
-        },
-      })
-      .promise();
+        Item: { pk: id, from, to, note, createdAt },
+      }),
+    );
 
     return json(201, { ok: true, id });
   }
