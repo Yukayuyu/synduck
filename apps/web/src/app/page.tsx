@@ -1,66 +1,43 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import styles from './page.module.css';
+import { cookies } from 'next/headers';
+import { LoginControls } from './LoginControls';
 
-export default function Home() {
+async function getHealth() {
+  const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (!base) return { ok: false, error: 'NEXT_PUBLIC_API_BASE_URL not set' };
+
+  const res = await fetch(`${base.replace(/\/$/, '')}/health`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  return { status: res.status, ...json };
+}
+
+export default async function Home() {
+  const health = await getHealth();
+  const c = await cookies();
+  const loggedIn = c.has('synduck_id_token');
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className={styles.main}>
+      <h1>synduck</h1>
+
+      <section style={{ maxWidth: 720, width: '100%' }}>
+        <h2>API health</h2>
+        <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(health, null, 2)}</pre>
+      </section>
+
+      <section style={{ maxWidth: 720, width: '100%' }}>
+        <h2>Auth</h2>
+        <p>loggedIn: {String(loggedIn)}</p>
+        <LoginControls loggedIn={loggedIn} />
+      </section>
+
+      <section style={{ maxWidth: 720, width: '100%' }}>
+        <h2>Next</h2>
+        <p>
+          Next step: build a minimal graph editor (nodes + edges) with read-only access for anonymous users, and
+          editing enabled after login.
+        </p>
+      </section>
+    </main>
   );
 }
