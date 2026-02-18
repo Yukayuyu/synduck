@@ -1,4 +1,4 @@
-import AWS from 'aws-sdk';
+const AWS = require('aws-sdk');
 
 const ddb = new AWS.DynamoDB.DocumentClient();
 
@@ -7,6 +7,7 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       'content-type': 'application/json',
+      // CORS
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type,authorization',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
@@ -23,7 +24,7 @@ function isEdgePk(pk) {
   return typeof pk === 'string' && pk.startsWith('edge#');
 }
 
-export const handler = async (event) => {
+exports.handler = async (event) => {
   const method = event?.requestContext?.http?.method || event?.httpMethod;
   const path = event?.rawPath || event?.path || '/';
 
