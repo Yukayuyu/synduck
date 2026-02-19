@@ -56,3 +56,20 @@ export async function createEdge(input: { from: string; to: string; note?: strin
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json as { ok: true; id: string };
 }
+
+export async function deleteEdge(input: { from: string; to: string }) {
+  const token = getIdToken();
+  if (!token) throw new Error('not_logged_in');
+
+  const qs = new URLSearchParams({ from: input.from, to: input.to });
+  const res = await fetch(`${apiBase()}/edges?${qs.toString()}`, {
+    method: 'DELETE',
+    headers: {
+      authorization: `Bearer ${token}`,
+    },
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json as { ok: true; id: string };
+}

@@ -13,7 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { createEdge, createNode, fetchEdges, fetchNodes } from '@/lib/api';
+import { createEdge, createNode, deleteEdge, fetchEdges, fetchNodes } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 import { config } from '@/lib/config';
 import { EditableNode, type EditableNodeData } from '@/components/EditableNode';
@@ -30,6 +30,11 @@ function defaultPos(id: string) {
   const u1 = hashToUnit(id + ':x');
   const u2 = hashToUnit(id + ':y');
   return { x: (u1 - 0.5) * 900, y: (u2 - 0.5) * 600 };
+}
+
+
+function findEdgeBetween(edges: Edge[], a: string, b: string): Edge | undefined {
+  return edges.find((e) => (e.source === a && e.target === b) || (e.source === b && e.target === a));
 }
 
 async function tryFetchJson(url: string) {
@@ -52,6 +57,7 @@ function GraphViewInner() {
 
   const [canEdit] = useState(() => isLoggedIn());
   const [pendingLinkFrom, setPendingLinkFrom] = useState<string | null>(null);
+  const [touchAddMode, setTouchAddMode] = useState(false);
 
   const rf = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -112,16 +118,17 @@ function GraphViewInner() {
     void load();
   }, [load]);
 
-  const onDoubleClick = useCallback(
-    (evt: React.MouseEvent) => {
+
+  const createTempNodeAtClient = useCallback(
+    (clientX: number, clientY: number) => {
       if (!canEdit) return;
 
       const bounds = wrapperRef.current?.getBoundingClientRect();
       if (!bounds) return;
 
       const position = rf.project({
-        x: evt.clientX - bounds.left,
-        y: evt.clientY - bounds.top,
+        x: clientX - bounds.left,
+        y: clientY - bounds.top,
       });
 
       const tempId = `temp#${Date.now()}#${Math.random().toString(16).slice(2)}`;
@@ -131,17 +138,12 @@ function GraphViewInner() {
       };
 
       const onCommit = async (value: string) => {
-        // optimistic: keep temp node but mark as saving
         try {
           const res = await createNode({ label: value });
           setNodes((prev) =>
             prev.map((n) => {
               if (n.id !== tempId) return n;
-              return {
-                ...n,
-                id: res.id,
-                data: { label: value, editing: false },
-              };
+              return { ...n, id: res.id, data: { label: value, editing: false } };
             }),
           );
         } catch (e) {
@@ -161,6 +163,14 @@ function GraphViewInner() {
       setNodes((prev) => [...prev, newNode]);
     },
     [canEdit, rf],
+  );
+
+  const onDoubleClick = useCallback(
+    (evt: React.MouseEvent) => {
+      if (!canEdit) return;
+      createTempNodeAtClient(evt.clientX, evt.clientY);
+    },
+    [canEdit, createTempNodeAtClient],
   );
 
   const onNodeClick: NodeMouseHandler = useCallback(
@@ -183,6 +193,18 @@ function GraphViewInner() {
       const to = node.id;
       setPendingLinkFrom(null);
 
+      const existing = findEdgeBetween(edges, from, to);
+      if (existing) {
+        try {
+          await deleteEdge({ from, to });
+          setEdges((prev) => prev.filter((e) => e.id !== existing.id));
+        } catch (e) {
+          setError(`deleteEdge failed: ${String(e)}`);
+          setStatus('error');
+        }
+        return;
+      }
+
       try {
         const res = await createEdge({ from, to });
         setEdges((prev) => [
@@ -198,7 +220,7 @@ function GraphViewInner() {
         setStatus('error');
       }
     },
-    [canEdit, pendingLinkFrom],
+    [canEdit, pendingLinkFrom, edges],
   );
 
   const header = useMemo(() => {
@@ -230,6 +252,13 @@ function GraphViewInner() {
           </div>
         </div>
         <div className="row">
+          <button
+            className="btn"
+            onClick={() => setTouchAddMode((v) => !v)}
+            title="Add node (tap then tap canvas)"
+          >
+            {touchAddMode ? 'Tap canvas…' : '+ Node'}
+          </button>
           <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
             Refresh
           </button>
@@ -248,6 +277,13 @@ function GraphViewInner() {
 
       <div
         ref={wrapperRef}
+        onPointerDown={(e) => {
+          if (!canEdit) return;
+          if (!touchAddMode) return;
+          // tap to add
+          createTempNodeAtClient(e.clientX, e.clientY);
+          setTouchAddMode(false);
+        }}
         style={{ height: '62vh', minHeight: 520, width: '100%', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}
       >
         <ReactFlow

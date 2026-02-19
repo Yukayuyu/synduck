@@ -185,6 +185,14 @@ resource "aws_apigatewayv2_route" "edges_post" {
   authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
 }
 
+resource "aws_apigatewayv2_route" "edges_delete" {
+  api_id             = aws_apigatewayv2_api.http.id
+  route_key          = "DELETE /edges"
+  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+}
+
 
 resource "aws_apigatewayv2_route" "edges_options" {
   api_id    = aws_apigatewayv2_api.http.id

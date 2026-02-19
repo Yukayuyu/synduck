@@ -1,5 +1,5 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, PutCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, PutCommand, ScanCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -11,7 +11,7 @@ function json(statusCode, body) {
       // CORS
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type,authorization',
-      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
     },
     body: JSON.stringify(body),
   };
@@ -130,6 +130,39 @@ exports.handler = async (event) => {
     );
 
     return json(201, { ok: true, id });
+  }
+
+
+  if (method === 'DELETE' && path === '/edges') {
+    const qs = event?.queryStringParameters || {};
+    const from = String(qs.from || '').trim();
+    const to = String(qs.to || '').trim();
+    if (!from || !to) return json(400, { ok: false, error: 'missing_endpoints' });
+
+    // MVP: scan to find matching edge (either direction).
+    const res = await ddb.send(
+      new ScanCommand({
+        TableName: table,
+        Limit: 500,
+      }),
+    );
+
+    const items = res.Items || [];
+    const match = items.find((it) =>
+      isEdgePk(it.pk) &&
+      ((it.from === from && it.to === to) || (it.from === to && it.to === from)),
+    );
+
+    if (!match) return json(404, { ok: false, error: 'edge_not_found' });
+
+    await ddb.send(
+      new DeleteCommand({
+        TableName: table,
+        Key: { pk: match.pk },
+      }),
+    );
+
+    return json(200, { ok: true, id: match.pk });
   }
 
   return json(404, { ok: false, error: 'not_found' });
