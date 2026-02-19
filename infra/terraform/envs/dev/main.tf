@@ -165,11 +165,9 @@ resource "aws_apigatewayv2_route" "nodes_get" {
 }
 
 resource "aws_apigatewayv2_route" "nodes_post" {
-  api_id             = aws_apigatewayv2_api.http.id
-  route_key          = "POST /nodes"
-  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /nodes"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 
@@ -185,19 +183,15 @@ resource "aws_apigatewayv2_route" "edges_get" {
 }
 
 resource "aws_apigatewayv2_route" "edges_post" {
-  api_id             = aws_apigatewayv2_api.http.id
-  route_key          = "POST /edges"
-  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /edges"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 resource "aws_apigatewayv2_route" "edges_delete" {
-  api_id             = aws_apigatewayv2_api.http.id
-  route_key          = "DELETE /edges"
-  target             = "integrations/${aws_apigatewayv2_integration.lambda.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.jwt.id
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "DELETE /edges"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
 

@@ -49,7 +49,7 @@ export function NodesPanel() {
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">Login to add nodes.</p>
+        <p className="muted">You can add nodes. (Login optional for now)</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6 }}>
