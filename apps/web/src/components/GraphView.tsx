@@ -8,6 +8,7 @@ import ReactFlow, {
   type Edge,
   type Node,
   type NodeMouseHandler,
+  type OnSelectionChangeParams,
   useReactFlow,
   ReactFlowProvider,
 } from 'reactflow';
@@ -58,6 +59,8 @@ function GraphViewInner() {
   const [canEdit] = useState(() => isLoggedIn());
   const [pendingLinkFrom, setPendingLinkFrom] = useState<string | null>(null);
   const [touchAddMode, setTouchAddMode] = useState(false);
+  const [spaceDown, setSpaceDown] = useState(false);
+  const [selection, setSelection] = useState<{ nodes: string[]; edges: string[] }>({ nodes: [], edges: [] });
 
   const rf = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -118,6 +121,61 @@ function GraphViewInner() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ') {
+        setSpaceDown(true);
+      }
+
+      if (!canEdit) return;
+
+      if (e.key === 'Escape') {
+        setPendingLinkFrom(null);
+        setTouchAddMode(false);
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // For now: delete selected edges only (nodes delete API not implemented yet)
+        if (selection.edges.length === 0) return;
+        e.preventDefault();
+
+        const toDelete = selection.edges.slice();
+        setSelection((prev) => ({ ...prev, edges: [] }));
+
+        void (async () => {
+          for (const edgeId of toDelete) {
+            const edge = edges.find((x) => x.id === edgeId);
+            if (!edge) continue;
+            try {
+              await deleteEdge({ from: edge.source, to: edge.target });
+              setEdges((prev) => prev.filter((x) => x.id !== edgeId));
+            } catch (err) {
+              setError(`deleteEdge failed: ${String(err)}`);
+              setStatus('error');
+            }
+          }
+        })();
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ') setSpaceDown(false);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [canEdit, edges, selection.edges]);
+
+  const onSelectionChange = useCallback((p: OnSelectionChangeParams) => {
+    setSelection({
+      nodes: p.nodes.map((n) => n.id),
+      edges: p.edges.map((e) => e.id),
+    });
+  }, []);
 
   const createTempNodeAtClient = useCallback(
     (clientX: number, clientY: number) => {
@@ -224,10 +282,10 @@ function GraphViewInner() {
   );
 
   const header = useMemo(() => {
-    if (status === 'loading') return 'Loading board…';
-    if (status === 'error') return 'Board (error)';
-    return `Board (${nodes.length} nodes / ${edges.length} edges)`;
-  }, [status, nodes.length, edges.length]);
+    if (status === 'loading') return 'Loading…';
+    if (status === 'error') return 'Error';
+    return 'Board';
+  }, [status]);
 
   const decoratedNodes = useMemo(() => {
     return nodes.map((n) => {
@@ -242,37 +300,15 @@ function GraphViewInner() {
   }, [nodes, pendingLinkFrom]);
 
   return (
-    <section style={{ width: '100%' }}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
-        <div>
-          <h2 style={{ margin: 0 }}>{header}</h2>
-          <div className="muted" style={{ marginTop: 6 }}>
-            Double-click empty space to add a node. Click two nodes to connect.{' '}
-            {pendingLinkFrom ? 'Select target node… (click same node to cancel)' : null}
-          </div>
-        </div>
-        <div className="row">
-          <button
-            className="btn"
-            onClick={() => setTouchAddMode((v) => !v)}
-            title="Add node (tap then tap canvas)"
-          >
-            {touchAddMode ? 'Tap canvas…' : '+ Node'}
-          </button>
-          <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
-            Refresh
-          </button>
-        </div>
-      </div>
-
+    <section style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {status === 'error' ? (
-        <>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#ff9aa2' }}>{error}</pre>
-          <details>
+        <div style={{ padding: 12 }}>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#ff9aa2', margin: 0 }}>{error}</pre>
+          <details style={{ marginTop: 8 }}>
             <summary>debug</summary>
             <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(debug, null, 2)}</pre>
           </details>
-        </>
+        </div>
       ) : null}
 
       <div
@@ -284,18 +320,93 @@ function GraphViewInner() {
           createTempNodeAtClient(e.clientX, e.clientY);
           setTouchAddMode(false);
         }}
-        style={{ height: '62vh', minHeight: 520, width: '100%', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}
+        style={{
+          position: 'relative',
+          flex: 1,
+          width: '100%',
+          borderTop: '1px solid var(--border)',
+          overflow: 'hidden',
+        }}
       >
+        {/* Draw.io-ish toolbar overlay */}
+        <div
+          className="row"
+          style={{
+            position: 'absolute',
+            top: 12,
+            left: 12,
+            right: 12,
+            zIndex: 10,
+            justifyContent: 'space-between',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: 'auto',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              padding: '8px 10px',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              background: 'rgba(0,0,0,0.55)',
+              backdropFilter: 'blur(6px)',
+            }}
+          >
+            <strong style={{ fontSize: 13 }}>{header}</strong>
+            <span className="muted" style={{ fontSize: 12 }}>
+              {nodes.length} nodes / {edges.length} edges
+            </span>
+            {pendingLinkFrom ? (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Linking… (tap target)
+              </span>
+            ) : null}
+            {touchAddMode ? (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Add mode… (tap canvas)
+              </span>
+            ) : null}
+            {spaceDown ? (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Pan (space)
+              </span>
+            ) : null}
+          </div>
+
+          <div style={{ pointerEvents: 'auto', display: 'flex', gap: 8 }}>
+            <button
+              className="btn"
+              onClick={() => setTouchAddMode((v) => !v)}
+              title="Add node (tap then tap canvas)"
+            >
+              {touchAddMode ? 'Tap canvas…' : '+ Node'}
+            </button>
+            <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
+              Refresh
+            </button>
+          </div>
+        </div>
+
         <ReactFlow
           nodes={decoratedNodes}
           edges={edges}
           nodeTypes={nodeTypes}
           onDoubleClick={onDoubleClick}
           onNodeClick={onNodeClick}
-                  fitView
+          onSelectionChange={onSelectionChange}
+          fitView
+          minZoom={0.1}
+          maxZoom={2}
+          zoomOnScroll
+          zoomOnPinch
+          panOnScroll
+          selectionOnDrag={!spaceDown}
+          panOnDrag={spaceDown ? [0, 1] : [1]}
         >
           <Background />
-          <Controls />
+          <Controls showInteractive={false} />
           <MiniMap pannable zoomable />
         </ReactFlow>
       </div>
