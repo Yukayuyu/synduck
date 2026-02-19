@@ -7,22 +7,23 @@ import { GraphView } from '@/components/GraphView';
 export default function Home() {
   return (
     <main className={styles.main}>
-      <h1>synduck</h1>
-
-      <section style={{ maxWidth: 720, width: '100%' }}>
-        <h2>Auth</h2>
+      <header className={styles.header}>
+        <h1 style={{ margin: 0 }}>synduck</h1>
         <LoginControls />
-        <p style={{ color: '#888' }}>Anonymous users can view. Logged-in users can edit.</p>
-      </section>
+      </header>
 
       <GraphView />
 
-      <NodesPanel />
-      <EdgesPanel />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, width: '100%' }}>
+        <NodesPanel />
+        <EdgesPanel />
+      </div>
 
-      <section style={{ maxWidth: 720, width: '100%' }}>
-        <h2>Next</h2>
-        <p>Next step: render these nodes/edges as an actual graph (reactflow).</p>
+      <section>
+        <h2 style={{ marginTop: 0 }}>Notes</h2>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          Anonymous users can view. Logged-in users can edit.
+        </p>
       </section>
     </main>
   );

@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { clearAccessToken, getLogoutUrl } from '@/lib/auth';
+import { clearTokens, getLogoutUrl } from '@/lib/auth';
 
 export default function LogoutPage() {
   useEffect(() => {
-    clearAccessToken();
-    window.location.href = getLogoutUrl();
+    clearTokens();
+    const url = getLogoutUrl();
+    window.location.href = url || '/';
   }, []);
 
   return (

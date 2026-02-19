@@ -36,7 +36,7 @@ export function NodesPanel() {
   };
 
   return (
-    <section style={{ maxWidth: 720, width: '100%' }}>
+    <section>
       <h2>Nodes</h2>
 
       {canEdit ? (
@@ -46,16 +46,16 @@ export function NodesPanel() {
           <button onClick={() => void add()} disabled={!label.trim()}>
             Add
           </button>
-          <div style={{ color: '#888' }}>{status}</div>
+          <div className="muted">{status}</div>
         </div>
       ) : (
-        <p style={{ color: '#888' }}>Login to add nodes.</p>
+        <p className="muted">Login to add nodes.</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6 }}>
         {items.map((n) => (
           <li key={n.id}>
-            <b>{n.label}</b> {n.note ? <span style={{ color: '#666' }}>— {n.note}</span> : null}
+            <b>{n.label}</b> {n.note ? <span className="muted">— {n.note}</span> : null}
           </li>
         ))}
       </ul>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { exchangeCodeForToken, setAccessToken } from '@/lib/auth';
+import { exchangeCodeForTokens, setTokens } from '@/lib/auth';
 import { config } from '@/lib/config';
 
 export default function AuthCallbackPage() {
@@ -29,8 +29,8 @@ export default function AuthCallbackPage() {
       }
 
       try {
-        const access = await exchangeCodeForToken(code);
-        setAccessToken(access);
+        const tokens = await exchangeCodeForTokens(code);
+        setTokens(tokens);
         setStatus('ok');
         window.history.replaceState({}, '', '/');
         window.location.href = '/';
@@ -54,10 +54,6 @@ export default function AuthCallbackPage() {
           <pre style={{ whiteSpace: 'pre-wrap' }}>{detail}</pre>
           <h2>Debug</h2>
           <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(debug, null, 2)}</pre>
-          <p style={{ color: '#666' }}>
-            If this says invalid_redirect, the redirectUri here must exactly match one of the Cognito app client
-            callback URLs.
-          </p>
         </>
       ) : null}
     </main>
