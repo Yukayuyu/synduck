@@ -1,27 +1,33 @@
 import { config } from '@/lib/config';
 
 const ACCESS_KEY = 'synduck_access_token';
+const ID_KEY = 'synduck_id_token';
 
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(ACCESS_KEY);
 }
 
-export function setAccessToken(token: string) {
-  window.localStorage.setItem(ACCESS_KEY, token);
+export function getIdToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(ID_KEY);
 }
 
-export function clearAccessToken() {
+export function setTokens(tokens: { accessToken: string; idToken: string }) {
+  window.localStorage.setItem(ACCESS_KEY, tokens.accessToken);
+  window.localStorage.setItem(ID_KEY, tokens.idToken);
+}
+
+export function clearTokens() {
   window.localStorage.removeItem(ACCESS_KEY);
+  window.localStorage.removeItem(ID_KEY);
 }
 
 export function isLoggedIn(): boolean {
-  return !!getAccessToken();
+  return !!getIdToken();
 }
 
 function env(name: string): string {
-  // For static export, env vars might be missing at build time.
-  // Return empty string and let UI show a hint.
   return process.env[name] || '';
 }
 
@@ -43,7 +49,16 @@ export function getLogoutUrl(): string {
   return `${domain}/logout?client_id=${encodeURIComponent(clientId)}&logout_uri=${encodeURIComponent(logoutUri)}`;
 }
 
-export async function exchangeCodeForToken(code: string): Promise<string> {
+type TokenResponse = {
+  access_token?: string;
+  id_token?: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in?: number;
+  [k: string]: unknown;
+};
+
+export async function exchangeCodeForTokens(code: string): Promise<{ accessToken: string; idToken: string }> {
   const domain = (config.cognitoDomain || env('NEXT_PUBLIC_COGNITO_DOMAIN')).replace(/\/$/, '');
   const clientId = config.cognitoClientId || env('NEXT_PUBLIC_COGNITO_CLIENT_ID');
   const redirectUri = config.cognitoRedirectUri || env('NEXT_PUBLIC_COGNITO_REDIRECT_URI');
@@ -65,16 +80,16 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   });
 
   const text = await res.text();
-  let json: { access_token?: string; [k: string]: unknown };
+  let json: TokenResponse;
   try {
-    json = JSON.parse(text) as { access_token?: string; [k: string]: unknown };
+    json = JSON.parse(text) as TokenResponse;
   } catch {
     throw new Error(`Token exchange failed: ${text}`);
   }
 
-  if (!res.ok || !json.access_token) {
+  if (!res.ok || !json.access_token || !json.id_token) {
     throw new Error(`Token exchange failed: ${JSON.stringify(json)}`);
   }
 
-  return json.access_token;
+  return { accessToken: json.access_token, idToken: json.id_token };
 }

@@ -1,5 +1,5 @@
 import { config, requireEnv } from '@/lib/config';
-import { getAccessToken } from '@/lib/auth';
+import { getIdToken } from '@/lib/auth';
 
 function apiBase() {
   const base = requireEnv('NEXT_PUBLIC_API_BASE_URL', config.apiBaseUrl);
@@ -16,7 +16,7 @@ export async function fetchNodes(): Promise<NodeItem[]> {
 }
 
 export async function createNode(input: { label: string; note?: string }) {
-  const token = getAccessToken();
+  const token = getIdToken();
   if (!token) throw new Error('not_logged_in');
 
   const res = await fetch(`${apiBase()}/nodes`, {
@@ -40,7 +40,7 @@ export async function fetchEdges(): Promise<EdgeItem[]> {
 }
 
 export async function createEdge(input: { from: string; to: string; note?: string }) {
-  const token = getAccessToken();
+  const token = getIdToken();
   if (!token) throw new Error('not_logged_in');
 
   const res = await fetch(`${apiBase()}/edges`, {

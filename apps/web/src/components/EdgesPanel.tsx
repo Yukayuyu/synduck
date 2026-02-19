@@ -44,7 +44,7 @@ export function EdgesPanel() {
   };
 
   return (
-    <section style={{ maxWidth: 720, width: '100%' }}>
+    <section>
       <h2>Edges</h2>
 
       {canEdit ? (
@@ -71,17 +71,17 @@ export function EdgesPanel() {
           <button onClick={() => void add()} disabled={!from || !to || from === to}>
             Add edge
           </button>
-          <div style={{ color: '#888' }}>{status}</div>
+          <div className="muted">{status}</div>
         </div>
       ) : (
-        <p style={{ color: '#888' }}>Login to add edges.</p>
+        <p className="muted">Login to add edges.</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6 }}>
         {edges.map((e) => (
           <li key={e.id}>
             <b>{labelById.get(e.from) || e.from}</b> — <b>{labelById.get(e.to) || e.to}</b>
-            {e.note ? <span style={{ color: '#666' }}> ({e.note})</span> : null}
+            {e.note ? <span className="muted"> ({e.note})</span> : null}
           </li>
         ))}
       </ul>
