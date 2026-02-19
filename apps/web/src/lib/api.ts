@@ -6,6 +6,11 @@ function apiBase() {
   return base.replace(/\/$/, '');
 }
 
+function authHeader(): Record<string, string> {
+  const token = getIdToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
 export type EdgeItem = { id: string; from: string; to: string; note?: string; createdAt?: string };
 
@@ -16,14 +21,11 @@ export async function fetchNodes(): Promise<NodeItem[]> {
 }
 
 export async function createNode(input: { label: string; note?: string }) {
-  const token = getIdToken();
-  if (!token) throw new Error('not_logged_in');
-
   const res = await fetch(`${apiBase()}/nodes`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
+      ...authHeader(),
     },
     body: JSON.stringify(input),
   });
@@ -40,14 +42,11 @@ export async function fetchEdges(): Promise<EdgeItem[]> {
 }
 
 export async function createEdge(input: { from: string; to: string; note?: string }) {
-  const token = getIdToken();
-  if (!token) throw new Error('not_logged_in');
-
   const res = await fetch(`${apiBase()}/edges`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
+      ...authHeader(),
     },
     body: JSON.stringify(input),
   });
@@ -58,14 +57,11 @@ export async function createEdge(input: { from: string; to: string; note?: strin
 }
 
 export async function deleteEdge(input: { from: string; to: string }) {
-  const token = getIdToken();
-  if (!token) throw new Error('not_logged_in');
-
   const qs = new URLSearchParams({ from: input.from, to: input.to });
   const res = await fetch(`${apiBase()}/edges?${qs.toString()}`, {
     method: 'DELETE',
     headers: {
-      authorization: `Bearer ${token}`,
+      ...authHeader(),
     },
   });
 

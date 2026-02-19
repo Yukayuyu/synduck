@@ -74,7 +74,7 @@ export function EdgesPanel() {
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">Login to add edges.</p>
+        <p className="muted">You can add edges. (Login optional for now)</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6 }}>
