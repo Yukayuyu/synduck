@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
+  ConnectionMode,
   Controls,
   MiniMap,
+  type Connection,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -60,7 +62,16 @@ function GraphViewInner() {
   const [pendingLinkFrom, setPendingLinkFrom] = useState<string | null>(null);
   const [touchAddMode, setTouchAddMode] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const [selection, setSelection] = useState<{ nodes: string[]; edges: string[] }>({ nodes: [], edges: [] });
+  const [ctxMenu, setCtxMenu] = useState<
+    | null
+    | (
+        | { kind: 'pane'; clientX: number; clientY: number }
+        | { kind: 'node'; nodeId: string; clientX: number; clientY: number }
+        | { kind: 'edge'; edgeId: string; clientX: number; clientY: number }
+      )
+  >(null);
 
   const rf = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -132,6 +143,7 @@ function GraphViewInner() {
       if (e.key === 'Escape') {
         setPendingLinkFrom(null);
         setTouchAddMode(false);
+        setCtxMenu(null);
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -231,6 +243,65 @@ function GraphViewInner() {
     [canEdit, createTempNodeAtClient],
   );
 
+  const onConnect = useCallback(
+    async (conn: Connection) => {
+      if (!canEdit) return;
+      if (!conn.source || !conn.target) return;
+      if (conn.source === conn.target) return;
+
+      const existing = findEdgeBetween(edges, conn.source, conn.target);
+      if (existing) {
+        try {
+          await deleteEdge({ from: conn.source, to: conn.target });
+          setEdges((prev) => prev.filter((e) => e.id !== existing.id));
+        } catch (e) {
+          setError(`deleteEdge failed: ${String(e)}`);
+          setStatus('error');
+        }
+        return;
+      }
+
+      try {
+        const res = await createEdge({ from: conn.source, to: conn.target });
+        setEdges((prev) => [
+          ...prev,
+          {
+            id: res.id,
+            source: conn.source!,
+            target: conn.target!,
+          },
+        ]);
+      } catch (e) {
+        setError(`createEdge failed: ${String(e)}`);
+        setStatus('error');
+      }
+    },
+    [canEdit, edges],
+  );
+
+  const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  const deleteEdgeById = useCallback(
+    async (edgeId: string) => {
+      const edge = edges.find((x) => x.id === edgeId);
+      if (!edge) return;
+      try {
+        await deleteEdge({ from: edge.source, to: edge.target });
+        setEdges((prev) => prev.filter((x) => x.id !== edgeId));
+      } catch (err) {
+        setError(`deleteEdge failed: ${String(err)}`);
+        setStatus('error');
+      }
+    },
+    [edges],
+  );
+
+  const startLinkFromNode = useCallback((nodeId: string) => {
+    if (!canEdit) return;
+    if (nodeId.startsWith('temp#')) return;
+    setPendingLinkFrom(nodeId);
+  }, [canEdit]);
+
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_evt, node) => {
       if (!canEdit) return;
@@ -320,12 +391,15 @@ function GraphViewInner() {
           createTempNodeAtClient(e.clientX, e.clientY);
           setTouchAddMode(false);
         }}
+        onPointerUp={() => setIsPanning(false)}
         style={{
           position: 'relative',
           flex: 1,
           width: '100%',
           borderTop: '1px solid var(--border)',
           overflow: 'hidden',
+          cursor: spaceDown ? (isPanning ? 'grabbing' : 'grab') : 'default',
+          touchAction: 'none',
         }}
       >
         {/* Draw.io-ish toolbar overlay */}
@@ -395,19 +469,143 @@ function GraphViewInner() {
           nodeTypes={nodeTypes}
           onDoubleClick={onDoubleClick}
           onNodeClick={onNodeClick}
+          onConnect={onConnect}
           onSelectionChange={onSelectionChange}
+          onPaneClick={() => setCtxMenu(null)}
+          onPaneContextMenu={(e) => {
+            e.preventDefault();
+            setCtxMenu({ kind: 'pane', clientX: e.clientX, clientY: e.clientY });
+          }}
+          onNodeContextMenu={(_e, node) => {
+            _e.preventDefault();
+            setCtxMenu({ kind: 'node', nodeId: node.id, clientX: _e.clientX, clientY: _e.clientY });
+          }}
+          onEdgeContextMenu={(_e, edge) => {
+            _e.preventDefault();
+            setCtxMenu({ kind: 'edge', edgeId: edge.id, clientX: _e.clientX, clientY: _e.clientY });
+          }}
           fitView
           minZoom={0.1}
           maxZoom={2}
           zoomOnScroll
           zoomOnPinch
           panOnScroll
+          multiSelectionKeyCode={['Shift']}
           selectionOnDrag={!spaceDown}
           panOnDrag={spaceDown ? [0, 1] : [1]}
+          onMoveStart={() => {
+            if (spaceDown) setIsPanning(true);
+          }}
+          onMoveEnd={() => setIsPanning(false)}
+          connectionMode={ConnectionMode.Loose}
         >
           <Background />
           <Controls showInteractive={false} />
           <MiniMap pannable zoomable />
+
+          {ctxMenu ? (
+            <div
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                left: ctxMenu.clientX,
+                top: ctxMenu.clientY,
+                zIndex: 1000,
+                background: 'rgba(10,10,10,0.92)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: 6,
+                minWidth: 180,
+                boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
+              }}
+            >
+              {ctxMenu.kind === 'pane' ? (
+                <>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start' }}
+                    onClick={() => {
+                      createTempNodeAtClient(ctxMenu.clientX, ctxMenu.clientY);
+                      closeCtxMenu();
+                    }}
+                  >
+                    + Add node here
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start', marginTop: 6 }}
+                    onClick={() => {
+                      setTouchAddMode(true);
+                      closeCtxMenu();
+                    }}
+                  >
+                    Enter add mode…
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start', marginTop: 6 }}
+                    onClick={closeCtxMenu}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : null}
+
+              {ctxMenu.kind === 'node' ? (
+                <>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start' }}
+                    onClick={() => {
+                      startLinkFromNode(ctxMenu.nodeId);
+                      closeCtxMenu();
+                    }}
+                  >
+                    Connect from this node
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start', marginTop: 6 }}
+                    onClick={() => {
+                      setPendingLinkFrom(null);
+                      closeCtxMenu();
+                    }}
+                  >
+                    Cancel linking
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start', marginTop: 6 }}
+                    onClick={closeCtxMenu}
+                  >
+                    Close
+                  </button>
+                </>
+              ) : null}
+
+              {ctxMenu.kind === 'edge' ? (
+                <>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start' }}
+                    onClick={() => {
+                      void deleteEdgeById(ctxMenu.edgeId);
+                      closeCtxMenu();
+                    }}
+                  >
+                    Delete edge
+                  </button>
+                  <button
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'flex-start', marginTop: 6 }}
+                    onClick={closeCtxMenu}
+                  >
+                    Close
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </ReactFlow>
       </div>
     </section>
