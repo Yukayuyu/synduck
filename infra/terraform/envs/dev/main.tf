@@ -120,6 +120,13 @@ resource "aws_apigatewayv2_api" "http" {
   name          = "${local.project}-${local.env}-http"
   protocol_type = "HTTP"
 
+  cors_configuration {
+    allow_origins = ["*"]
+    allow_headers = ["content-type", "authorization"]
+    allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
+    max_age       = 86400
+  }
+
   tags = {
     Project = local.project
     Env     = local.env
