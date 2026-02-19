@@ -1,17 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   type Edge,
   type Node,
+  type NodeMouseHandler,
+  useReactFlow,
+  ReactFlowProvider,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { fetchEdges, fetchNodes } from '@/lib/api';
+import { createEdge, createNode, fetchEdges, fetchNodes } from '@/lib/api';
+import { isLoggedIn } from '@/lib/auth';
 import { config } from '@/lib/config';
+import { EditableNode, type EditableNodeData } from '@/components/EditableNode';
 
 type Status = 'idle' | 'loading' | 'error';
 
@@ -39,11 +44,19 @@ async function tryFetchJson(url: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
-export function GraphView() {
+function GraphViewInner() {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
-  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodes, setNodes] = useState<Node<EditableNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+
+  const [canEdit] = useState(() => isLoggedIn());
+  const [pendingLinkFrom, setPendingLinkFrom] = useState<string | null>(null);
+
+  const rf = useReactFlow();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const nodeTypes = useMemo(() => ({ editable: EditableNode }), []);
 
   const debug = useMemo(() => {
     const apiBase = config.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
@@ -62,8 +75,9 @@ export function GraphView() {
     try {
       const [ns, es] = await Promise.all([fetchNodes(), fetchEdges()]);
 
-      const nextNodes: Node[] = ns.map((n) => ({
+      const nextNodes: Node<EditableNodeData>[] = ns.map((n) => ({
         id: n.id,
+        type: 'editable',
         position: defaultPos(n.id),
         data: { label: n.label },
       }));
@@ -79,7 +93,6 @@ export function GraphView() {
       setEdges(nextEdges);
       setStatus('idle');
     } catch (e) {
-      // Attempt to surface actionable info (CORS / wrong endpoint / network)
       let extra = '';
       try {
         if (debug.healthUrl) {
@@ -89,7 +102,6 @@ export function GraphView() {
       } catch (e2) {
         extra += `\nhealth_fetch_error: ${String(e2)}`;
       }
-
       setStatus('error');
       setError(`${String(e)}${extra}`);
     }
@@ -100,24 +112,133 @@ export function GraphView() {
     void load();
   }, [load]);
 
+  const onDoubleClick = useCallback(
+    (evt: React.MouseEvent) => {
+      if (!canEdit) return;
+
+      const bounds = wrapperRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+
+      const position = rf.project({
+        x: evt.clientX - bounds.left,
+        y: evt.clientY - bounds.top,
+      });
+
+      const tempId = `temp#${Date.now()}#${Math.random().toString(16).slice(2)}`;
+
+      const onCancel = () => {
+        setNodes((prev) => prev.filter((n) => n.id !== tempId));
+      };
+
+      const onCommit = async (value: string) => {
+        // optimistic: keep temp node but mark as saving
+        try {
+          const res = await createNode({ label: value });
+          setNodes((prev) =>
+            prev.map((n) => {
+              if (n.id !== tempId) return n;
+              return {
+                ...n,
+                id: res.id,
+                data: { label: value, editing: false },
+              };
+            }),
+          );
+        } catch (e) {
+          setError(`createNode failed: ${String(e)}`);
+          setStatus('error');
+          onCancel();
+        }
+      };
+
+      const newNode: Node<EditableNodeData> = {
+        id: tempId,
+        type: 'editable',
+        position,
+        data: { label: '', editing: true, onCommit, onCancel },
+      };
+
+      setNodes((prev) => [...prev, newNode]);
+    },
+    [canEdit, rf],
+  );
+
+  const onNodeClick: NodeMouseHandler = useCallback(
+    async (_evt, node) => {
+      if (!canEdit) return;
+      // ignore temp/editing nodes
+      if (node.id.startsWith('temp#')) return;
+
+      if (!pendingLinkFrom) {
+        setPendingLinkFrom(node.id);
+        return;
+      }
+
+      if (pendingLinkFrom === node.id) {
+        setPendingLinkFrom(null);
+        return;
+      }
+
+      const from = pendingLinkFrom;
+      const to = node.id;
+      setPendingLinkFrom(null);
+
+      try {
+        const res = await createEdge({ from, to });
+        setEdges((prev) => [
+          ...prev,
+          {
+            id: res.id,
+            source: from,
+            target: to,
+          },
+        ]);
+      } catch (e) {
+        setError(`createEdge failed: ${String(e)}`);
+        setStatus('error');
+      }
+    },
+    [canEdit, pendingLinkFrom],
+  );
+
   const header = useMemo(() => {
-    if (status === 'loading') return 'Loading graph…';
-    if (status === 'error') return 'Failed to load graph';
-    return `Graph (${nodes.length} nodes / ${edges.length} edges)`;
+    if (status === 'loading') return 'Loading board…';
+    if (status === 'error') return 'Board (error)';
+    return `Board (${nodes.length} nodes / ${edges.length} edges)`;
   }, [status, nodes.length, edges.length]);
 
+  const decoratedNodes = useMemo(() => {
+    return nodes.map((n) => {
+      const selected = pendingLinkFrom === n.id;
+      if (!selected) return n;
+      return {
+        ...n,
+        data: { ...n.data },
+        style: { ...(n.style || {}), outline: '2px solid #7aa2ff', outlineOffset: 2 },
+      };
+    });
+  }, [nodes, pendingLinkFrom]);
+
   return (
-    <section style={{ width: '100%', maxWidth: 1100 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h2 style={{ margin: 0 }}>{header}</h2>
-        <button onClick={() => void load()} disabled={status === 'loading'}>
-          Refresh
-        </button>
+    <section style={{ width: '100%' }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>{header}</h2>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Double-click empty space to add a node. Click two nodes to connect.{' '}
+            {pendingLinkFrom ? 'Select target node… (click same node to cancel)' : null}
+          </div>
+        </div>
+        <div className="row">
+          <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {status === 'error' ? (
         <>
-          <pre style={{ whiteSpace: 'pre-wrap', color: '#b00' }}>{error}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap', color: '#ff9aa2' }}>{error}</pre>
           <details>
             <summary>debug</summary>
             <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(debug, null, 2)}</pre>
@@ -125,17 +246,31 @@ export function GraphView() {
         </>
       ) : null}
 
-      <div style={{ height: 520, width: '100%', border: '1px solid #333', borderRadius: 8, overflow: 'hidden' }}>
-        <ReactFlow nodes={nodes} edges={edges} fitView>
+      <div
+        ref={wrapperRef}
+        style={{ height: '62vh', minHeight: 520, width: '100%', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}
+      >
+        <ReactFlow
+          nodes={decoratedNodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onDoubleClick={onDoubleClick}
+          onNodeClick={onNodeClick}
+                  fitView
+        >
           <Background />
           <Controls />
           <MiniMap pannable zoomable />
         </ReactFlow>
       </div>
-
-      <p style={{ color: '#666', marginTop: 8 }}>
-        MVP: deterministic layout per node id. Next step: persist positions + simple auto-layout.
-      </p>
     </section>
+  );
+}
+
+export function GraphView() {
+  return (
+    <ReactFlowProvider>
+      <GraphViewInner />
+    </ReactFlowProvider>
   );
 }
