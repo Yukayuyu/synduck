@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Tooling entrypoints that shouldn't be linted by app rules:
+    "dangerfile.*",
   ]),
 ]);
 

@@ -6,6 +6,8 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: read
+  statuses: write
 
 jobs:
   danger:
@@ -21,6 +23,7 @@ jobs:
       - run: npm --prefix apps/web install --save-dev danger
 
       - name: Run Danger
+        working-directory: apps/web
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: npx danger ci
