@@ -84,7 +84,7 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
   const debug = useMemo(() => {
     const apiBase = config.apiBaseUrl || (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_BASE_URL : '') || '';
     return {
-      href: typeof window !== 'undefined' ? (window as any).location.href : '',
+      href: typeof window !== 'undefined' ? window.location.href : '',
       apiBase,
       graphId,
       shareToken: shareToken || undefined,
@@ -132,7 +132,6 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
     }
   }, [graphId, shareToken, debug.healthUrl]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     void load();
   }, [load]);
@@ -616,10 +615,10 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
 }
 
 export function GraphView({ graphId, shareToken, canEdit }: GraphViewProps) {
-export default GraphView;
   return (
     <ReactFlowProvider>
       <GraphViewInner graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
     </ReactFlowProvider>
   );
 }
+export default GraphView;

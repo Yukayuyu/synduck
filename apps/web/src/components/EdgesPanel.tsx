@@ -35,7 +35,6 @@ function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
   }, [graphId, shareToken]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
