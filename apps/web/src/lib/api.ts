@@ -15,7 +15,8 @@ export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'] a
 
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
 export type EdgeItem = { id: string; from: string; to: string; note?: string; type?: string; annotation?: string; createdAt?: string };
-export type GraphItem = { id: string; name: string; visibility: 'public' | 'private'; owner: string; createdAt: string };
+export type GraphItem = { id: string; name: string; visibility: 'public' | 'private'; owner: string; createdAt: string; userRole?: string | null };
+export type GraphDetail = GraphItem & { shareToken?: string; permissions?: Record<string, string> };
 
 export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphItem[]> {
   const qs = new URLSearchParams({ type });
@@ -23,6 +24,15 @@ export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphIt
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
+}
+
+export async function fetchGraph(graphId: string, shareToken?: string): Promise<GraphDetail> {
+  const qs = new URLSearchParams({ id: graphId });
+  if (shareToken) qs.append('shareToken', shareToken);
+  const res = await fetch(`${apiBase()}/graphs?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.graph;
 }
 
 export async function createGraph(input: { name: string; visibility?: 'public' | 'private' }): Promise<{ id: string }> {
@@ -46,8 +56,9 @@ export async function deleteGraph(graphId: string): Promise<void> {
   if (!res.ok) throw new Error(JSON.stringify(json));
 }
 
-export async function fetchNodes(graphId: string): Promise<NodeItem[]> {
+export async function fetchNodes(graphId: string, shareToken?: string): Promise<NodeItem[]> {
   const qs = new URLSearchParams({ graphId });
+  if (shareToken) qs.append('shareToken', shareToken);
   const res = await fetch(`${apiBase()}/nodes?${qs}`, { cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
@@ -66,8 +77,9 @@ export async function createNode(graphId: string, input: { label: string; note?:
   return json;
 }
 
-export async function fetchEdges(graphId: string): Promise<EdgeItem[]> {
+export async function fetchEdges(graphId: string, shareToken?: string): Promise<EdgeItem[]> {
   const qs = new URLSearchParams({ graphId });
+  if (shareToken) qs.append('shareToken', shareToken);
   const res = await fetch(`${apiBase()}/edges?${qs}`, { cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
@@ -101,6 +113,58 @@ export async function updateEdge(graphId: string, edgeId: string, input: { note?
 export async function deleteEdge(graphId: string, input: { from: string; to: string }): Promise<void> {
   const qs = new URLSearchParams({ ...input, graphId });
   const res = await fetch(`${apiBase()}/edges?${qs}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+}
+
+// Permissions management
+export async function fetchPermissions(graphId: string): Promise<Record<string, string>> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/permissions?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.permissions || {};
+}
+
+export async function addPermission(graphId: string, input: { userSub: string; role: 'editor' | 'viewer' }): Promise<void> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/permissions?${qs}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+}
+
+export async function removePermission(graphId: string, userSub: string): Promise<void> {
+  const qs = new URLSearchParams({ graphId, userSub });
+  const res = await fetch(`${apiBase()}/permissions?${qs}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+}
+
+// Share token management
+export async function generateShareToken(graphId: string): Promise<string> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/share?${qs}`, {
+    method: 'POST',
+    headers: authHeader(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.shareToken;
+}
+
+export async function revokeShareToken(graphId: string): Promise<void> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/share?${qs}`, {
     method: 'DELETE',
     headers: authHeader(),
   });
