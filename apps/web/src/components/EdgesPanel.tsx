@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem } from '@/lib/api';
+import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 
 interface Props {
@@ -14,6 +14,8 @@ export function EdgesPanel({ graphId }: Props) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [note, setNote] = useState('');
+  const [annotation, setAnnotation] = useState('');
+  const [edgeType, setEdgeType] = useState<string>('references');
   const [status, setStatus] = useState('');
   const canEdit = isLoggedIn();
 
@@ -30,15 +32,24 @@ export function EdgesPanel({ graphId }: Props) {
   }, [graphId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
-  const add = async () => {
+  const saveEdge = async () => {
     if (!canEdit || !from || !to || from === to) return;
     setStatus('saving…');
     try {
-      await createEdge(graphId, { from, to, note });
+      const existing = edges.find((e) =>
+        (e.from === from && e.to === to) || (e.from === to && e.to === from)
+      );
+      if (existing) {
+        await updateEdge(graphId, existing.id, { type: edgeType, note, annotation });
+      } else {
+        await createEdge(graphId, { from, to, type: edgeType, note, annotation });
+      }
       setNote('');
+      setAnnotation('');
       setStatus('saved');
       await load();
     } catch (e) {
@@ -70,20 +81,31 @@ export function EdgesPanel({ graphId }: Props) {
               ))}
             </select>
           </div>
+          <select value={edgeType} onChange={(e) => setEdgeType(e.target.value)}>
+            {EDGE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input value={annotation} onChange={(e) => setAnnotation(e.target.value)} placeholder="annotation (optional)" />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
-          <button onClick={add} disabled={!from || !to || from === to}>
-            Add edge
+          <button onClick={() => void saveEdge()} disabled={!from || !to || from === to}>
+            {edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)) ? 'Update' : 'Add'} edge
           </button>
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">Log in to edit.</p>
+        <p className="muted">Log in to add edges.</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
         {edges.map((e) => (
           <li key={e.id}>
-            <b>{labelById.get(e.from) || e.from}</b> → <b>{labelById.get(e.to) || e.to}</b>
+            <b>{labelById.get(e.from) || e.from}</b>{' '}
+            <span style={{ color: 'var(--muted)' }}>[{e.type || '?'}]</span>{' '}
+            <b>{labelById.get(e.to) || e.to}</b>
+            {e.annotation ? <span className="muted"> ⟨{e.annotation}⟩</span> : null}
             {e.note ? <span className="muted"> ({e.note})</span> : null}
           </li>
         ))}

@@ -11,8 +11,10 @@ function authHeader(): Record<string, string> {
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
+export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'] as const;
+
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
-export type EdgeItem = { id: string; from: string; to: string; note?: string; createdAt?: string };
+export type EdgeItem = { id: string; from: string; to: string; note?: string; type?: string; annotation?: string; createdAt?: string };
 export type GraphItem = { id: string; name: string; visibility: 'public' | 'private'; owner: string; createdAt: string };
 
 export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphItem[]> {
@@ -72,10 +74,22 @@ export async function fetchEdges(graphId: string): Promise<EdgeItem[]> {
   return json.items || [];
 }
 
-export async function createEdge(graphId: string, input: { from: string; to: string; note?: string }): Promise<{ id: string }> {
+export async function createEdge(graphId: string, input: { from: string; to: string; note?: string; type?: string; annotation?: string }): Promise<{ id: string }> {
   const qs = new URLSearchParams({ graphId });
   const res = await fetch(`${apiBase()}/edges?${qs}`, {
     method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json;
+}
+
+export async function updateEdge(graphId: string, edgeId: string, input: { note?: string; type?: string; annotation?: string }): Promise<{ id: string }> {
+  const qs = new URLSearchParams({ graphId, id: edgeId });
+  const res = await fetch(`${apiBase()}/edges?${qs}`, {
+    method: 'PUT',
     headers: { 'content-type': 'application/json', ...authHeader() },
     body: JSON.stringify(input),
   });

@@ -3,6 +3,8 @@ const { DynamoDBDocumentClient, PutCommand, ScanCommand, DeleteCommand, GetComma
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
+const EDGE_TYPES = new Set(['depends_on', 'references', 'related_to', 'causes']);
+
 function json(statusCode, body) {
   return {
     statusCode,
@@ -10,7 +12,7 @@ function json(statusCode, body) {
       'content-type': 'application/json',
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type,authorization',
-      'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
     },
     body: JSON.stringify(body),
   };
@@ -158,6 +160,8 @@ exports.handler = async (event) => {
           id: it.pk.slice(prefix.length),
           from: it.from,
           to: it.to,
+          type: it.type || 'references',
+          annotation: it.annotation || '',
           note: it.note,
           createdAt: it.createdAt,
         }));
@@ -173,15 +177,40 @@ exports.handler = async (event) => {
       const from = String(payload.from || '').trim();
       const to = String(payload.to || '').trim();
       const note = String(payload.note || '').trim();
+      const type = String(payload.type || 'references').trim().toLowerCase();
+      const annotation = String(payload.annotation || '').trim();
       if (!from || !to || from === to) return json400('invalid_endpoints');
+      if (!EDGE_TYPES.has(type)) return json400('invalid_edge_type');
       const edgeLocalId = `e${Date.now()}#${Math.random().toString(16).slice(2, 8)}`;
       const pk = `${prefix}${edgeLocalId}`;
       const createdAt = new Date().toISOString();
       await ddb.send(new PutCommand({
         TableName: table,
-        Item: { pk, graphId, from, to, note, createdAt },
+        Item: { pk, graphId, from, to, type, annotation, note, createdAt },
       }));
       return json(201, { ok: true, id: edgeLocalId });
+    }
+    if (method === 'PUT') {
+      if (!sub) return json401('unauthorized');
+      const edgeId = String(qs.id || '').trim();
+      if (!edgeId) return json400('missing_id');
+      const gpk = `graph#${graphId}`;
+      const gres = await ddb.send(new GetCommand({ TableName: table, Key: { pk: gpk } }));
+      if (!gres.Item || gres.Item.owner !== sub) return json403('not_owner');
+      const epk = `${prefix}${edgeId}`;
+      const eres = await ddb.send(new GetCommand({ TableName: table, Key: { pk: epk } }));
+      if (!eres.Item) return json404('edge_not_found');
+      let payload;
+      try { payload = JSON.parse(event.body || '{}'); } catch { return json400('invalid_json'); }
+      const type = String(payload.type || eres.Item.type || 'references').trim().toLowerCase();
+      const annotation = String(payload.annotation ?? eres.Item.annotation ?? '').trim();
+      const note = String(payload.note ?? eres.Item.note ?? '').trim();
+      if (!EDGE_TYPES.has(type)) return json400('invalid_edge_type');
+      await ddb.send(new PutCommand({
+        TableName: table,
+        Item: { ...eres.Item, type, annotation, note },
+      }));
+      return json(200, { ok: true, id: edgeId });
     }
     if (method === 'DELETE') {
       if (!sub) return json401('unauthorized');
