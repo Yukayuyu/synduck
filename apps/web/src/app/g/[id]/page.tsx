@@ -3,8 +3,14 @@ import { NodesPanel } from '@/components/NodesPanel';
 import { EdgesPanel } from '@/components/EdgesPanel';
 import { Suspense } from 'react';
 
-export default async function GraphPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: graphId } = await params;
+export const dynamicParams = true;
+
+export function generateStaticParams() {
+  return [];
+}
+
+export default function GraphPage({ params }: { params: { id: string } }) {
+  const { id: graphId } = params;
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
