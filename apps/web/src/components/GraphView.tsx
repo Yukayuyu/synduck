@@ -616,6 +616,7 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
 }
 
 export function GraphView({ graphId, shareToken, canEdit }: GraphViewProps) {
+export default GraphView;
   return (
     <ReactFlowProvider>
       <GraphViewInner graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
