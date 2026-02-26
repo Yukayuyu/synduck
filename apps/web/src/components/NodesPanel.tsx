@@ -1,31 +1,34 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createNode, fetchNodes, NodeItem } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 
-export function NodesPanel() {
+interface Props {
+  graphId: string;
+}
+
+export function NodesPanel({ graphId }: Props) {
   const [items, setItems] = useState<NodeItem[]>([]);
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<string>('');
-  const [canEdit, setCanEdit] = useState(false);
+  const canEdit = isLoggedIn();
 
-  const load = async () => {
-    const nodes = await fetchNodes();
+  const load = useCallback(async () => {
+    const nodes = await fetchNodes(graphId);
     setItems(nodes);
-  };
+  }, [graphId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCanEdit(isLoggedIn());
     void load();
-  }, []);
+  }, [load]);
 
   const add = async () => {
+    if (!canEdit || !label.trim()) return;
     setStatus('saving…');
     try {
-      await createNode({ label, note });
+      await createNode(graphId, { label, note });
       setLabel('');
       setNote('');
       setStatus('saved');
@@ -36,23 +39,23 @@ export function NodesPanel() {
   };
 
   return (
-    <section>
-      <h2>Nodes</h2>
+    <section style={{ minWidth: 300 }}>
+      <h2>Nodes ({items.length})</h2>
 
       {canEdit ? (
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="label" />
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
-          <button onClick={() => void add()} disabled={!label.trim()}>
+          <button onClick={add} disabled={!label.trim()}>
             Add
           </button>
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">You can add nodes. (Login optional for now)</p>
+        <p className="muted">Log in to edit.</p>
       )}
 
-      <ul style={{ display: 'grid', gap: 6 }}>
+      <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
         {items.map((n) => (
           <li key={n.id}>
             <b>{n.label}</b> {n.note ? <span className="muted">— {n.note}</span> : null}
