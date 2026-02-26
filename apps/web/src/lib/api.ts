@@ -11,8 +11,10 @@ function authHeader(): Record<string, string> {
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
+export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'];
+
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
-export type EdgeItem = { id: string; from: string; to: string; note?: string; createdAt?: string };
+export type EdgeItem = { id: string; from: string; to: string; note?: string; type?: string; createdAt?: string };
 
 export async function fetchNodes(): Promise<NodeItem[]> {
   const res = await fetch(`${apiBase()}/nodes`, { cache: 'no-store' });
@@ -41,9 +43,24 @@ export async function fetchEdges(): Promise<EdgeItem[]> {
   return json.items || [];
 }
 
-export async function createEdge(input: { from: string; to: string; note?: string }) {
+export async function createEdge(input: { from: string; to: string; note?: string; type?: string }) {
   const res = await fetch(`${apiBase()}/edges`, {
     method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...authHeader(),
+    },
+    body: JSON.stringify(input),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json as { ok: true; id: string };
+}
+
+export async function updateEdge(input: { from: string; to: string; note?: string; type?: string }) {
+  const res = await fetch(`${apiBase()}/edges`, {
+    method: 'PUT',
     headers: {
       'content-type': 'application/json',
       ...authHeader(),

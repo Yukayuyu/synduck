@@ -17,6 +17,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 
 import { createEdge, createNode, deleteEdge, fetchEdges, fetchNodes } from '@/lib/api';
+import { EDGE_TYPES, EdgeItem } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 import { config } from '@/lib/config';
 import { EditableNode, type EditableNodeData } from '@/components/EditableNode';
@@ -35,9 +36,8 @@ function defaultPos(id: string) {
   return { x: (u1 - 0.5) * 900, y: (u2 - 0.5) * 600 };
 }
 
-
-function findEdgeBetween(edges: Edge[], a: string, b: string): Edge | undefined {
-  return edges.find((e) => (e.source === a && e.target === b) || (e.source === b && e.target === a));
+function findEdgeBetween(edges: EdgeItem[], a: string, b: string): EdgeItem | undefined {
+  return edges.find((e) => (e.from === a && e.to === b) || (e.from === b && e.to === a));
 }
 
 async function tryFetchJson(url: string) {
@@ -52,10 +52,18 @@ async function tryFetchJson(url: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
+const EDGE_STYLES: Record<string, React.CSSProperties> = {
+  depends_on: { strokeDasharray: '5,5', stroke: '#60a5fa', strokeWidth: 2 },
+  references: { stroke: '#6b7280', strokeWidth: 1.5 },
+  related_to: { stroke: '#34d399', strokeWidth: 3 },
+  causes: { stroke: '#f87171', strokeDasharray: '10,5', strokeWidth: 2 },
+};
+
 function GraphViewInner() {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
   const [nodes, setNodes] = useState<Node<EditableNodeData>[]>([]);
+  const [edgesData, setEdgesData] = useState<EdgeItem[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
   const [canEdit] = useState(() => isLoggedIn());
@@ -106,10 +114,13 @@ function GraphViewInner() {
         id: e.id,
         source: e.from,
         target: e.to,
-        label: e.note || undefined,
+        style: EDGE_STYLES[e.type as keyof typeof EDGE_STYLES] || EDGE_STYLES.references,
+        label: e.note || e.type || '',
+        labelStyle: { fill: '#333', fontWeight: 500, fontSize: 12 },
       }));
 
       setNodes(nextNodes);
+      setEdgesData(es);
       setEdges(nextEdges);
       setStatus('idle');
     } catch (e) {
@@ -156,10 +167,11 @@ function GraphViewInner() {
 
         void (async () => {
           for (const edgeId of toDelete) {
-            const edge = edges.find((x) => x.id === edgeId);
-            if (!edge) continue;
+            const edgeData = edgesData.find((x) => x.id === edgeId);
+            if (!edgeData) continue;
             try {
-              await deleteEdge({ from: edge.source, to: edge.target });
+              await deleteEdge({ from: edgeData.from, to: edgeData.to });
+              setEdgesData((prev) => prev.filter((x) => x.id !== edgeId));
               setEdges((prev) => prev.filter((x) => x.id !== edgeId));
             } catch (err) {
               setError(`deleteEdge failed: ${String(err)}`);
@@ -180,7 +192,7 @@ function GraphViewInner() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [canEdit, edges, selection.edges]);
+  }, [canEdit, edgesData, selection.edges]);
 
   const onSelectionChange = useCallback((p: OnSelectionChangeParams) => {
     setSelection({
@@ -249,11 +261,12 @@ function GraphViewInner() {
       if (!conn.source || !conn.target) return;
       if (conn.source === conn.target) return;
 
-      const existing = findEdgeBetween(edges, conn.source, conn.target);
-      if (existing) {
+      const existingData = findEdgeBetween(edgesData, conn.source, conn.target);
+      if (existingData) {
         try {
           await deleteEdge({ from: conn.source, to: conn.target });
-          setEdges((prev) => prev.filter((e) => e.id !== existing.id));
+          setEdgesData((prev) => prev.filter((e) => e.id !== existingData.id));
+          setEdges((prev) => prev.filter((e) => e.id !== existingData.id));
         } catch (e) {
           setError(`deleteEdge failed: ${String(e)}`);
           setStatus('error');
@@ -262,38 +275,42 @@ function GraphViewInner() {
       }
 
       try {
-        const res = await createEdge({ from: conn.source, to: conn.target });
-        setEdges((prev) => [
-          ...prev,
-          {
-            id: res.id,
-            source: conn.source!,
-            target: conn.target!,
-          },
-        ]);
+        const res = await createEdge({ from: conn.source, to: conn.target, type: 'references' });
+        const newEdgeData: EdgeItem = { id: res.id, from: conn.source!, to: conn.target!, type: 'references' };
+        const newEdge: Edge = {
+          id: res.id,
+          source: conn.source!,
+          target: conn.target!,
+          style: EDGE_STYLES.references,
+          label: 'ref',
+          labelStyle: { fill: '#333', fontWeight: 500, fontSize: 12 },
+        };
+        setEdgesData((prev) => [...prev, newEdgeData]);
+        setEdges((prev) => [...prev, newEdge]);
       } catch (e) {
         setError(`createEdge failed: ${String(e)}`);
         setStatus('error');
       }
     },
-    [canEdit, edges],
+    [canEdit, edgesData],
   );
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
 
   const deleteEdgeById = useCallback(
     async (edgeId: string) => {
-      const edge = edges.find((x) => x.id === edgeId);
-      if (!edge) return;
+      const edgeData = edgesData.find((x) => x.id === edgeId);
+      if (!edgeData) return;
       try {
-        await deleteEdge({ from: edge.source, to: edge.target });
+        await deleteEdge({ from: edgeData.from, to: edgeData.to });
+        setEdgesData((prev) => prev.filter((x) => x.id !== edgeId));
         setEdges((prev) => prev.filter((x) => x.id !== edgeId));
       } catch (err) {
         setError(`deleteEdge failed: ${String(err)}`);
         setStatus('error');
       }
     },
-    [edges],
+    [edgesData],
   );
 
   const startLinkFromNode = useCallback((nodeId: string) => {
@@ -318,15 +335,16 @@ function GraphViewInner() {
         return;
       }
 
-      const from = pendingLinkFrom;
-      const to = node.id;
+      const fromNode = pendingLinkFrom;
+      const toNode = node.id;
       setPendingLinkFrom(null);
 
-      const existing = findEdgeBetween(edges, from, to);
-      if (existing) {
+      const existingData = findEdgeBetween(edgesData, fromNode, toNode);
+      if (existingData) {
         try {
-          await deleteEdge({ from, to });
-          setEdges((prev) => prev.filter((e) => e.id !== existing.id));
+          await deleteEdge({ from: fromNode, to: toNode });
+          setEdgesData((prev) => prev.filter((e) => e.id !== existingData.id));
+          setEdges((prev) => prev.filter((e) => e.id !== existingData.id));
         } catch (e) {
           setError(`deleteEdge failed: ${String(e)}`);
           setStatus('error');
@@ -335,21 +353,24 @@ function GraphViewInner() {
       }
 
       try {
-        const res = await createEdge({ from, to });
-        setEdges((prev) => [
-          ...prev,
-          {
-            id: res.id,
-            source: from,
-            target: to,
-          },
-        ]);
+        const res = await createEdge({ from: fromNode, to: toNode, type: 'references' });
+        const newEdgeData: EdgeItem = { id: res.id, from: fromNode, to: toNode, type: 'references' };
+        const newEdge: Edge = {
+          id: res.id,
+          source: fromNode,
+          target: toNode,
+          style: EDGE_STYLES.references,
+          label: 'ref',
+          labelStyle: { fill: '#333', fontWeight: 500, fontSize: 12 },
+        };
+        setEdgesData((prev) => [...prev, newEdgeData]);
+        setEdges((prev) => [...prev, newEdge]);
       } catch (e) {
         setError(`createEdge failed: ${String(e)}`);
         setStatus('error');
       }
     },
-    [canEdit, pendingLinkFrom, edges],
+    [canEdit, pendingLinkFrom, edgesData],
   );
 
   const header = useMemo(() => {

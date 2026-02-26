@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem } from '@/lib/api';
+import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 
 export function EdgesPanel() {
@@ -10,6 +10,7 @@ export function EdgesPanel() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [note, setNote] = useState('');
+  const [edgeType, setEdgeType] = useState('references');
   const [status, setStatus] = useState('');
   const [canEdit, setCanEdit] = useState(false);
 
@@ -31,10 +32,18 @@ export function EdgesPanel() {
     void load();
   }, []);
 
-  const add = async () => {
+  const saveEdge = async () => {
     setStatus('saving…');
     try {
-      await createEdge({ from, to, note });
+      const type = edgeType;
+      const existing = edges.find((e) =>
+        (e.from === from && e.to === to) || (e.from === to && e.to === from)
+      );
+      if (existing) {
+        await updateEdge({ from, to, type, note });
+      } else {
+        await createEdge({ from, to, type, note });
+      }
       setNote('');
       setStatus('saved');
       await load();
@@ -68,19 +77,28 @@ export function EdgesPanel() {
             </select>
           </div>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
-          <button onClick={() => void add()} disabled={!from || !to || from === to}>
-            Add edge
+          <select value={edgeType} onChange={(e) => setEdgeType(e.target.value)}>
+            {EDGE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => void saveEdge()} disabled={!from || !to || from === to}>
+            {edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)) ? 'Update' : 'Add'} edge
           </button>
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">You can add edges. (Login optional for now)</p>
+        <p className="muted">Log in to add edges.</p>
       )}
 
       <ul style={{ display: 'grid', gap: 6 }}>
         {edges.map((e) => (
           <li key={e.id}>
-            <b>{labelById.get(e.from) || e.from}</b> — <b>{labelById.get(e.to) || e.to}</b>
+            <b>{labelById.get(e.from) || e.from}</b>{' '}
+            <span style={{ color: 'var(--muted)' }}>[{e.type || '?'}]</span>{' '}
+            <b>{labelById.get(e.to) || e.to}</b>
             {e.note ? <span className="muted"> ({e.note})</span> : null}
           </li>
         ))}
