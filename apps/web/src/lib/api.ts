@@ -11,78 +11,85 @@ function authHeader(): Record<string, string> {
   return token ? { authorization: `Bearer ${token}` } : {};
 }
 
-export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'];
-
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
-export type EdgeItem = { id: string; from: string; to: string; note?: string; type?: string; createdAt?: string };
+export type EdgeItem = { id: string; from: string; to: string; note?: string; createdAt?: string };
+export type GraphItem = { id: string; name: string; visibility: 'public' | 'private'; owner: string; createdAt: string };
 
-export async function fetchNodes(): Promise<NodeItem[]> {
-  const res = await fetch(`${apiBase()}/nodes`, { cache: 'no-store' });
-  const json = (await res.json().catch(() => ({}))) as { items?: NodeItem[] };
+export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphItem[]> {
+  const qs = new URLSearchParams({ type });
+  const res = await fetch(`${apiBase()}/graphs?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
 }
 
-export async function createNode(input: { label: string; note?: string }) {
-  const res = await fetch(`${apiBase()}/nodes`, {
+export async function createGraph(input: { name: string; visibility?: 'public' | 'private' }): Promise<{ id: string }> {
+  const res = await fetch(`${apiBase()}/graphs`, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeader(),
-    },
+    headers: { 'content-type': 'application/json', ...authHeader() },
     body: JSON.stringify(input),
   });
-
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
-  return json as { ok: true; id: string };
+  return json;
 }
 
-export async function fetchEdges(): Promise<EdgeItem[]> {
-  const res = await fetch(`${apiBase()}/edges`, { cache: 'no-store' });
-  const json = (await res.json().catch(() => ({}))) as { items?: EdgeItem[] };
-  return json.items || [];
-}
-
-export async function createEdge(input: { from: string; to: string; note?: string; type?: string }) {
-  const res = await fetch(`${apiBase()}/edges`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeader(),
-    },
-    body: JSON.stringify(input),
-  });
-
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(JSON.stringify(json));
-  return json as { ok: true; id: string };
-}
-
-export async function updateEdge(input: { from: string; to: string; note?: string; type?: string }) {
-  const res = await fetch(`${apiBase()}/edges`, {
-    method: 'PUT',
-    headers: {
-      'content-type': 'application/json',
-      ...authHeader(),
-    },
-    body: JSON.stringify(input),
-  });
-
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(JSON.stringify(json));
-  return json as { ok: true; id: string };
-}
-
-export async function deleteEdge(input: { from: string; to: string }) {
-  const qs = new URLSearchParams({ from: input.from, to: input.to });
-  const res = await fetch(`${apiBase()}/edges?${qs.toString()}`, {
+export async function deleteGraph(graphId: string): Promise<void> {
+  const qs = new URLSearchParams({ id: graphId });
+  const res = await fetch(`${apiBase()}/graphs?${qs}`, {
     method: 'DELETE',
-    headers: {
-      ...authHeader(),
-    },
+    headers: authHeader(),
   });
-
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
-  return json as { ok: true; id: string };
+}
+
+export async function fetchNodes(graphId: string): Promise<NodeItem[]> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/nodes?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.items || [];
+}
+
+export async function createNode(graphId: string, input: { label: string; note?: string }): Promise<{ id: string }> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/nodes?${qs}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json;
+}
+
+export async function fetchEdges(graphId: string): Promise<EdgeItem[]> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/edges?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.items || [];
+}
+
+export async function createEdge(graphId: string, input: { from: string; to: string; note?: string }): Promise<{ id: string }> {
+  const qs = new URLSearchParams({ graphId });
+  const res = await fetch(`${apiBase()}/edges?${qs}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify(input),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json;
+}
+
+export async function deleteEdge(graphId: string, input: { from: string; to: string }): Promise<void> {
+  const qs = new URLSearchParams({ ...input, graphId });
+  const res = await fetch(`${apiBase()}/edges?${qs}`, {
+    method: 'DELETE',
+    headers: authHeader(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
 }

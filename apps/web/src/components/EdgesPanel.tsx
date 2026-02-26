@@ -1,18 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 
-export function EdgesPanel() {
+interface Props {
+  graphId: string;
+}
+
+export function EdgesPanel({ graphId }: Props) {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [edges, setEdges] = useState<EdgeItem[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [note, setNote] = useState('');
-  const [edgeType, setEdgeType] = useState('references');
   const [status, setStatus] = useState('');
-  const [canEdit, setCanEdit] = useState(false);
+  const canEdit = isLoggedIn();
 
   const labelById = useMemo(() => {
     const m = new Map<string, string>();
@@ -20,30 +23,21 @@ export function EdgesPanel() {
     return m;
   }, [nodes]);
 
-  const load = async () => {
-    const [n, e] = await Promise.all([fetchNodes(), fetchEdges()]);
+  const load = useCallback(async () => {
+    const [n, e] = await Promise.all([fetchNodes(graphId), fetchEdges(graphId)]);
     setNodes(n);
     setEdges(e);
-  };
+  }, [graphId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCanEdit(isLoggedIn());
     void load();
-  }, []);
+  }, [load]);
 
-  const saveEdge = async () => {
+  const add = async () => {
+    if (!canEdit || !from || !to || from === to) return;
     setStatus('saving…');
     try {
-      const type = edgeType;
-      const existing = edges.find((e) =>
-        (e.from === from && e.to === to) || (e.from === to && e.to === from)
-      );
-      if (existing) {
-        await updateEdge({ from, to, type, note });
-      } else {
-        await createEdge({ from, to, type, note });
-      }
+      await createEdge(graphId, { from, to, note });
       setNote('');
       setStatus('saved');
       await load();
@@ -53,8 +47,8 @@ export function EdgesPanel() {
   };
 
   return (
-    <section>
-      <h2>Edges</h2>
+    <section style={{ minWidth: 300 }}>
+      <h2>Edges ({edges.length})</h2>
 
       {canEdit ? (
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
@@ -77,28 +71,19 @@ export function EdgesPanel() {
             </select>
           </div>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
-          <select value={edgeType} onChange={(e) => setEdgeType(e.target.value)}>
-            {EDGE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <button onClick={() => void saveEdge()} disabled={!from || !to || from === to}>
-            {edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)) ? 'Update' : 'Add'} edge
+          <button onClick={add} disabled={!from || !to || from === to}>
+            Add edge
           </button>
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">Log in to add edges.</p>
+        <p className="muted">Log in to edit.</p>
       )}
 
-      <ul style={{ display: 'grid', gap: 6 }}>
+      <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
         {edges.map((e) => (
           <li key={e.id}>
-            <b>{labelById.get(e.from) || e.from}</b>{' '}
-            <span style={{ color: 'var(--muted)' }}>[{e.type || '?'}]</span>{' '}
-            <b>{labelById.get(e.to) || e.to}</b>
+            <b>{labelById.get(e.from) || e.from}</b> → <b>{labelById.get(e.to) || e.to}</b>
             {e.note ? <span className="muted"> ({e.note})</span> : null}
           </li>
         ))}
