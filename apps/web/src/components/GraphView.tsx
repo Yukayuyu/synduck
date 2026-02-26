@@ -16,8 +16,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { createEdge, createNode, deleteEdge, fetchEdges, fetchNodes } from '@/lib/api';
-import { EDGE_TYPES, EdgeItem } from '@/lib/api';
+import { createEdge, createNode, deleteEdge, EdgeItem, fetchEdges, fetchNodes } from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
 import { config } from '@/lib/config';
 import { EditableNode, type EditableNodeData } from '@/components/EditableNode';
