@@ -255,7 +255,7 @@ resource "aws_cognito_user_pool_client" "web" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "profile"]
-  supported_identity_providers         = ["COGNITO"]
+  supported_identity_providers         = ["COGNITO", "Google"]
 
   callback_urls = [
     "http://localhost:3000/auth/callback",
@@ -289,6 +289,24 @@ resource "aws_cognito_user_pool_client" "web" {
 resource "aws_cognito_user_pool_domain" "hosted" {
   domain       = "synduck-dev-auth-001"
   user_pool_id = aws_cognito_user_pool.users.id
+}
+
+resource "aws_cognito_identity_provider" "google" {
+  provider_name = "Google"
+  provider_type = "Google"
+  user_pool_id  = aws_cognito_user_pool.users.id
+
+  attribute_mapping = {
+    email       = "email"
+    given_name  = "given_name"
+    family_name = "family_name"
+  }
+
+  provider_details = {
+    client_id       = var.google_client_id
+    client_secret   = var.google_client_secret
+    authorize_scopes = "email profile openid"
+  }
 }
 
 locals {
