@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { createEdge, EdgeItem, fetchEdges, fetchNodes, NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
+import { createEdge, type EdgeItem, fetchEdges, fetchNodes, type NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
 
 interface Props {
   graphId: string;
@@ -9,7 +9,7 @@ interface Props {
   canEdit: boolean;
 }
 
-export function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
+function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [edges, setEdges] = useState<EdgeItem[]>([]);
   const [from, setFrom] = useState('');
@@ -20,7 +20,7 @@ export function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
   const [status, setStatus] = useState('');
 
   const labelById = useMemo(() => {
-    const m = new Map();
+    const m = new Map<string, string>();
     for (const n of nodes) m.set(n.id, n.label);
     return m;
   }, [nodes]);
@@ -35,6 +35,7 @@ export function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
   }, [graphId, shareToken]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -54,7 +55,7 @@ export function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
       setAnnotation('');
       setStatus('saved');
       await load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setStatus(`error: ${String(e)}`);
     }
   };
@@ -115,3 +116,5 @@ export function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
     </section>
   );
 }
+
+export default EdgesPanel;

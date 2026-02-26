@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { createNode, fetchNodes, NodeItem } from '@/lib/api';
+import { createNode, fetchNodes, type NodeItem } from '@/lib/api';
 
 interface Props {
   graphId: string;
@@ -9,7 +9,7 @@ interface Props {
   canEdit: boolean;
 }
 
-export function NodesPanel({ graphId, shareToken, canEdit }: Props) {
+function NodesPanel({ graphId, shareToken, canEdit }: Props) {
   const [items, setItems] = useState<NodeItem[]>([]);
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
@@ -21,6 +21,7 @@ export function NodesPanel({ graphId, shareToken, canEdit }: Props) {
   }, [graphId, shareToken]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -33,7 +34,7 @@ export function NodesPanel({ graphId, shareToken, canEdit }: Props) {
       setNote('');
       setStatus('saved');
       await load();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setStatus(`error: ${String(e)}`);
     }
   };
@@ -73,3 +74,5 @@ export function NodesPanel({ graphId, shareToken, canEdit }: Props) {
     </section>
   );
 }
+
+export default NodesPanel;

@@ -3,9 +3,9 @@
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { fetchGraph, GraphDetail } from '@/lib/api';
-import GraphView from '@/components/GraphView';
-import NodesPanel from '@/components/NodesPanel';
-import EdgesPanel from '@/components/EdgesPanel';
+import { GraphView } from '@/components/GraphView';
+import { NodesPanel } from '@/components/NodesPanel';
+import { EdgesPanel } from '@/components/EdgesPanel';
 import PermissionsPanel from '@/components/PermissionsPanel';
 import SharePanel from '@/components/SharePanel';
 
