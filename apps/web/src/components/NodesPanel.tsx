@@ -2,26 +2,25 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createNode, fetchNodes, NodeItem } from '@/lib/api';
-import { isLoggedIn } from '@/lib/auth';
 
 interface Props {
   graphId: string;
+  shareToken?: string;
+  canEdit: boolean;
 }
 
-export function NodesPanel({ graphId }: Props) {
+export function NodesPanel({ graphId, shareToken, canEdit }: Props) {
   const [items, setItems] = useState<NodeItem[]>([]);
   const [label, setLabel] = useState('');
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<string>('');
-  const canEdit = isLoggedIn();
 
   const load = useCallback(async () => {
-    const nodes = await fetchNodes(graphId);
+    const nodes = await fetchNodes(graphId, shareToken);
     setItems(nodes);
-  }, [graphId]);
+  }, [graphId, shareToken]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
@@ -29,12 +28,12 @@ export function NodesPanel({ graphId }: Props) {
     if (!canEdit || !label.trim()) return;
     setStatus('saving…');
     try {
-      await createNode(graphId, { label, note });
+      await createNode(graphId, { label: label.trim(), note: note.trim() });
       setLabel('');
       setNote('');
       setStatus('saved');
       await load();
-    } catch (e) {
+    } catch (e: any) {
       setStatus(`error: ${String(e)}`);
     }
   };
@@ -42,24 +41,32 @@ export function NodesPanel({ graphId }: Props) {
   return (
     <section style={{ minWidth: 300 }}>
       <h2>Nodes ({items.length})</h2>
-
       {canEdit ? (
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="label" />
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" />
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="label"
+            autoFocus
+          />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="note (optional)"
+          />
           <button onClick={add} disabled={!label.trim()}>
-            Add
+            Add node
           </button>
           <div className="muted">{status}</div>
         </div>
       ) : (
-        <p className="muted">Log in to edit.</p>
+        <div className="muted" style={{ padding: 12, textAlign: 'center' }}>Read-only</div>
       )}
-
       <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
         {items.map((n) => (
           <li key={n.id}>
-            <b>{n.label}</b> {n.note ? <span className="muted">— {n.note}</span> : null}
+            <b>{n.label}</b>
+            {n.note ? <span className="muted"> — {n.note}</span> : null}
           </li>
         ))}
       </ul>

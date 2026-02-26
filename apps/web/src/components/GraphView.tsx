@@ -17,14 +17,15 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 
 import { createEdge, createNode, deleteEdge, fetchEdges, fetchNodes } from '@/lib/api';
-import { isLoggedIn } from '@/lib/auth';
 import { config } from '@/lib/config';
 import { EditableNode, type EditableNodeData } from '@/components/EditableNode';
 
 type Status = 'idle' | 'loading' | 'error';
 
-interface GraphViewProps {
+export interface GraphViewProps {
   graphId: string;
+  shareToken?: string;
+  canEdit: boolean;
 }
 
 function hashToUnit(s: string) {
@@ -55,13 +56,12 @@ async function tryFetchJson(url: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
-function GraphViewInner({ graphId }: GraphViewProps) {
+function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
   const [nodes, setNodes] = useState<Node<EditableNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  const canEdit = isLoggedIn();
   const [pendingLinkFrom, setPendingLinkFrom] = useState<string | null>(null);
   const [touchAddMode, setTouchAddMode] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -82,22 +82,23 @@ function GraphViewInner({ graphId }: GraphViewProps) {
   const nodeTypes = useMemo(() => ({ editable: EditableNode }), []);
 
   const debug = useMemo(() => {
-    const apiBase = config.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    const apiBase = config.apiBaseUrl || (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_BASE_URL : '') || '';
     return {
-      href: typeof window !== 'undefined' ? window.location.href : '',
+      href: typeof window !== 'undefined' ? (window as any).location.href : '',
       apiBase,
       graphId,
-      nodesUrl: `${apiBase.replace(/\/$/, '')}/nodes?graphId=${graphId}`,
-      edgesUrl: `${apiBase.replace(/\/$/, '')}/edges?graphId=${graphId}`,
+      shareToken: shareToken || undefined,
+      nodesUrl: `${apiBase.replace(/\/$/, '')}/nodes?graphId=${graphId}${shareToken ? `&shareToken=${shareToken}` : ''}`,
+      edgesUrl: `${apiBase.replace(/\/$/, '')}/edges?graphId=${graphId}${shareToken ? `&shareToken=${shareToken}` : ''}`,
       healthUrl: apiBase ? apiBase.replace(/\/$/, '') + '/health' : '',
     };
-  }, [graphId]);
+  }, [graphId, shareToken]);
 
   const load = useCallback(async () => {
     setStatus('loading');
     setError('');
     try {
-      const [ns, es] = await Promise.all([fetchNodes(graphId), fetchEdges(graphId)]);
+      const [ns, es] = await Promise.all([fetchNodes(graphId, shareToken), fetchEdges(graphId, shareToken)]);
 
       const nextNodes: Node<EditableNodeData>[] = ns.map((n) => ({
         id: n.id,
@@ -116,7 +117,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
       setNodes(nextNodes);
       setEdges(nextEdges);
       setStatus('idle');
-    } catch (e) {
+    } catch (e: unknown) {
       let extra = '';
       try {
         if (debug.healthUrl) {
@@ -129,15 +130,12 @@ function GraphViewInner({ graphId }: GraphViewProps) {
       setStatus('error');
       setError(`${String(e)}${extra}`);
     }
-  }, [graphId, debug.healthUrl]);
+  }, [graphId, shareToken, debug.healthUrl]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
-
-  // ... rest of the component remains the same, but update all createNode, createEdge, deleteEdge calls to pass graphId, and canEdit checks
-  // Note: the rest is too long, but assume it's updated as before
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -222,7 +220,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
               return { ...n, id: res.id, data: { label: value, editing: false } };
             }),
           );
-        } catch (e) {
+        } catch (e: unknown) {
           setError(`createNode failed: ${String(e)}`);
           setStatus('error');
           onCancel();
@@ -260,7 +258,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
         try {
           await deleteEdge(graphId, { from: conn.source, to: conn.target });
           setEdges((prev) => prev.filter((e) => e.id !== existing.id));
-        } catch (e) {
+        } catch (e: unknown) {
           setError(`deleteEdge failed: ${String(e)}`);
           setStatus('error');
         }
@@ -277,7 +275,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
             target: conn.target!,
           },
         ]);
-      } catch (e) {
+      } catch (e: unknown) {
         setError(`createEdge failed: ${String(e)}`);
         setStatus('error');
       }
@@ -289,17 +287,18 @@ function GraphViewInner({ graphId }: GraphViewProps) {
 
   const deleteEdgeById = useCallback(
     async (edgeId: string) => {
+      if (!canEdit) return;
       const edge = edges.find((x) => x.id === edgeId);
       if (!edge) return;
       try {
         await deleteEdge(graphId, { from: edge.source!, to: edge.target! });
         setEdges((prev) => prev.filter((x) => x.id !== edgeId));
-      } catch (err) {
+      } catch (err: unknown) {
         setError(`deleteEdge failed: ${String(err)}`);
         setStatus('error');
       }
     },
-    [edges, graphId],
+    [edges, graphId, canEdit],
   );
 
   const startLinkFromNode = useCallback((nodeId: string) => {
@@ -332,7 +331,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
         try {
           await deleteEdge(graphId, { from, to });
           setEdges((prev) => prev.filter((e) => e.id !== existing.id));
-        } catch (e) {
+        } catch (e: unknown) {
           setError(`deleteEdge failed: ${String(e)}`);
           setStatus('error');
         }
@@ -349,7 +348,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
             target: to,
           },
         ]);
-      } catch (e) {
+      } catch (e: unknown) {
         setError(`createEdge failed: ${String(e)}`);
         setStatus('error');
       }
@@ -390,8 +389,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
       <div
         ref={wrapperRef}
         onPointerDown={(e) => {
-          if (!canEdit) return;
-          if (!touchAddMode) return;
+          if (!canEdit || !touchAddMode) return;
           createTempNodeAtClient(e.clientX, e.clientY);
           setTouchAddMode(false);
         }}
@@ -402,7 +400,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
           width: '100%',
           borderTop: '1px solid var(--border)',
           overflow: 'hidden',
-          cursor: spaceDown ? (isPanning ? 'grabbing' : 'grab') : 'default',
+          cursor: spaceDown ? (isPanning ? 'grabbing' : 'grab') : canEdit ? 'default' : 'default',
           touchAction: 'none',
         }}
       >
@@ -435,6 +433,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
             <span className="muted" style={{ fontSize: 12 }}>
               {nodes.length} nodes / {edges.length} edges
             </span>
+            {!canEdit && <span className="muted" style={{ fontSize: 12 }}>Read-only</span>}
             {pendingLinkFrom ? (
               <span className="muted" style={{ fontSize: 12 }}>
                 Linking… (tap target)
@@ -456,6 +455,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
             <button
               className="btn"
               onClick={() => setTouchAddMode((v) => !v)}
+              disabled={!canEdit}
               title="Add node (tap then tap canvas)"
             >
               {touchAddMode ? 'Tap canvas…' : '+ Node'}
@@ -463,7 +463,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
             <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
               Refresh
             </button>
-            <a href="/graphs" className="btn">← Graphs</a>
+            <a href="/graphs" className="btn secondary" style={{ opacity: 0.7 }}>← Graphs</a>
           </div>
         </div>
 
@@ -476,18 +476,18 @@ function GraphViewInner({ graphId }: GraphViewProps) {
           onConnect={onConnect}
           onSelectionChange={onSelectionChange}
           onPaneClick={() => setCtxMenu(null)}
-          onPaneContextMenu={(e) => {
+          onPaneContextMenu={canEdit ? (e) => {
             e.preventDefault();
             setCtxMenu({ kind: 'pane', clientX: e.clientX, clientY: e.clientY });
-          }}
-          onNodeContextMenu={(_e, node) => {
+          } : undefined}
+          onNodeContextMenu={canEdit ? (_e, node) => {
             _e.preventDefault();
             setCtxMenu({ kind: 'node', nodeId: node.id, clientX: _e.clientX, clientY: _e.clientY });
-          }}
-          onEdgeContextMenu={(_e, edge) => {
+          } : undefined}
+          onEdgeContextMenu={canEdit ? (_e, edge) => {
             _e.preventDefault();
             setCtxMenu({ kind: 'edge', edgeId: edge.id, clientX: _e.clientX, clientY: _e.clientY });
-          }}
+          } : undefined}
           fitView
           minZoom={0.1}
           maxZoom={2}
@@ -495,7 +495,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
           zoomOnPinch
           panOnScroll
           multiSelectionKeyCode={['Shift']}
-          selectionOnDrag={!spaceDown}
+          selectionOnDrag={canEdit && !spaceDown}
           panOnDrag={spaceDown ? [0, 1] : [1]}
           onMoveStart={() => {
             if (spaceDown) setIsPanning(true);
@@ -506,7 +506,6 @@ function GraphViewInner({ graphId }: GraphViewProps) {
           <Background />
           <Controls showInteractive={false} />
           <MiniMap pannable zoomable />
-
           {ctxMenu ? (
             <div
               onPointerDown={(e) => e.stopPropagation()}
@@ -616,10 +615,10 @@ function GraphViewInner({ graphId }: GraphViewProps) {
   );
 }
 
-export function GraphView({ graphId }: GraphViewProps) {
+export function GraphView({ graphId, shareToken, canEdit }: GraphViewProps) {
   return (
     <ReactFlowProvider>
-      <GraphViewInner graphId={graphId} />
+      <GraphViewInner graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
     </ReactFlowProvider>
   );
 }
