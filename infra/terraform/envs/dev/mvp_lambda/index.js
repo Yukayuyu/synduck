@@ -3,6 +3,8 @@ const { DynamoDBDocumentClient, PutCommand, ScanCommand, DeleteCommand } = requi
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
+const EDGE_TYPES = new Set(['depends_on', 'references', 'related_to', 'causes']);
+
 function json(statusCode, body) {
   return {
     statusCode,
@@ -11,7 +13,7 @@ function json(statusCode, body) {
       // CORS
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'content-type,authorization',
-      'access-control-allow-methods': 'GET,POST,DELETE,OPTIONS',
+      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
     },
     body: JSON.stringify(body),
   };
@@ -97,6 +99,7 @@ exports.handler = async (event) => {
         id: it.pk,
         from: it.from,
         to: it.to,
+        type: it.type,
         note: it.note,
         createdAt: it.createdAt,
       }));
@@ -115,7 +118,9 @@ exports.handler = async (event) => {
     const from = String(payload?.from || '').trim();
     const to = String(payload?.to || '').trim();
     const note = String(payload?.note || '').trim();
+    const type = String(payload?.type || 'references').trim().toLowerCase();
 
+    if (!EDGE_TYPES.has(type)) return json(400, { ok: false, error: 'invalid_type', valid: Array.from(EDGE_TYPES) });
     if (!from || !to) return json(400, { ok: false, error: 'missing_endpoints' });
     if (from === to) return json(400, { ok: false, error: 'self_edge_not_allowed' });
 
@@ -125,13 +130,60 @@ exports.handler = async (event) => {
     await ddb.send(
       new PutCommand({
         TableName: table,
-        Item: { pk: id, from, to, note, createdAt },
+        Item: { pk: id, from, to, type, note, createdAt },
       }),
     );
 
     return json(201, { ok: true, id });
   }
 
+  if (method === 'PUT' && path === '/edges') {
+    let payload;
+    try {
+      payload = JSON.parse(event?.body || '{}');
+    } catch {
+      return json(400, { ok: false, error: 'invalid_json' });
+    }
+
+    const from = String(payload?.from || '').trim();
+    const to = String(payload?.to || '').trim();
+    const note = String(payload?.note || '').trim();
+    const type = String(payload?.type || 'references').trim().toLowerCase();
+
+    if (!EDGE_TYPES.has(type)) return json(400, { ok: false, error: 'invalid_type', valid: Array.from(EDGE_TYPES) });
+    if (!from || !to) return json(400, { ok: false, error: 'missing_endpoints' });
+
+    const res = await ddb.send(
+      new ScanCommand({
+        TableName: table,
+        Limit: 500,
+      }),
+    );
+
+    const items = res.Items || [];
+    const match = items.find((it) =>
+      isEdgePk(it.pk) &&
+      ((it.from === from && it.to === to) || (it.from === to && it.to === from)),
+    );
+
+    if (!match) return json(404, { ok: false, error: 'edge_not_found' });
+
+    await ddb.send(
+      new PutCommand({
+        TableName: table,
+        Item: { 
+          pk: match.pk, 
+          from: match.from, 
+          to: match.to, 
+          type, 
+          note, 
+          createdAt: match.createdAt 
+        },
+      }),
+    );
+
+    return json(200, { ok: true, id: match.pk });
+  }
 
   if (method === 'DELETE' && path === '/edges') {
     const qs = event?.queryStringParameters || {};
@@ -139,7 +191,6 @@ exports.handler = async (event) => {
     const to = String(qs.to || '').trim();
     if (!from || !to) return json(400, { ok: false, error: 'missing_endpoints' });
 
-    // MVP: scan to find matching edge (either direction).
     const res = await ddb.send(
       new ScanCommand({
         TableName: table,
