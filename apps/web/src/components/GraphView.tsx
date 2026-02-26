@@ -55,7 +55,6 @@ async function tryFetchJson(url: string) {
   return { ok: res.ok, status: res.status, json };
 }
 
-// eslint-disable-next-line react-hooks/set-state-in-effect
 function GraphViewInner({ graphId }: GraphViewProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
@@ -133,6 +132,7 @@ function GraphViewInner({ graphId }: GraphViewProps) {
   }, [graphId, debug.healthUrl]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

@@ -1,4 +1,4 @@
-import GraphView from '@/components/GraphView';
+import { GraphView } from '@/components/GraphView';
 import { NodesPanel } from '@/components/NodesPanel';
 import { EdgesPanel } from '@/components/EdgesPanel';
 import { Suspense } from 'react';
