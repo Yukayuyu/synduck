@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { createEdge, type EdgeItem, fetchEdges, fetchNodes, type NodeItem, updateEdge, EDGE_TYPES } from '@/lib/api';
+import { MarkdownEditor } from './MarkdownEditor';
+import { MarkdownViewer } from './MarkdownViewer';
 
 interface Props {
   graphId: string;
@@ -40,7 +42,7 @@ function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
 
   const saveEdge = async () => {
     if (!canEdit || !from || !to || from === to) return;
-    setStatus('saving…');
+    setStatus('saving...');
     try {
       const existing = edges.find((e) =>
         (e.from === from && e.to === to) || (e.from === to && e.to === from)
@@ -66,13 +68,13 @@ function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
         <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select value={from} onChange={(e) => setFrom(e.target.value)}>
-              <option value="">from…</option>
+              <option value="">from...</option>
               {nodes.map((n) => (
                 <option key={n.id} value={n.id}>{n.label}</option>
               ))}
             </select>
             <select value={to} onChange={(e) => setTo(e.target.value)}>
-              <option value="">to…</option>
+              <option value="">to...</option>
               {nodes.map((n) => (
                 <option key={n.id} value={n.id}>{n.label}</option>
               ))}
@@ -88,10 +90,10 @@ function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
             onChange={(e) => setAnnotation(e.target.value)}
             placeholder="annotation (optional)"
           />
-          <input
+          <MarkdownEditor
             value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="note (optional)"
+            onChange={setNote}
+            placeholder="Markdown note (optional)"
           />
           <button onClick={saveEdge} disabled={!from || !to || from === to}>
             {edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)) ? 'Update' : 'Add'} edge
@@ -104,11 +106,15 @@ function EdgesPanel({ graphId, shareToken, canEdit }: Props) {
       <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
         {edges.map((e) => (
           <li key={e.id}>
-            <b>{labelById.get(e.from!) || e.from}</b>{' '}
-            <span style={{ color: 'var(--muted)' }}>[{e.type || '?'}]</span>{' '}
+            <b>{labelById.get(e.from!) || e.from}</b> {' '}
+            <span style={{ color: 'var(--muted)' }}>[{e.type || '?'}]</span> {' '}
             <b>{labelById.get(e.to!) || e.to}</b>
-            {e.annotation ? <span className="muted"> ⟨{e.annotation}⟩</span> : null}
-            {e.note ? <span className="muted"> ({e.note})</span> : null}
+            {e.annotation ? <span className="muted"> ({e.annotation})</span> : null}
+            {e.note ? (
+              <div className="muted" style={{ marginTop: 4, fontSize: '13px' }}>
+                <MarkdownViewer text={e.note} />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
