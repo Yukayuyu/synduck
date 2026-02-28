@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createNode, fetchNodes, type NodeItem } from '@/lib/api';
+import { MarkdownEditor } from './MarkdownEditor';
+import { MarkdownViewer } from './MarkdownViewer';
 
 interface Props {
   graphId: string;
@@ -26,7 +28,7 @@ function NodesPanel({ graphId, shareToken, canEdit }: Props) {
 
   const add = async () => {
     if (!canEdit || !label.trim()) return;
-    setStatus('saving…');
+    setStatus('saving...');
     try {
       await createNode(graphId, { label: label.trim(), note: note.trim() });
       setLabel('');
@@ -49,10 +51,10 @@ function NodesPanel({ graphId, shareToken, canEdit }: Props) {
             placeholder="label"
             autoFocus
           />
-          <input
+          <MarkdownEditor
             value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="note (optional)"
+            onChange={setNote}
+            placeholder="Markdown note (optional)"
           />
           <button onClick={add} disabled={!label.trim()}>
             Add node
@@ -66,7 +68,11 @@ function NodesPanel({ graphId, shareToken, canEdit }: Props) {
         {items.map((n) => (
           <li key={n.id}>
             <b>{n.label}</b>
-            {n.note ? <span className="muted"> — {n.note}</span> : null}
+            {n.note ? (
+              <div className="muted" style={{ marginTop: 4, fontSize: '13px' }}>
+                <MarkdownViewer text={n.note} />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
