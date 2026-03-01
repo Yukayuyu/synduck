@@ -61,6 +61,70 @@ function isOwnerRole(role) {
   return role === 'owner';
 }
 
+// Similarity helpers
+async function getGraph(table, graphId) {
+  const pk = `graph#${graphId}`;
+  const res = await ddb.send(new GetCommand({ TableName: table, Key: { pk } }));
+  return res.Item;
+}
+
+async function scanNodes(table, graphId) {
+  const prefix = `node#${graphId}#`;
+  const res = await ddb.send(new ScanCommand({ TableName: table, Limit: 200 }));
+  return (res.Items || []).filter((it) => it.pk.startsWith(prefix)).map((it) => ({
+    id: it.pk.slice(prefix.length),
+    label: it.label,
+    note: it.note || '',
+  }));
+}
+
+async function scanEdges(table, graphId) {
+  const prefix = `edge#${graphId}#`;
+  const res = await ddb.send(new ScanCommand({ TableName: table, Limit: 500 }));
+  return (res.Items || []).filter((it) => it.pk.startsWith(prefix)).map((it) => ({
+    id: it.pk.slice(prefix.length),
+    from: it.from,
+    to: it.to,
+    type: it.type || 'references',
+    annotation: it.annotation || '',
+    note: it.note || '',
+  }));
+}
+
+async function scanPublicGraphs(table) {
+  const res = await ddb.send(new ScanCommand({ TableName: table, Limit: 100 }));
+  return (res.Items || []).filter((it) => it.pk.startsWith('graph#') && it.visibility === 'public');
+}
+
+function computeSignature(nodes, edges) {
+  const nodeLabels = new Set(nodes.map((n) => n.label));
+  const edgeTypes = new Set(edges.map((e) => e.type));
+  return {
+    nodeLabels,
+    edgeTypes,
+    numNodes: nodes.length,
+    numEdges: edges.length,
+  };
+}
+
+function jaccard(setA, setB) {
+  if (setA.size === 0 && setB.size === 0) return 1.0;
+  let inter = 0;
+  for (const el of setA) {
+    if (setB.has(el)) inter++;
+  }
+  const union = setA.size + setB.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+function similarityScore(sig1, sig2) {
+  const labelSim = jaccard(sig1.nodeLabels, sig2.nodeLabels);
+  const typeSim = jaccard(sig1.edgeTypes, sig2.edgeTypes);
+  const nodeSizeSim = 1 - Math.abs(sig1.numNodes - sig2.numNodes) / Math.max(sig1.numNodes, sig2.numNodes, 1);
+  const edgeSizeSim = 1 - Math.abs(sig1.numEdges - sig2.numEdges) / Math.max(sig1.numEdges, sig2.numEdges, 1);
+  return 0.4 * labelSim + 0.3 * typeSim + 0.15 * nodeSizeSim + 0.15 * edgeSizeSim;
+}
+
 exports.handler = async (event) => {
   const method = event?.requestContext?.http?.method || event?.httpMethod;
   const path = event?.rawPath || event?.path || '/';
@@ -352,6 +416,43 @@ exports.handler = async (event) => {
       await ddb.send(new DeleteCommand({ TableName: table, Key: { pk: match.pk } }));
       return json(200, { ok: true });
     }
+  }
+
+  if (path === '/graphs/similar') {
+    if (method !== 'GET') return json(405, 'method_not_allowed');
+
+    const targetGraphId = String(qs.targetGraphId || '').trim();
+    if (!targetGraphId) return json400('missing targetGraphId');
+
+    const targetGraph = await getGraph(table, targetGraphId);
+    if (!targetGraph) return json404('target_graph_not_found');
+
+    const role = getUserRole(event, targetGraph);
+    if (!canRead(role)) return json403('no_access_to_target');
+
+    const targetNodes = await scanNodes(table, targetGraphId);
+    const targetEdges = await scanEdges(table, targetGraphId);
+    const sig1 = computeSignature(targetNodes, targetEdges);
+
+    const publicGraphs = await scanPublicGraphs(table);
+
+    const candidates = [];
+    for (const pg of publicGraphs) {
+      const pgId = pg.pk.slice(6);
+      if (pgId === targetGraphId) continue;
+
+      const pgNodes = await scanNodes(table, pgId);
+      const pgEdges = await scanEdges(table, pgId);
+      const sig2 = computeSignature(pgNodes, pgEdges);
+
+      const score = similarityScore(sig1, sig2);
+      candidates.push({ id: pgId, name: pg.name, score });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    const top = candidates.slice(0, 5);
+
+    return json(200, { ok: true, items: top });
   }
 
   return json(404, { ok: false, error: 'not_found' });
