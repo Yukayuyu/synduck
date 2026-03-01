@@ -126,6 +126,15 @@ export default function GraphsPage() {
       ) : null}
       {canEdit && (
         <section
+          style={{
+            marginBottom: 'var(--spacing-xl)',
+            padding: 'var(--spacing-lg)',
+            background: 'var(--panel)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-light)',
+          }}
+        >
+          <h2>Create New Graph</h2>
         <section
           style={{
             marginBottom: 'var(--spacing-xl)',
