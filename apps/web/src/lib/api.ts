@@ -14,8 +14,23 @@ function authHeader(): Record<string, string> {
 export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'] as const;
 
 export type NodeItem = { id: string; label: string; note?: string; createdAt?: string };
-export type EdgeItem = { id: string; from: string; to: string; note?: string; type?: string; annotation?: string; createdAt?: string };
-export type GraphItem = { id: string; name: string; visibility: 'public' | 'private'; owner: string; createdAt: string; userRole?: string | null };
+export type EdgeItem = {
+  id: string;
+  from: string;
+  to: string;
+  note?: string;
+  type?: string;
+  annotation?: string;
+  createdAt?: string;
+};
+export type GraphItem = {
+  id: string;
+  name: string;
+  visibility: 'public' | 'private';
+  owner: string;
+  createdAt: string;
+  userRole?: string | null;
+};
 export type GraphDetail = GraphItem & { shareToken?: string; permissions?: Record<string, string> };
 
 export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphItem[]> {
@@ -35,7 +50,10 @@ export async function fetchGraph(graphId: string, shareToken?: string): Promise<
   return json.graph;
 }
 
-export async function createGraph(input: { name: string; visibility?: 'public' | 'private' }): Promise<{ id: string }> {
+export async function createGraph(input: {
+  name: string;
+  visibility?: 'public' | 'private';
+}): Promise<{ id: string }> {
   const res = await fetch(`${apiBase()}/graphs`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeader() },
@@ -65,7 +83,10 @@ export async function fetchNodes(graphId: string, shareToken?: string): Promise<
   return json.items || [];
 }
 
-export async function createNode(graphId: string, input: { label: string; note?: string }): Promise<{ id: string }> {
+export async function createNode(
+  graphId: string,
+  input: { label: string; note?: string },
+): Promise<{ id: string }> {
   const qs = new URLSearchParams({ graphId });
   const res = await fetch(`${apiBase()}/nodes?${qs}`, {
     method: 'POST',
@@ -86,7 +107,10 @@ export async function fetchEdges(graphId: string, shareToken?: string): Promise<
   return json.items || [];
 }
 
-export async function createEdge(graphId: string, input: { from: string; to: string; note?: string; type?: string; annotation?: string }): Promise<{ id: string }> {
+export async function createEdge(
+  graphId: string,
+  input: { from: string; to: string; note?: string; type?: string; annotation?: string },
+): Promise<{ id: string }> {
   const qs = new URLSearchParams({ graphId });
   const res = await fetch(`${apiBase()}/edges?${qs}`, {
     method: 'POST',
@@ -98,7 +122,11 @@ export async function createEdge(graphId: string, input: { from: string; to: str
   return json;
 }
 
-export async function updateEdge(graphId: string, edgeId: string, input: { note?: string; type?: string; annotation?: string }): Promise<{ id: string }> {
+export async function updateEdge(
+  graphId: string,
+  edgeId: string,
+  input: { note?: string; type?: string; annotation?: string },
+): Promise<{ id: string }> {
   const qs = new URLSearchParams({ graphId, id: edgeId });
   const res = await fetch(`${apiBase()}/edges?${qs}`, {
     method: 'PUT',
@@ -110,7 +138,10 @@ export async function updateEdge(graphId: string, edgeId: string, input: { note?
   return json;
 }
 
-export async function deleteEdge(graphId: string, input: { from: string; to: string }): Promise<void> {
+export async function deleteEdge(
+  graphId: string,
+  input: { from: string; to: string },
+): Promise<void> {
   const qs = new URLSearchParams({ ...input, graphId });
   const res = await fetch(`${apiBase()}/edges?${qs}`, {
     method: 'DELETE',
@@ -129,7 +160,10 @@ export async function fetchPermissions(graphId: string): Promise<Record<string, 
   return json.permissions || {};
 }
 
-export async function addPermission(graphId: string, input: { userSub: string; role: 'editor' | 'viewer' }): Promise<void> {
+export async function addPermission(
+  graphId: string,
+  input: { userSub: string; role: 'editor' | 'viewer' },
+): Promise<void> {
   const qs = new URLSearchParams({ graphId });
   const res = await fetch(`${apiBase()}/permissions?${qs}`, {
     method: 'POST',
@@ -172,7 +206,10 @@ export async function revokeShareToken(graphId: string): Promise<void> {
   if (!res.ok) throw new Error(JSON.stringify(json));
 }
 
-export async function fetchSimilarGraphs(graphId: string, shareToken?: string): Promise<Array<{id: string; name: string; score: number}>> {
+export async function fetchSimilarGraphs(
+  graphId: string,
+  shareToken?: string,
+): Promise<Array<{ id: string; name: string; score: number }>> {
   const qs = new URLSearchParams({ targetGraphId: graphId });
   if (shareToken) qs.append('shareToken', shareToken);
   const res = await fetch(`${apiBase()}/graphs/similar?${qs}`, { cache: 'no-store' });

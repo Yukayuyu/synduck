@@ -35,19 +35,41 @@ export default function SharePanel({ graphId }: Props) {
 
   return (
     <section>
-      <h3>Share Link (Viewer access)</h3>
+      <h3>Share (Viewer Link)</h3>
       {shareToken ? (
         <div>
-          <div className="muted" style={{ wordBreak: 'break-all', marginBottom: 8 }}>
-            /g/{graphId}?token={shareToken.slice(-8)}
+          <div
+            style={{
+              background: 'var(--panel)',
+              padding: 'var(--spacing-sm)',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: 'var(--spacing-md)',
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              wordBreak: 'break-all',
+            }}
+          >
+            {window.location.origin}/g/{graphId}?token={shareToken}
           </div>
-          <button className="btn" onClick={generate}>Regenerate</button>
-          <button className="btn" style={{ background: 'var(--danger)' }} onClick={revoke}>Revoke</button>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+            <button className="btn secondary" onClick={generate}>
+              🔄 New Link
+            </button>
+            <button className="btn danger" onClick={revoke}>
+              🗑️ Revoke
+            </button>
+          </div>
         </div>
       ) : (
-        <button className="btn" onClick={generate}>Generate share token</button>
+        <button className="btn" style={{ width: '100%' }} onClick={generate}>
+          🔗 Generate Viewer Link
+        </button>
       )}
-      {status && <div className="muted" style={{ marginTop: 8 }}>{status}</div>}
+      {status && (
+        <div className="muted" style={{ marginTop: 'var(--spacing-sm)', fontSize: '0.875rem' }}>
+          {status}
+        </div>
+      )}
     </section>
   );
 }

@@ -14,9 +14,12 @@ export function MarkdownEditor({
   onChange,
   placeholder = 'Markdown note...',
 }: MarkdownEditorProps) {
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e.target.value);
-  }, [onChange]);
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(e.target.value);
+    },
+    [onChange],
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -36,16 +39,18 @@ export function MarkdownEditor({
           backgroundColor: 'var(--panel)',
         }}
       />
-      <div style={{
-        border: '1px solid var(--border)',
-        borderRadius: '6px',
-        padding: '8px',
-        maxHeight: '120px',
-        overflowY: 'auto',
-        backgroundColor: 'var(--panel)',
-        lineHeight: 1.4,
-        fontSize: '14px',
-      }}>
+      <div
+        style={{
+          border: '1px solid var(--border)',
+          borderRadius: '6px',
+          padding: '8px',
+          maxHeight: '120px',
+          overflowY: 'auto',
+          backgroundColor: 'var(--panel)',
+          lineHeight: 1.4,
+          fontSize: '14px',
+        }}
+      >
         <MarkdownViewer text={value} />
       </div>
     </div>

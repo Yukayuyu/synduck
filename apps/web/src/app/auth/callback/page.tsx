@@ -14,7 +14,9 @@ export default function AuthCallbackPage() {
       cognitoDomain: config.cognitoDomain || process.env.NEXT_PUBLIC_COGNITO_DOMAIN || '',
       cognitoClientId: config.cognitoClientId || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID || '',
       redirectUri: config.cognitoRedirectUri || process.env.NEXT_PUBLIC_COGNITO_REDIRECT_URI || '',
-      tokenUrl: (config.cognitoDomain || process.env.NEXT_PUBLIC_COGNITO_DOMAIN || '').replace(/\/$/, '') + '/oauth2/token',
+      tokenUrl:
+        (config.cognitoDomain || process.env.NEXT_PUBLIC_COGNITO_DOMAIN || '').replace(/\/$/, '') +
+        '/oauth2/token',
     };
   }, []);
 

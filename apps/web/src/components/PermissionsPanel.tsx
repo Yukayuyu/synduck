@@ -22,7 +22,7 @@ export default function PermissionsPanel({ graphId }: Props) {
     }
   }, [graphId]);
 
-    useEffect(() => {
+  useEffect(() => {
     void load();
   }, [load]);
 
@@ -50,31 +50,105 @@ export default function PermissionsPanel({ graphId }: Props) {
   };
 
   return (
-    <section style={{ paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
-      <h3>Permissions ({Object.keys(permissions).length})</h3>
-      <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-        <input
-          value={userSub}
-          onChange={(e) => setUserSub(e.target.value)}
-          placeholder="User sub (e.g. UUID from Cognito)"
-          style={{ padding: 8 }}
-        />
-        <select value={role} onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}>
-          <option value="editor">Editor</option>
-          <option value="viewer">Viewer</option>
-        </select>
-        <button onClick={handleAdd} disabled={!userSub.trim()}>Add permission</button>
+    <section
+      style={{ borderBottom: '1px solid var(--border-light)', paddingBottom: 'var(--spacing-lg)' }}
+    >
+      <h3>
+        Permissions{' '}
+        <span className="muted" style={{ fontSize: '0.875rem' }}>
+          ({Object.keys(permissions).length})
+        </span>
+      </h3>
+      <div style={{ display: 'grid', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
+        <div>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: 'var(--spacing-xs)',
+              fontSize: '0.875rem',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            User ID (Cognito sub)
+          </label>
+          <input
+            value={userSub}
+            onChange={(e) => setUserSub(e.target.value)}
+            placeholder="e.g. abc123-def456..."
+          />
+        </div>
+        <div>
+          <label
+            style={{
+              display: 'block',
+              marginBottom: 'var(--spacing-xs)',
+              fontSize: '0.875rem',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            Role
+          </label>
+          <select value={role} onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}>
+            <option value="editor">Editor (full access)</option>
+            <option value="viewer">Viewer (read-only)</option>
+          </select>
+        </div>
+        <button className="btn" onClick={handleAdd} disabled={!userSub.trim()}>
+          + Grant Access
+        </button>
       </div>
-      {status && <div className="muted" style={{ marginBottom: 8 }}>{status}</div>}
-      <ul style={{ maxHeight: 200, overflow: 'auto', gap: 4, display: 'grid' }}>
-        {Object.entries(permissions).map(([sub, r]) => (
-          <li key={sub} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 4 }}>
-            <span>{sub.slice(0, 8)}... <b>{r}</b></span>
-            <button className="btn" style={{ fontSize: 12 }} onClick={() => handleRemove(sub)}>Remove</button>
-          </li>
-        ))}
-      </ul>
-      <button className="btn" onClick={load} style={{ marginTop: 8, width: '100%' }}>Refresh</button>
+      {status && (
+        <div className="muted" style={{ marginBottom: 8 }}>
+          {status}
+        </div>
+      )}
+      <div style={{ maxHeight: '20vh', overflow: 'auto' }}>
+        <ul style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
+          {Object.entries(permissions).map(([sub, r]) => (
+            <li
+              key={sub}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: 'var(--spacing-sm)',
+              }}
+            >
+              <span>
+                {sub.slice(0, 12)}...{' '}
+                <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{r.toUpperCase()}</span>
+              </span>
+              <button
+                className="btn danger"
+                style={{ fontSize: '0.75rem', padding: 'var(--spacing-xs)' }}
+                onClick={() => handleRemove(sub)}
+              >
+                Revoke
+              </button>
+            </li>
+          ))}
+          {Object.keys(permissions).length === 0 && (
+            <li
+              style={{
+                padding: 'var(--spacing-md)',
+                textAlign: 'center',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              No additional permissions set.
+              <div
+                className="muted"
+                style={{ fontSize: '0.875rem', marginTop: 'var(--spacing-sm)' }}
+              >
+                You are the owner.
+              </div>
+            </li>
+          )}
+        </ul>
+      </div>
+      <button className="btn" onClick={load} style={{ marginTop: 8, width: '100%' }}>
+        Refresh
+      </button>
     </section>
   );
 }

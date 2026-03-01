@@ -17,7 +17,7 @@ export function MarkdownViewer({ text, className = '' }: MarkdownViewerProps) {
       setHtml('');
       return;
     }
-    (marked.parse(text, { breaks: true }) as Promise<string>).then(rawHtml => {
+    (marked.parse(text, { breaks: true }) as Promise<string>).then((rawHtml) => {
       setHtml(DOMPurify.sanitize(rawHtml));
     });
   }, [text]);

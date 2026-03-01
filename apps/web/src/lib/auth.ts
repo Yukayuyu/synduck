@@ -58,7 +58,9 @@ type TokenResponse = {
   [k: string]: unknown;
 };
 
-export async function exchangeCodeForTokens(code: string): Promise<{ accessToken: string; idToken: string }> {
+export async function exchangeCodeForTokens(
+  code: string,
+): Promise<{ accessToken: string; idToken: string }> {
   const domain = (config.cognitoDomain || env('NEXT_PUBLIC_COGNITO_DOMAIN')).replace(/\/$/, '');
   const clientId = config.cognitoClientId || env('NEXT_PUBLIC_COGNITO_CLIENT_ID');
   const redirectUri = config.cognitoRedirectUri || env('NEXT_PUBLIC_COGNITO_REDIRECT_URI');
