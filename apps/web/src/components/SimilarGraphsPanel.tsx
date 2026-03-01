@@ -22,7 +22,7 @@ export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
 
   const load = useCallback(async () => {
     setStatus('loading');
-    setError('');
+    setErrorMsg('');
     try {
       const items = await fetchSimilarGraphs(graphId, shareToken);
       setSimilar(items);
@@ -52,7 +52,7 @@ export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
           </div>
         ) : status === 'error' ? (
           <div className="muted" style={{ padding: 'var(--spacing-lg)', textAlign: 'center' }}>
-            Failed to load similar graphs.
+            Failed to load similar graphs: {errorMsg}
           </div>
         ) : similar.length === 0 ? (
           <div
