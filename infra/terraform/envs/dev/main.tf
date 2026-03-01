@@ -451,6 +451,29 @@ resource "aws_cloudfront_origin_access_control" "web" {
   signing_protocol                  = "sigv4"
 }
 
+resource "aws_cloudfront_function" "web_rewrite" {
+  name    = "${local.project}-${local.env}-rewrite"
+  runtime = "cloudfront-js-1.0"
+  publish = true
+  code    = <<-EOT
+function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+
+  if (uri.endsWith('/')) {
+    request.uri = uri + 'index.html';
+    return request;
+  }
+
+  if (uri.indexOf('.') === -1) {
+    request.uri = uri + '.html';
+  }
+
+  return request;
+}
+EOT
+}
+
 resource "aws_cloudfront_distribution" "web" {
   enabled             = true
   comment             = "${local.project}-${local.env}-web"
@@ -468,6 +491,11 @@ resource "aws_cloudfront_distribution" "web" {
     target_origin_id = "s3-web"
 
     viewer_protocol_policy = "redirect-to-https"
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.web_rewrite.arn
+    }
 
     forwarded_values {
       query_string = false
