@@ -175,7 +175,7 @@ export default function GraphsPage() {
           {graphs.map((g) => (
             <Link
               key={g.id}
-              href={`/g/${g.id}`}
+              href={`/g?id=${g.id}`}
               className="btn secondary"
               style={{
                 padding: 'var(--spacing-lg)',
