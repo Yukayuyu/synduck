@@ -58,52 +58,195 @@ export default function GraphsPage() {
   const graphs = tab === 'my' ? myGraphs : publicGraphs;
 
   return (
-    <main style={{ padding: 32, maxWidth: 800, margin: '0 auto' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>Graphs</h1>
+    <main style={{ padding: 'var(--spacing-xl) 5%', maxWidth: 900, margin: '0 auto' }}>
+      <header
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          gap: 'var(--spacing-md)',
+          marginBottom: 'var(--spacing-xl)',
+        }}
+      >
+        <div>
+          <h1>My Graphs</h1>
+          <div className="muted" style={{ fontSize: '1rem' }}>
+            Create and manage your personal graphs
+          </div>
+        </div>
         <LoginControls />
       </header>
 
-      {status ? <div style={{ color: 'orange', marginBottom: 16 }}>{status}</div> : null}
-
-      {canEdit ? (
-        <div style={{ marginBottom: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
-          <h3>Create new graph</h3>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Graph name"
-            style={{ marginRight: 8, padding: 8 }}
-          />
-          <button onClick={add} disabled={!name.trim() || loading}>Create</button>
-          <label style={{ marginLeft: 16 }}>
-            <input type="checkbox" checked /> Public
-          </label>
+      {status ? (
+        <div
+          className={`muted ${status.includes('error') || status.includes('failed') ? 'danger' : ''}`}
+          style={{
+            marginBottom: 'var(--spacing-md)',
+            padding: 'var(--spacing-sm)',
+            background: 'rgba(239,68,68,0.1)',
+            borderRadius: 'var(--radius-sm)',
+          }}
+        >
+          {status}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button className="btn" onClick={() => setTab('my')} disabled={tab === 'my' || !canEdit}>My</button>
-        <button className="btn" onClick={() => setTab('public')} disabled={tab === 'public'}>Public</button>
+      {canEdit ? (
+        <section
+          style={{
+            marginBottom: 'var(--spacing-xl)',
+            padding: 'var(--spacing-lg)',
+            background: 'var(--panel)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-light)',
+          }}
+        >
+          <h2>Create New Graph</h2>
+          <div
+            style={{ display: 'grid', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}
+          >
+            <div>
+              <label
+                style={{
+                  display: 'block',
+                  marginBottom: 'var(--spacing-xs)',
+                  fontSize: '0.875rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Name
+              </label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. My Project Roadmap"
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--spacing-xs)',
+                  fontSize: '0.875rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <input type="checkbox" checked disabled style={{ cursor: 'default' }} /> Make public
+              </label>
+              <button className="btn" onClick={add} disabled={!name.trim() || loading}>
+                {loading ? 'Creating...' : '+ Create Graph'}
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-lg)' }}>
+        <button
+          className={`btn ${tab === 'my' ? '' : 'secondary'}`}
+          onClick={() => setTab('my')}
+          disabled={!canEdit}
+        >
+          My Graphs
+        </button>
+        <button
+          className={`btn ${tab === 'public' ? '' : 'secondary'}`}
+          onClick={() => setTab('public')}
+        >
+          Explore Public
+        </button>
       </div>
 
       {loading ? (
-        <p>Loading...</p>
+        <div
+          style={{
+            padding: 'var(--spacing-xl)',
+            textAlign: 'center',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-md)' }}>
+            Loading graphs...
+          </div>
+        </div>
       ) : (
-        <ul style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gap: 'var(--spacing-md)', minHeight: 400 }}>
           {graphs.map((g) => (
-            <li key={g.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
-              <div>
-                <Link href={`/g/${g.id}`} style={{ fontWeight: 600, fontSize: 18 }}>{g.name}</Link>
-                <div className="muted" style={{ fontSize: 14 }}>{new Date(g.createdAt).toLocaleString()} · {g.visibility}</div>
+            <Link
+              key={g.id}
+              href={`/g/${g.id}`}
+              className="btn secondary"
+              style={{
+                padding: 'var(--spacing-lg)',
+                justifyContent: 'flex-start',
+                textAlign: 'left',
+                border: '1px solid var(--border-light)',
+                background: 'var(--panel)',
+                transition: 'all 0.15s ease',
+                textDecoration: 'none',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: '1.125rem',
+                    fontWeight: 600,
+                    marginBottom: 'var(--spacing-xs)',
+                  }}
+                >
+                  {g.name}
+                </div>
+                <div className="muted">
+                  {new Date(g.createdAt).toLocaleDateString()} ·{' '}
+                  {g.visibility === 'public' ? '🌐 Public' : '🔒 Private'}
+                </div>
               </div>
               {tab === 'my' && (
-                <button className="btn" style={{ color: 'red' }} onClick={() => del(g.id)}>Delete</button>
+                <button
+                  className="btn danger"
+                  style={{ fontSize: '0.875rem' }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    del(g.id);
+                  }}
+                >
+                  Delete
+                </button>
               )}
-            </li>
+            </Link>
           ))}
-          {graphs.length === 0 && <p>No graphs {tab === 'my' ? '(login to create)' : ''}.</p>}
-        </ul>
+          {graphs.length === 0 && (
+            <div
+              style={{ padding: '5rem 2rem', textAlign: 'center', color: 'var(--text-secondary)' }}
+            >
+              {tab === 'my' ? (
+                <>
+                  <div style={{ fontSize: '2rem', marginBottom: 'var(--spacing-md)' }}>
+                    📊 No graphs yet
+                  </div>
+                  <div style={{ fontSize: '1.125rem', marginBottom: 'var(--spacing-xl)' }}>
+                    Get started by creating your first graph above.
+                  </div>
+                  <div className="muted" style={{ maxWidth: 500, margin: '0 auto' }}>
+                    SynDuck lets you build visual knowledge graphs with nodes, edges, notes, and
+                    sharing.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: '2rem', marginBottom: 'var(--spacing-md)' }}>
+                    🌍 No public graphs
+                  </div>
+                  <div className="muted">
+                    Community graphs will appear here. Create your own and make it public!
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </main>
   );

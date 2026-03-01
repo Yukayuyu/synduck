@@ -41,7 +41,9 @@ function defaultPos(id: string) {
 }
 
 function findEdgeBetween(edges: Edge[], a: string, b: string): Edge | undefined {
-  return edges.find((e) => (e.source === a && e.target === b) || (e.source === b && e.target === a));
+  return edges.find(
+    (e) => (e.source === a && e.target === b) || (e.source === b && e.target === a),
+  );
 }
 
 async function tryFetchJson(url: string) {
@@ -66,7 +68,10 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
   const [touchAddMode, setTouchAddMode] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [selection, setSelection] = useState<{ nodes: string[]; edges: string[] }>({ nodes: [], edges: [] });
+  const [selection, setSelection] = useState<{ nodes: string[]; edges: string[] }>({
+    nodes: [],
+    edges: [],
+  });
   const [ctxMenu, setCtxMenu] = useState<
     | null
     | (
@@ -82,7 +87,10 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
   const nodeTypes = useMemo(() => ({ editable: EditableNode }), []);
 
   const debug = useMemo(() => {
-    const apiBase = config.apiBaseUrl || (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_BASE_URL : '') || '';
+    const apiBase =
+      config.apiBaseUrl ||
+      (typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_API_BASE_URL : '') ||
+      '';
     return {
       href: typeof window !== 'undefined' ? window.location.href : '',
       apiBase,
@@ -98,7 +106,10 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
     setStatus('loading');
     setError('');
     try {
-      const [ns, es] = await Promise.all([fetchNodes(graphId, shareToken), fetchEdges(graphId, shareToken)]);
+      const [ns, es] = await Promise.all([
+        fetchNodes(graphId, shareToken),
+        fetchEdges(graphId, shareToken),
+      ]);
 
       const nextNodes: Node<EditableNodeData>[] = ns.map((n) => ({
         id: n.id,
@@ -300,11 +311,14 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
     [edges, graphId, canEdit],
   );
 
-  const startLinkFromNode = useCallback((nodeId: string) => {
-    if (!canEdit) return;
-    if (nodeId.startsWith('temp#')) return;
-    setPendingLinkFrom(nodeId);
-  }, [canEdit]);
+  const startLinkFromNode = useCallback(
+    (nodeId: string) => {
+      if (!canEdit) return;
+      if (nodeId.startsWith('temp#')) return;
+      setPendingLinkFrom(nodeId);
+    },
+    [canEdit],
+  );
 
   const onNodeClick: NodeMouseHandler = useCallback(
     async (_evt, node) => {
@@ -356,9 +370,9 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
   );
 
   const header = useMemo(() => {
-    if (status === 'loading') return 'Loading…';
-    if (status === 'error') return 'Error';
-    return `Graph ${graphId.slice(0,8)}`;
+    if (status === 'loading') return 'Loading graph…';
+    if (status === 'error') return 'Error loading graph';
+    return `Graph ${graphId.slice(0, 8)}`;
   }, [status, graphId]);
 
   const decoratedNodes = useMemo(() => {
@@ -416,23 +430,27 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
           }}
         >
           <div
+            className="row"
             style={{
               pointerEvents: 'auto',
-              display: 'flex',
-              gap: 8,
+              gap: 'var(--spacing-sm)',
               alignItems: 'center',
-              padding: '8px 10px',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              background: 'rgba(0,0,0,0.55)',
-              backdropFilter: 'blur(6px)',
+              padding: 'var(--spacing-sm) var(--spacing-md)',
+              border: '1px solid var(--border-light)',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(17,24,39,0.8)',
+              backdropFilter: 'blur(12px)',
             }}
           >
-            <strong style={{ fontSize: 13 }}>{header}</strong>
-            <span className="muted" style={{ fontSize: 12 }}>
-              {nodes.length} nodes / {edges.length} edges
+            <strong style={{ fontSize: '1rem' }}>{header}</strong>
+            <span className="muted">
+              {nodes.length} nodes · {edges.length} edges
             </span>
-            {!canEdit && <span className="muted" style={{ fontSize: 12 }}>Read-only</span>}
+            {!canEdit && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Read-only
+              </span>
+            )}
             {pendingLinkFrom ? (
               <span className="muted" style={{ fontSize: 12 }}>
                 Linking… (tap target)
@@ -462,7 +480,9 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
             <button className="btn" onClick={() => void load()} disabled={status === 'loading'}>
               Refresh
             </button>
-            <a href="/graphs" className="btn secondary" style={{ opacity: 0.7 }}>← Graphs</a>
+            <a href="/graphs" className="btn secondary" style={{ opacity: 0.7 }}>
+              ← Graphs
+            </a>
           </div>
         </div>
 
@@ -475,18 +495,40 @@ function GraphViewInner({ graphId, shareToken, canEdit }: GraphViewProps) {
           onConnect={onConnect}
           onSelectionChange={onSelectionChange}
           onPaneClick={() => setCtxMenu(null)}
-          onPaneContextMenu={canEdit ? (e) => {
-            e.preventDefault();
-            setCtxMenu({ kind: 'pane', clientX: e.clientX, clientY: e.clientY });
-          } : undefined}
-          onNodeContextMenu={canEdit ? (_e, node) => {
-            _e.preventDefault();
-            setCtxMenu({ kind: 'node', nodeId: node.id, clientX: _e.clientX, clientY: _e.clientY });
-          } : undefined}
-          onEdgeContextMenu={canEdit ? (_e, edge) => {
-            _e.preventDefault();
-            setCtxMenu({ kind: 'edge', edgeId: edge.id, clientX: _e.clientX, clientY: _e.clientY });
-          } : undefined}
+          onPaneContextMenu={
+            canEdit
+              ? (e) => {
+                  e.preventDefault();
+                  setCtxMenu({ kind: 'pane', clientX: e.clientX, clientY: e.clientY });
+                }
+              : undefined
+          }
+          onNodeContextMenu={
+            canEdit
+              ? (_e, node) => {
+                  _e.preventDefault();
+                  setCtxMenu({
+                    kind: 'node',
+                    nodeId: node.id,
+                    clientX: _e.clientX,
+                    clientY: _e.clientY,
+                  });
+                }
+              : undefined
+          }
+          onEdgeContextMenu={
+            canEdit
+              ? (_e, edge) => {
+                  _e.preventDefault();
+                  setCtxMenu({
+                    kind: 'edge',
+                    edgeId: edge.id,
+                    clientX: _e.clientX,
+                    clientY: _e.clientY,
+                  });
+                }
+              : undefined
+          }
           fitView
           minZoom={0.1}
           maxZoom={2}

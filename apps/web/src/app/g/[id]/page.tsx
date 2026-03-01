@@ -28,11 +28,28 @@ export default function GraphPage({ params }: { params: { id: string } }) {
   }, [graphId, shareToken]);
 
   if (status === 'loading') {
-    return <div style={{ padding: '50vh 20px', textAlign: 'center' }}>Loading graph...</div>;
+    return (
+      <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>
+          Loading graph...
+        </div>
+        <div className="muted">Please wait while we fetch nodes and edges.</div>
+      </div>
+    );
   }
 
   if (status === 'error' || !graph) {
-    return <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--muted)' }}>Graph not found or no access.</div>;
+    return (
+      <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>Graph not found</div>
+        <div className="muted">
+          Check the URL or your permissions.{' '}
+          <a href="/graphs" className="btn secondary">
+            Back to graphs
+          </a>
+        </div>
+      </div>
+    );
   }
 
   const canEdit = graph.userRole === 'owner' || graph.userRole === 'editor';
@@ -40,15 +57,39 @@ export default function GraphPage({ params }: { params: { id: string } }) {
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 24, width: 300, borderRight: '1px solid var(--border)', overflow: 'auto' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--spacing-lg)',
+          padding: 'var(--spacing-xl)',
+          width: 320,
+          minWidth: 320,
+          borderRight: '1px solid var(--border-light)',
+          overflow: 'auto',
+          background: 'var(--panel)',
+        }}
+      >
         <NodesPanel graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
         <EdgesPanel graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
         <SimilarGraphsPanel graphId={graphId} shareToken={shareToken} />
         {isOwner && <PermissionsPanel graphId={graphId} />}
         {isOwner && <SharePanel graphId={graphId} />}
       </div>
-      <div style={{ flex: 1 }}>
-        <Suspense fallback={<div>Loading graph...</div>}>
+      <div style={{ flex: 1, position: 'relative' }}>
+        <Suspense
+          fallback={
+            <div
+              style={{
+                padding: 'var(--spacing-xl)',
+                textAlign: 'center',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Loading graph view...
+            </div>
+          }
+        >
           <GraphView graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
         </Suspense>
       </div>

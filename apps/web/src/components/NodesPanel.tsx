@@ -41,41 +41,97 @@ function NodesPanel({ graphId, shareToken, canEdit }: Props) {
   };
 
   return (
-    <section style={{ minWidth: 300 }}>
-      <h2>Nodes ({items.length})</h2>
+    <section style={{ minWidth: '100%' }}>
+      <h2>
+        <span>Nodes</span>{' '}
+        <span className="muted" style={{ fontSize: '0.875rem', fontWeight: 'normal' }}>
+          ({items.length})
+        </span>
+      </h2>
       {canEdit ? (
-        <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="label"
-            autoFocus
-          />
-          <MarkdownEditor
-            value={note}
-            onChange={setNote}
-            placeholder="Markdown note (optional)"
-          />
-          <button onClick={add} disabled={!label.trim()}>
-            Add node
+        <div
+          style={{ display: 'grid', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}
+        >
+          <div>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: 'var(--spacing-xs)',
+                fontSize: '0.875rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Node label
+            </label>
+            <input
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="Enter node label"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label
+              style={{
+                display: 'block',
+                marginBottom: 'var(--spacing-xs)',
+                fontSize: '0.875rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Note (optional)
+            </label>
+            <MarkdownEditor value={note} onChange={setNote} placeholder="Markdown note..." />
+          </div>
+          <button className="btn" onClick={add} disabled={!label.trim()}>
+            + Add Node
           </button>
-          <div className="muted">{status}</div>
+          {status && (
+            <div className="muted" style={{ fontSize: '0.75rem' }}>
+              {status}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="muted" style={{ padding: 12, textAlign: 'center' }}>Read-only</div>
+        <div
+          className="muted"
+          style={{ padding: 'var(--spacing-lg)', textAlign: 'center', fontStyle: 'italic' }}
+        >
+          Read-only view
+        </div>
       )}
-      <ul style={{ display: 'grid', gap: 6, maxHeight: '60vh', overflow: 'auto' }}>
-        {items.map((n) => (
-          <li key={n.id}>
-            <b>{n.label}</b>
-            {n.note ? (
-              <div className="muted" style={{ marginTop: 4, fontSize: '13px' }}>
-                <MarkdownViewer text={n.note} />
+      <div style={{ maxHeight: '40vh', overflow: 'auto' }}>
+        <ul style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
+          {items.map((n) => (
+            <li key={n.id}>
+              <div style={{ fontWeight: 600, marginBottom: 'var(--spacing-xs)' }}>{n.label}</div>
+              {n.note ? (
+                <div className="muted" style={{ fontSize: '0.875rem' }}>
+                  <MarkdownViewer text={n.note} />
+                </div>
+              ) : null}
+            </li>
+          ))}
+          {items.length === 0 && (
+            <li
+              style={{
+                padding: 'var(--spacing-md)',
+                textAlign: 'center',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <div style={{ fontSize: '1rem', marginBottom: 'var(--spacing-sm)' }}>
+                No nodes yet
               </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+              <div className="muted">
+                Double-click the canvas to add your first node
+                <br />
+                or use the form above.
+              </div>
+            </li>
+          )}
+        </ul>
+      </div>
     </section>
   );
 }

@@ -31,7 +31,13 @@ export function LoginControls() {
 
   return (
     <div className="row">
-      <a className="btn" href={loginUrl || '#'} onClick={(e) => { if (!loginUrl) e.preventDefault(); }}>
+      <a
+        className="btn"
+        href={loginUrl || '#'}
+        onClick={(e) => {
+          if (!loginUrl) e.preventDefault();
+        }}
+      >
         Login
       </a>
       {!loginUrl ? <span className="muted">(Missing Cognito env)</span> : null}

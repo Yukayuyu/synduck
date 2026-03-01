@@ -18,7 +18,7 @@ interface SimilarGraph {
 export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
   const [similar, setSimilar] = useState<SimilarGraph[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [error, setError] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -28,7 +28,7 @@ export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
       setSimilar(items);
       setStatus('idle');
     } catch (e: unknown) {
-      setError(String(e));
+      setErrorMsg(String(e));
       setStatus('error');
     }
   }, [graphId, shareToken]);
@@ -38,30 +38,57 @@ export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
   }, [load]);
 
   return (
-    <section style={{ minWidth: 300 }}>
-      <h2>Similar graphs ({similar.length})</h2>
-      {status === 'loading' ? (
-        <div className="muted" style={{ padding: 12, textAlign: 'center' }}>Loading...</div>
-      ) : status === 'error' ? (
-        <div className="muted" style={{ padding: 12, textAlign: 'center' }}>Error: {error}</div>
-      ) : similar.length === 0 ? (
-        <div className="muted" style={{ padding: 12, textAlign: 'center' }}>No similar public graphs found.</div>
-      ) : (
-        <ul style={{ display: 'grid', gap: 6, maxHeight: '40vh', overflow: 'auto' }}>
-          {similar.map((sg) => (
-            <li key={sg.id} style={{ padding: 8, border: '1px solid var(--border)', borderRadius: 4 }}>
-              <Link href={`/g/${sg.id}`} style={{ fontWeight: 500 }}>
-                {sg.name}
-              </Link>
-              <div className="muted" style={{ fontSize: 13 }}>
-                Similarity: {(sg.score * 100).toFixed(1)}%
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      <button className="btn" style={{ width: '100%', marginTop: 8 }} onClick={load}>
-        Refresh
+    <section style={{ minWidth: '100%' }}>
+      <h2>
+        Similar Graphs{' '}
+        <span className="muted" style={{ fontSize: '0.875rem', fontWeight: 'normal' }}>
+          ({similar.length})
+        </span>
+      </h2>
+      <div style={{ maxHeight: '30vh', overflow: 'auto' }}>
+        {status === 'loading' ? (
+          <div className="muted" style={{ padding: 'var(--spacing-lg)', textAlign: 'center' }}>
+            Loading similar graphs...
+          </div>
+        ) : status === 'error' ? (
+          <div className="muted" style={{ padding: 'var(--spacing-lg)', textAlign: 'center' }}>
+            Failed to load similar graphs.
+          </div>
+        ) : similar.length === 0 ? (
+          <div
+            className="muted"
+            style={{ padding: 'var(--spacing-lg)', textAlign: 'center', fontStyle: 'italic' }}
+          >
+            No similar public graphs found for this graph.
+          </div>
+        ) : (
+          <ul style={{ display: 'grid', gap: 'var(--spacing-xs)' }}>
+            {similar.map((sg) => (
+              <li key={sg.id}>
+                <Link
+                  href={`/g/${sg.id}`}
+                  className="btn secondary"
+                  style={{ width: '100%', justifyContent: 'flex-start', fontWeight: 'normal' }}
+                >
+                  {sg.name}
+                </Link>
+                <div
+                  className="muted"
+                  style={{ fontSize: '0.875rem', marginTop: 'var(--spacing-xs)' }}
+                >
+                  Similarity: <strong>{(sg.score * 100).toFixed(1)}%</strong>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <button
+        className="btn secondary"
+        style={{ width: '100%', marginTop: 'var(--spacing-sm)' }}
+        onClick={load}
+      >
+        🔄 Refresh
       </button>
     </section>
   );
