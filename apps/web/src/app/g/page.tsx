@@ -10,14 +10,18 @@ import PermissionsPanel from '@/components/PermissionsPanel';
 import SharePanel from '@/components/SharePanel';
 import SimilarGraphsPanel from '@/components/SimilarGraphsPanel';
 
-export default function GraphPage({ params }: { params: { id: string } }) {
+function GraphPageInner() {
   const searchParams = useSearchParams();
   const shareToken = searchParams.get('token') || undefined;
-  const graphId = params.id;
+  const graphId = searchParams.get('id') || '';
   const [graph, setGraph] = useState<GraphDetail | null>(null);
   const [status, setStatus] = useState<'loading' | 'error' | 'idle'>('loading');
 
   useEffect(() => {
+    if (!graphId) {
+      setStatus('error');
+      return;
+    }
     fetchGraph(graphId, shareToken)
       .then(setGraph)
       .catch((e) => {
@@ -30,9 +34,7 @@ export default function GraphPage({ params }: { params: { id: string } }) {
   if (status === 'loading') {
     return (
       <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>
-          Loading graph...
-        </div>
+        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>Loading graph...</div>
         <div className="muted">Please wait while we fetch nodes and edges.</div>
       </div>
     );
@@ -94,5 +96,19 @@ export default function GraphPage({ params }: { params: { id: string } }) {
         </Suspense>
       </div>
     </div>
+  );
+}
+
+export default function GraphPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+          Loading...
+        </div>
+      }
+    >
+      <GraphPageInner />
+    </Suspense>
   );
 }

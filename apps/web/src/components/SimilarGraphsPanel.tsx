@@ -66,7 +66,7 @@ export default function SimilarGraphsPanel({ graphId, shareToken }: Props) {
             {similar.map((sg) => (
               <li key={sg.id}>
                 <Link
-                  href={`/g/${sg.id}`}
+                  href={`/g?id=${sg.id}`}
                   className="btn secondary"
                   style={{ width: '100%', justifyContent: 'flex-start', fontWeight: 'normal' }}
                 >
