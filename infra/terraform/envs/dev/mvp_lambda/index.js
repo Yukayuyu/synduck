@@ -354,7 +354,7 @@ exports.handler = async (event) => {
       const gres = await ddb.send(new GetCommand({ TableName: table, Key: { pk } }));
       if (!gres.Item) return json404('not_found');
       const graph = gres.Item;
-      if (!sub || !isOwnerRole(getUserRole(event, graph))) return json403('not_owner');
+      if (!isOwnerRole(getUserRole(event, graph))) return json403('not_owner');
       await ddb.send(new DeleteCommand({ TableName: table, Key: { pk } }));
       // Cascade delete nodes
       const nres = await ddb.send(new ScanCommand({ TableName: table, Limit: 1000 }));
@@ -385,7 +385,7 @@ exports.handler = async (event) => {
   if (method === 'GET') {
     if (!canRead(role)) return json403('no_read_access');
   } else {
-    if (!sub || !canWrite(role)) return json403('no_write_access');
+    if (!canWrite(role)) return json403('no_write_access');
   }
 
   // Nodes
