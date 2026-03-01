@@ -160,6 +160,78 @@ resource "aws_apigatewayv2_route" "health" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
+resource "aws_apigatewayv2_route" "graphs_get" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /graphs"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "graphs_post" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /graphs"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "graphs_delete" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "DELETE /graphs"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "graphs_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /graphs"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "graphs_similar_get" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /graphs/similar"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "graphs_similar_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /graphs/similar"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "share_get" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /share"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "share_post" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /share"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "share_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /share"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "permissions_get" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /permissions"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "permissions_post" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /permissions"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "permissions_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /permissions"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
 resource "aws_apigatewayv2_route" "nodes_get" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /nodes"
