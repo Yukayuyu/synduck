@@ -8,6 +8,7 @@ import NodesPanel from '@/components/NodesPanel';
 import EdgesPanel from '@/components/EdgesPanel';
 import PermissionsPanel from '@/components/PermissionsPanel';
 import SharePanel from '@/components/SharePanel';
+import SimilarGraphsPanel from '@/components/SimilarGraphsPanel';
 
 export default function GraphPage({ params }: { params: { id: string } }) {
   const searchParams = useSearchParams();
@@ -42,6 +43,7 @@ export default function GraphPage({ params }: { params: { id: string } }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 24, width: 300, borderRight: '1px solid var(--border)', overflow: 'auto' }}>
         <NodesPanel graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
         <EdgesPanel graphId={graphId} shareToken={shareToken} canEdit={canEdit} />
+        <SimilarGraphsPanel graphId={graphId} shareToken={shareToken} />
         {isOwner && <PermissionsPanel graphId={graphId} />}
         {isOwner && <SharePanel graphId={graphId} />}
       </div>

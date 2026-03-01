@@ -171,3 +171,12 @@ export async function revokeShareToken(graphId: string): Promise<void> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
 }
+
+export async function fetchSimilarGraphs(graphId: string, shareToken?: string): Promise<Array<{id: string; name: string; score: number}>> {
+  const qs = new URLSearchParams({ targetGraphId: graphId });
+  if (shareToken) qs.append('shareToken', shareToken);
+  const res = await fetch(`${apiBase()}/graphs/similar?${qs}`, { cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json.items || [];
+}
