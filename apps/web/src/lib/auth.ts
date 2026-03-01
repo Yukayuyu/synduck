@@ -2,6 +2,7 @@ import { config } from '@/lib/config';
 
 const ACCESS_KEY = 'synduck_access_token';
 const ID_KEY = 'synduck_id_token';
+const GUEST_KEY = 'synduck_guest_token';
 
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -13,6 +14,23 @@ export function getIdToken(): string | null {
   return window.localStorage.getItem(ID_KEY);
 }
 
+export function getGuestToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(GUEST_KEY);
+}
+
+export function setGuestToken(token: string): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(GUEST_KEY, token);
+  }
+}
+
+export function clearGuestToken(): void {
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(GUEST_KEY);
+  }
+}
+
 export function setTokens(tokens: { accessToken: string; idToken: string }) {
   window.localStorage.setItem(ACCESS_KEY, tokens.accessToken);
   window.localStorage.setItem(ID_KEY, tokens.idToken);
@@ -21,10 +39,20 @@ export function setTokens(tokens: { accessToken: string; idToken: string }) {
 export function clearTokens() {
   window.localStorage.removeItem(ACCESS_KEY);
   window.localStorage.removeItem(ID_KEY);
+  clearGuestToken();
+}
+
+export function clearSession(): void {
+  clearTokens();
+  clearGuestToken();
 }
 
 export function isLoggedIn(): boolean {
   return !!getIdToken();
+}
+
+export function hasSession(): boolean {
+  return isLoggedIn() || !!getGuestToken();
 }
 
 function env(name: string): string {

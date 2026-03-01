@@ -34,6 +34,15 @@ function getSub(event) {
 }
 
 function getUserRole(event, graph) {
+  const guestTokenStr = getGuestToken(event);
+  if (graph.owner && graph.owner.startsWith('guest:')) {
+    const guestId = graph.owner.slice(6);
+    const tokenParts = guestTokenStr.split('#');
+    if (tokenParts.length > 1 && tokenParts[1] === guestId) {
+      return 'owner';
+    }
+    return null;
+  }
   const sub = getSub(event);
   const qs = event.queryStringParameters || {};
   const shareToken = String(qs.shareToken || '');
@@ -59,6 +68,22 @@ function canWrite(role) {
 
 function isOwnerRole(role) {
   return role === 'owner';
+}
+
+// Guest support
+const GUEST_EXPIRE_MS = 60 * 60 * 1000; // 1 hour
+
+function getGuestToken(event) {
+  let token = event.headers?.['x-guest-token'] || event.headers?.['X-Guest-Token'];
+  if (token) return String(token).trim();
+  token = event.queryStringParameters?.guestToken;
+  if (token) return String(token).trim();
+  return '';
+}
+
+function getGuestId(token) {
+  const parts = token.split('#');
+  return parts.length > 1 ? `guest:${parts[1]}` : '';
 }
 
 // Similarity helpers
@@ -135,6 +160,25 @@ exports.handler = async (event) => {
 
   if (path === '/health') {
     return json(200, { ok: true, service: 'synduck', env: process.env.ENV || 'dev' });
+  }
+
+  if (path === '/guest/session' && method === 'POST') {
+    const token = generateId('gs');
+    const nowMs = Date.now();
+    const pk = `gs#${token}`;
+    const dayKey = new Date(nowMs).toISOString().slice(0, 10);
+    await ddb.send(new PutCommand({
+      TableName: table,
+      Item: {
+        pk,
+        token,
+        createdAt: nowMs,
+        expiresAt: nowMs + GUEST_EXPIRE_MS,
+        dailyCreates: 0,
+        dayKey,
+      },
+    }));
+    return json(200, { ok: true, token });
   }
 
   const table = process.env.SESSIONS_TABLE;
@@ -251,24 +295,53 @@ exports.handler = async (event) => {
       }
     }
     if (method === 'POST') {
-      if (!sub) return json401('unauthorized');
+      let effectiveOwner = sub;
+      let isGuestMode = false;
+      if (!sub) {
+        const guestTokenStr = getGuestToken(event);
+        if (!guestTokenStr) return json401('unauthorized');
+        const gpk = `gs#${guestTokenStr}`;
+        const gres = await ddb.send(new GetCommand({ TableName: table, Key: { pk: gpk } }));
+        const gs = gres.Item;
+        if (!gs) return json403('invalid_guest_session');
+        const nowMs = Date.now();
+        if (nowMs > gs.expiresAt) return json403('guest_session_expired');
+        const nowDay = new Date(nowMs).toISOString().slice(0, 10);
+        let newDailyCreates = gs.dailyCreates;
+        if (nowDay !== gs.dayKey) {
+          newDailyCreates = 1;
+        } else {
+          newDailyCreates = gs.dailyCreates + 1;
+          if (newDailyCreates > 3) return json403('guest_daily_limit_reached');
+        }
+        await ddb.send(new PutCommand({
+          TableName: table,
+          Item: {
+            ...gs,
+            dailyCreates: newDailyCreates,
+            dayKey: nowDay,
+          },
+        }));
+        effectiveOwner = getGuestId(guestTokenStr);
+        isGuestMode = true;
+      }
       let payload;
       try { payload = JSON.parse(event.body || '{}'); } catch { return json400('invalid_json'); }
       const name = String(payload.name || '').trim();
-      if (!name) return json400('missing_name');
+      if (!name || name.length > 100) return json400('invalid_name');
       const graphId = generateId('g');
       const pk = `graph#${graphId}`;
       const createdAt = new Date().toISOString();
-      const visibility = payload.visibility === 'public' ? 'public' : 'private';
+      const visibility = isGuestMode ? 'private' : (payload.visibility === 'public' ? 'public' : 'private');
       await ddb.send(new PutCommand({
         TableName: table,
         Item: {
           pk,
           name,
           visibility,
-          owner: sub,
+          owner: effectiveOwner,
           createdAt,
-          permissions: { [sub]: 'owner' },
+          ...(isGuestMode ? {} : { permissions: { [effectiveOwner]: 'owner' } }),
           shareToken: null,
         },
       }));

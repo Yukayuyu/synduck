@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { createGraph, deleteGraph, fetchGraphs, GraphItem } from '@/lib/api';
-import { isLoggedIn } from '@/lib/auth';
+import { createGraph, createGuestSession, deleteGraph, fetchGraphs, GraphItem } from '@/lib/api';
+import { isLoggedIn, hasSession } from '@/lib/auth';
 import { LoginControls } from '../LoginControls';
 
 export default function GraphsPage() {
@@ -13,7 +13,10 @@ export default function GraphsPage() {
   const [name, setName] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
-  const canEdit = isLoggedIn();
+  const loggedIn = isLoggedIn();
+  const hasSessionState = hasSession();
+  const showGuestPrompt = !hasSessionState;
+  const canEdit = hasSessionState;
 
   const load = async () => {
     setLoading(true);
@@ -25,6 +28,16 @@ export default function GraphsPage() {
       setStatus(`Load failed: ${String(e)}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startGuest = async () => {
+    try {
+      await createGuestSession();
+      setStatus('Guest session started. Limit: 3 private graphs per day.');
+      await load();
+    } catch (e) {
+      setStatus(`Guest start failed: ${String(e)}`);
     }
   };
 
@@ -91,7 +104,28 @@ export default function GraphsPage() {
         </div>
       ) : null}
 
-      {canEdit ? (
+      {showGuestPrompt ? (
+        <section
+          style={{
+            marginBottom: 'var(--spacing-xl)',
+            padding: 'var(--spacing-lg)',
+            background: 'var(--panel)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-light)',
+            textAlign: 'center',
+          }}
+        >
+          <h2>ゲストで試す</h2>
+          <p className="muted" style={{ marginBottom: 'var(--spacing-md)' }}>
+            ログインせずにグラフを作成できます（1日3つまで、非公開のみ）
+          </p>
+          <button className="btn" onClick={startGuest} style={{ fontSize: '1.1rem' }}>
+            ゲストで始める
+          </button>
+        </section>
+      ) : null}
+      {canEdit && (
+        <section
         <section
           style={{
             marginBottom: 'var(--spacing-xl)',
@@ -101,7 +135,6 @@ export default function GraphsPage() {
             border: '1px solid var(--border-light)',
           }}
         >
-          <h2>Create New Graph</h2>
           <div
             style={{ display: 'grid', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}
           >
@@ -123,6 +156,11 @@ export default function GraphsPage() {
               />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
+              {!loggedIn && (
+                <div className="muted" style={{ fontSize: '0.875rem' }}>
+                  ゲスト制限: 1日3つ、非公開のみ
+                </div>
+              )}
               <label
                 style={{
                   display: 'flex',
@@ -132,7 +170,7 @@ export default function GraphsPage() {
                   color: 'var(--text-secondary)',
                 }}
               >
-                <input type="checkbox" checked disabled style={{ cursor: 'default' }} /> Make public
+                <input type="checkbox" checked={false} disabled style={{ cursor: 'default' }} /> Make public
               </label>
               <button className="btn" onClick={add} disabled={!name.trim() || loading}>
                 {loading ? 'Creating...' : '+ Create Graph'}
@@ -146,7 +184,7 @@ export default function GraphsPage() {
         <button
           className={`btn ${tab === 'my' ? '' : 'secondary'}`}
           onClick={() => setTab('my')}
-          disabled={!canEdit}
+          disabled={showGuestPrompt}
         >
           My Graphs
         </button>

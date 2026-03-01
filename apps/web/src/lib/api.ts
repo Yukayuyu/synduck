@@ -1,5 +1,5 @@
 import { config, requireEnv } from '@/lib/config';
-import { getIdToken } from '@/lib/auth';
+import { getIdToken, getGuestToken, setGuestToken } from '@/lib/auth';
 
 function apiBase() {
   const base = requireEnv('NEXT_PUBLIC_API_BASE_URL', config.apiBaseUrl);
@@ -7,8 +7,15 @@ function apiBase() {
 }
 
 function authHeader(): Record<string, string> {
-  const token = getIdToken();
-  return token ? { authorization: `Bearer ${token}` } : {};
+  const idToken = getIdToken();
+  const guestToken = getGuestToken();
+  const headers: Record<string, string> = {};
+  if (idToken) {
+    headers.authorization = `Bearer ${idToken}`;
+  } else if (guestToken) {
+    headers['x-guest-token'] = guestToken;
+  }
+  return headers;
 }
 
 export const EDGE_TYPES = ['depends_on', 'references', 'related_to', 'causes'] as const;
@@ -33,9 +40,26 @@ export type GraphItem = {
 };
 export type GraphDetail = GraphItem & { shareToken?: string; permissions?: Record<string, string> };
 
+export async function createGuestSession(): Promise<{ token: string }> {
+  const res = await fetch(`${apiBase()}/guest/session`, {
+    method: 'POST',
+    headers: authHeader(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  setGuestToken(json.token);
+  return json;
+}
+
 export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphItem[]> {
   const qs = new URLSearchParams({ type });
-  const res = await fetch(`${apiBase()}/graphs?${qs}`, { cache: 'no-store' });
+  if (getGuestToken()) {
+    qs.append('guestToken', getGuestToken()!);
+  }
+  const res = await fetch(`${apiBase()}/graphs?${qs}`, {
+    headers: authHeader(),
+    cache: 'no-store',
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
