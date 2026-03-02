@@ -1,5 +1,5 @@
 import { config, requireEnv } from '@/lib/config';
-import { getIdToken, getGuestToken, setGuestToken } from '@/lib/auth';
+import { getAccessToken, getIdToken, getGuestToken, setGuestToken } from '@/lib/auth';
 
 function apiBase() {
   const base = requireEnv('NEXT_PUBLIC_API_BASE_URL', config.apiBaseUrl);
@@ -7,11 +7,12 @@ function apiBase() {
 }
 
 function authHeader(): Record<string, string> {
+  const accessToken = getAccessToken();
   const idToken = getIdToken();
   const guestToken = getGuestToken();
   const headers: Record<string, string> = {};
-  if (idToken) {
-    headers.authorization = `Bearer ${idToken}`;
+  if (accessToken || idToken) {
+    headers.authorization = `Bearer ${accessToken || idToken}`;
   } else if (guestToken) {
     headers['x-guest-token'] = guestToken;
   }
