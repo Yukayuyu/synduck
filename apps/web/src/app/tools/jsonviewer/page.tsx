@@ -215,83 +215,51 @@ const getNodeColor = (kind: Node["kind"]): string => {
   }
 };
 
-const renderNode = (node: Node): ReactNode => {
-  const bottomOffset = node.isSquare && node.height ? node.height / 2 : node.r;
-  return (
-    <g key={node.id}>
-      {/* Enclosing circle for groups */}
-      {(node.kind === "object" || node.kind === "array") && (
-        <circle
-          cx={node.x}
-          cy={(node.y + node.maxY) / 2}
-          r={(node.maxY - node.y + (node.maxX - node.minX) / 2) / 2 + 45}
-          fill={getEnclosingColor(node.depth || 0)}
-          stroke="#c084fc"
-          strokeWidth="1.8"
-          strokeDasharray="6, 4"
-          opacity={0.85}
-          pointerEvents="none"
-        />
-      )}
-      {/* Node shape */}
-      {node.isSquare && node.width && node.height ? (
-        <rect
-          x={node.x - node.width / 2}
-          y={node.y - node.height / 2}
-          width={node.width}
-          height={node.height}
-          rx={6}
-          ry={6}
-          fill={getNodeColor(node.kind)}
-          stroke="#111827"
-          strokeWidth="2.2"
-        />
-      ) : (
-        <circle
-          cx={node.x}
-          cy={node.y}
-          r={node.r || 22}
-          fill={getNodeColor(node.kind)}
-          stroke="#111827"
-          strokeWidth="2.2"
-        />
-      )}
-      {/* Label */}
-      <text
-        x={node.x}
-        y={node.y + (node.isSquare ? 2 : 4)}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={node.isSquare ? "11" : "12"}
-        fontWeight="600"
-        fill="white"
-        style={{ pointerEvents: "none" }}
-      >
-        {node.label}
-      </text>
-      {/* Lines to children - curved */}
-      {node.children.map((child) => {
-        const startY = node.y + bottomOffset;
-        const endY = child.y - (child.isSquare && child.height ? child.height / 2 : child.r);
-        const midY = (startY + endY) / 2;
-        return (
-          <path
-            key={`line-${child.id}`}
-            d={`M ${node.x} ${startY} Q ${node.x} ${midY} ${child.x} ${endY}`}
-            fill="none"
-            stroke="#4b5563"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            markerEnd="url(#arrowhead)"
-          />
-        );
-      })}
-      {/* Children */}
-      {node.children.map(renderNode)}
-    </g>
-  );
-};
+const flattenNodes = (node: Node): Node[] => [node, ...node.children.flatMap(flattenNodes)];
+
+const flattenEdges = (node: Node): Array<{ from: Node; to: Node }> => [
+  ...node.children.map((c) => ({ from: node, to: c })),
+  ...node.children.flatMap(flattenEdges),
+];
+
+const renderNode = (node: Node): ReactNode => (
+  <g key={node.id}>
+    {node.isSquare && node.width && node.height ? (
+      <rect
+        x={node.x - node.width / 2}
+        y={node.y - node.height / 2}
+        width={node.width}
+        height={node.height}
+        rx={6}
+        ry={6}
+        fill={getNodeColor(node.kind)}
+        stroke="#111827"
+        strokeWidth="2.2"
+      />
+    ) : (
+      <circle
+        cx={node.x}
+        cy={node.y}
+        r={node.r || 22}
+        fill={getNodeColor(node.kind)}
+        stroke="#111827"
+        strokeWidth="2.2"
+      />
+    )}
+    <text
+      x={node.x}
+      y={node.y + (node.isSquare ? 2 : 4)}
+      textAnchor="middle"
+      dominantBaseline="central"
+      fontSize={node.isSquare ? "11" : "12"}
+      fontWeight="600"
+      fill="white"
+      style={{ pointerEvents: "none" }}
+    >
+      {node.label}
+    </text>
+  </g>
+);
 
 export default function JSONViewer() {
   const [jsonText, setJsonText] = useState(`{
@@ -383,7 +351,43 @@ export default function JSONViewer() {
                     </marker>
                   </defs>
                   <rect width={svgWidth} height={svgHeight} fill="none" />
-                  {renderNode(tree)}
+                  {/* Layer 1: hierarchy area circles (back) */}
+                  {flattenNodes(tree)
+                    .filter((n) => n.kind === "object" || n.kind === "array")
+                    .map((n) => (
+                      <circle
+                        key={`area-${n.id}`}
+                        cx={n.x}
+                        cy={(n.y + n.maxY) / 2}
+                        r={(n.maxY - n.y + (n.maxX - n.minX) / 2) / 2 + 45}
+                        fill={getEnclosingColor(n.depth || 0)}
+                        stroke="#c084fc"
+                        strokeWidth="1.8"
+                        strokeDasharray="6, 4"
+                        opacity={0.5}
+                        pointerEvents="none"
+                      />
+                    ))}
+                  {/* Layer 2: lines */}
+                  {flattenEdges(tree).map(({ from, to }) => {
+                    const startY = from.y + (from.isSquare && from.height ? from.height / 2 : from.r);
+                    const endY = to.y - (to.isSquare && to.height ? to.height / 2 : to.r);
+                    const midY = (startY + endY) / 2;
+                    return (
+                      <path
+                        key={`line-${from.id}-${to.id}`}
+                        d={`M ${from.x} ${startY} Q ${from.x} ${midY} ${to.x} ${endY}`}
+                        fill="none"
+                        stroke="#4b5563"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        markerEnd="url(#arrowhead)"
+                      />
+                    );
+                  })}
+                  {/* Layer 3: nodes + labels (front) */}
+                  {flattenNodes(tree).map(renderNode)}
                 </svg>
               </div>
             )}
