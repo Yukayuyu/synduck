@@ -29,8 +29,35 @@ function json403(msg) { return json(403, {ok: false, error: msg}); }
 function json404(msg) { return json(404, {ok: false, error: msg}); }
 function json500(msg) { return json(500, {ok: false, error: msg}); }
 
+
+function parseJwtPayloadWithoutVerify(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = Buffer.from(payload, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function getSubFromAuthorizationHeader(event) {
+  const h = event?.headers || {};
+  const auth = h.authorization || h.Authorization;
+  if (!auth || typeof auth !== 'string' || !auth.toLowerCase().startsWith('bearer ')) {
+    return null;
+  }
+  const token = auth.slice(7).trim();
+  const payload = parseJwtPayloadWithoutVerify(token);
+  return payload?.sub || null;
+}
+
 function getSub(event) {
-  return event.requestContext?.authorizer?.jwt?.claims?.sub || null;
+  const fromAuthorizer = event.requestContext?.authorizer?.jwt?.claims?.sub || null;
+  if (fromAuthorizer) return fromAuthorizer;
+  // Dev fallback: parse bearer token payload when JWT authorizer data is absent.
+  return getSubFromAuthorizationHeader(event);
 }
 
 function getUserRole(event, graph) {
