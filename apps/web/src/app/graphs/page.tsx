@@ -161,17 +161,19 @@ export default function GraphsPage() {
                   ゲスト制限: 1日3つ、非公開のみ
                 </div>
               )}
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--spacing-xs)',
-                  fontSize: '0.875rem',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                <input type="checkbox" checked={false} disabled style={{ cursor: 'default' }} /> Make public
-              </label>
+              {loggedIn ? (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--spacing-xs)',
+                    fontSize: '0.875rem',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <input type="checkbox" checked={false} disabled style={{ cursor: 'default' }} /> Make public
+                </label>
+              ) : null}
               <button className="btn" onClick={add} disabled={!name.trim() || loading}>
                 {loading ? 'Creating...' : '+ Create Graph'}
               </button>
