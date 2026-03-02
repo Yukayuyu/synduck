@@ -158,6 +158,9 @@ exports.handler = async (event) => {
 
   if (method === 'OPTIONS') return json(200, { ok: true });
 
+  const table = process.env.SESSIONS_TABLE;
+  if (!table) return json500('missing_table');
+
   if (path === '/health') {
     return json(200, { ok: true, service: 'synduck', env: process.env.ENV || 'dev' });
   }
@@ -180,9 +183,6 @@ exports.handler = async (event) => {
     }));
     return json(200, { ok: true, token });
   }
-
-  const table = process.env.SESSIONS_TABLE;
-  if (!table) return json500('missing_table');
 
   // Share management
   if (path === '/share') {
