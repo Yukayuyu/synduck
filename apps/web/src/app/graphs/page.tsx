@@ -51,6 +51,7 @@ export default function GraphsPage() {
     try {
       await createGraph({ name: name.trim(), visibility: 'private' });
       setName('');
+      setTab('my');
       setStatus('created');
       await load();
     } catch (e) {
