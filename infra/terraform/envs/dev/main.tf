@@ -232,6 +232,18 @@ resource "aws_apigatewayv2_route" "permissions_options" {
   target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
 }
 
+resource "aws_apigatewayv2_route" "guest_session_post" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /guest/session"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
+resource "aws_apigatewayv2_route" "guest_session_options" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "OPTIONS /guest/session"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda.id}"
+}
+
 resource "aws_apigatewayv2_route" "nodes_get" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /nodes"
