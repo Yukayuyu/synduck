@@ -57,7 +57,6 @@ export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphIt
     qs.append('guestToken', getGuestToken()!);
   }
   const res = await fetch(`${apiBase()}/graphs?${qs}`, {
-    headers: authHeader(),
     cache: 'no-store',
   });
   const json = await res.json().catch(() => ({}));
