@@ -68,7 +68,9 @@ export async function fetchGraphs(type: 'my' | 'public' = 'my'): Promise<GraphIt
 export async function fetchGraph(graphId: string, shareToken?: string): Promise<GraphDetail> {
   const qs = new URLSearchParams({ id: graphId });
   if (shareToken) qs.append('shareToken', shareToken);
-  const res = await fetch(`${apiBase()}/graphs?${qs}`, { cache: 'no-store' });
+  const guestToken = getGuestToken();
+  if (guestToken) qs.append('guestToken', guestToken);
+  const res = await fetch(`${apiBase()}/graphs?${qs}`, { headers: authHeader(), cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.graph;
@@ -101,7 +103,9 @@ export async function deleteGraph(graphId: string): Promise<void> {
 export async function fetchNodes(graphId: string, shareToken?: string): Promise<NodeItem[]> {
   const qs = new URLSearchParams({ graphId });
   if (shareToken) qs.append('shareToken', shareToken);
-  const res = await fetch(`${apiBase()}/nodes?${qs}`, { cache: 'no-store' });
+  const guestToken = getGuestToken();
+  if (guestToken) qs.append('guestToken', guestToken);
+  const res = await fetch(`${apiBase()}/nodes?${qs}`, { headers: authHeader(), cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
@@ -125,7 +129,9 @@ export async function createNode(
 export async function fetchEdges(graphId: string, shareToken?: string): Promise<EdgeItem[]> {
   const qs = new URLSearchParams({ graphId });
   if (shareToken) qs.append('shareToken', shareToken);
-  const res = await fetch(`${apiBase()}/edges?${qs}`, { cache: 'no-store' });
+  const guestToken = getGuestToken();
+  if (guestToken) qs.append('guestToken', guestToken);
+  const res = await fetch(`${apiBase()}/edges?${qs}`, { headers: authHeader(), cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
@@ -236,7 +242,9 @@ export async function fetchSimilarGraphs(
 ): Promise<Array<{ id: string; name: string; score: number }>> {
   const qs = new URLSearchParams({ targetGraphId: graphId });
   if (shareToken) qs.append('shareToken', shareToken);
-  const res = await fetch(`${apiBase()}/graphs/similar?${qs}`, { cache: 'no-store' });
+  const guestToken = getGuestToken();
+  if (guestToken) qs.append('guestToken', guestToken);
+  const res = await fetch(`${apiBase()}/graphs/similar?${qs}`, { headers: authHeader(), cache: 'no-store' });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(JSON.stringify(json));
   return json.items || [];
