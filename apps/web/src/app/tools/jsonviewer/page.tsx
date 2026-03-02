@@ -20,7 +20,7 @@ interface Node {
   height?: number;
 }
 
-function buildTree(obj: any): Node {
+function buildTree(obj: unknown): Node {
   const id = `n${Math.random().toString(36).slice(2, 9)}`;
 
   if (obj === null || obj === undefined) {
@@ -271,7 +271,7 @@ export default function JSONViewer() {
       assignPositions(rootNode, 900, 40);
       return rootNode;
     } catch (e) {
-      console.error(e);
+      console.error(e ?? "Layout error");
       return null;
     }
   }, [parsed, error]);
@@ -283,9 +283,9 @@ export default function JSONViewer() {
       const obj = JSON.parse(text);
       setParsed(obj);
       setError("");
-    } catch (err: any) {
+    } catch (err: unknown) {
       setParsed(null);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
