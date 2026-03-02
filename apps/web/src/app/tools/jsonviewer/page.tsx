@@ -62,7 +62,9 @@ function buildTree(obj: unknown): Node {
   const isArray = Array.isArray(obj);
   const kind = isArray ? "array" : "object";
   const children: Node[] = [];
-  const entries = isArray ? obj.map((v, i) => [i.toString(), v] as [string, any]) : Object.entries(obj as Record<string, any>);
+  const entries: Array<[string, unknown]> = isArray
+    ? obj.map((v, i) => [i.toString(), v] as [string, unknown])
+    : Object.entries(obj as Record<string, unknown>);
 
   entries.forEach(([k, v]) => {
     const keyId = `k${Math.random().toString(36).slice(2, 9)}`;
