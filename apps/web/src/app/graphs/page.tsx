@@ -25,7 +25,21 @@ export default function GraphsPage() {
       setMyGraphs(my);
       setPublicGraphs(pub);
     } catch (e) {
-      setStatus(`Load failed: ${String(e)}`);
+      const msg = String(e);
+      if (msg.includes('guest_session_expired') && !loggedIn) {
+        try {
+          await createGuestSession();
+          const [my, pub] = await Promise.all([fetchGraphs('my'), fetchGraphs('public')]);
+          setMyGraphs(my);
+          setPublicGraphs(pub);
+          setStatus('Guest session refreshed.');
+          return;
+        } catch (retryErr) {
+          setStatus(`Load failed: ${String(retryErr)}`);
+          return;
+        }
+      }
+      setStatus(`Load failed: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -55,7 +69,22 @@ export default function GraphsPage() {
       setStatus('created');
       await load();
     } catch (e) {
-      setStatus(`error: ${String(e)}`);
+      const msg = String(e);
+      if (msg.includes('guest_session_expired') && !loggedIn) {
+        try {
+          await createGuestSession();
+          await createGraph({ name: name.trim(), visibility: 'private' });
+          setName('');
+          setTab('my');
+          setStatus('created');
+          await load();
+          return;
+        } catch (retryErr) {
+          setStatus(`error: ${String(retryErr)}`);
+          return;
+        }
+      }
+      setStatus(`error: ${msg}`);
     }
   };
 
