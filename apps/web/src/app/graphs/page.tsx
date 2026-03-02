@@ -124,7 +124,7 @@ export default function GraphsPage() {
           </button>
         </section>
       ) : null}
-      {canEdit && (
+      {canEdit ? (
         <section
           style={{
             marginBottom: 'var(--spacing-xl)',
