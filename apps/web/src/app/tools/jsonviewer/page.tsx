@@ -117,26 +117,29 @@ function computeLayout(node: Node): number {
     return node.subtreeWidth;
   }
 
-  // Set shape dimensions for non-leaves
+  // Set shape for non-leaves
+  node.r = 26;
   if (node.isSquare) {
-    node.width = 100;
-    node.height = 24;
-    node.r = 50; // half width for connection point
-  } else {
-    node.r = 28;
+    node.width = 110;
+    node.height = 26;
+    node.r = node.width! / 2;
   }
 
-  // Adjust subtreeWidth for single child (key/index)
+  // Compute subtreeWidth
   if (node.children.length === 1) {
-    node.subtreeWidth = Math.max(120, node.children[0].subtreeWidth + 20);
+    // KV horizontal
+    const child = node.children[0];
+    const keySpan = node.width || (node.r * 2);
+    node.subtreeWidth = keySpan + 90 + child.subtreeWidth;
   } else {
+    // Container: multiple KV pairs
     let total = 0;
-    const spacing = 55;
+    const spacing = 65;
     node.children.forEach((child, i) => {
       total += child.subtreeWidth;
       if (i < node.children.length - 1) total += spacing;
     });
-    node.subtreeWidth = Math.max(120, total);
+    node.subtreeWidth = Math.max(220, total);
   }
   return node.subtreeWidth;
 }
@@ -145,55 +148,59 @@ function assignPositions(node: Node, centerX: number, y: number) {
   node.x = centerX;
   node.y = y;
 
-  const spacing = 55;
-  let currX = centerX - node.subtreeWidth / 2;
-  node.children.forEach((child) => {
-    const childCenter = currX + child.subtreeWidth / 2;
-    assignPositions(child, childCenter, y + 120);
-    currX += child.subtreeWidth + spacing;
-  });
+  const ownHalfW = node.width ? node.width / 2 : (node.r || 22);
+  const ownHalfH = node.height ? node.height / 2 : ownHalfW;
+  node.minX = node.x - ownHalfW;
+  node.maxX = node.x + ownHalfW;
+  node.minY = node.y - ownHalfH;
+  node.maxY = node.y + ownHalfH;
 
-  // Compute bbox
   if (node.children.length === 0) {
-    const halfW = node.width ? node.width / 2 : node.r;
-    const halfH = node.height ? node.height / 2 : node.r;
-    node.minX = node.x - halfW;
-    node.maxX = node.x + halfW;
-    node.minY = node.y - halfH;
-    node.maxY = node.y + halfH;
-  } else {
-    // Own shape bbox
-    const ownHalfW = node.width ? node.width / 2 : node.r;
-    const ownHalfH = node.height ? node.height / 2 : node.r;
-    node.minX = node.x - ownHalfW;
-    node.maxX = node.x + ownHalfW;
-    node.minY = node.y - ownHalfH;
-    node.maxY = node.y + ownHalfH;
-
-    // Union with children
-    node.children.forEach((c) => {
-      node.minX = Math.min(node.minX!, c.minX);
-      node.maxX = Math.max(node.maxX!, c.maxX);
-      node.minY = Math.min(node.minY!, c.minY);
-      node.maxY = Math.max(node.maxY!, c.maxY);
-    });
-
-    const padding = 45;
-    node.minX -= padding;
-    node.maxX += padding;
-    node.minY = Math.min(node.minY!, node.y - 25);
-    node.maxY += padding;
+    return;
   }
+
+  if (node.children.length === 1) {
+    // KV horizontal same row
+    const child = node.children[0];
+    const linkGap = 45;
+    const childR = child.r || 22;
+    child.x = node.x + ownHalfW + linkGap + childR;
+    child.y = node.y;
+    assignPositions(child, child.x, child.y);
+  } else {
+    // Structural: children below
+    const childY = y + 150;
+    const spacing = 65;
+    let offsetX = centerX - node.subtreeWidth / 2;
+    node.children.forEach((child) => {
+      const childCenterX = offsetX + child.subtreeWidth / 2;
+      assignPositions(child, childCenterX, childY);
+      offsetX += child.subtreeWidth + spacing;
+    });
+  }
+
+  // Union bbox
+  node.children.forEach((c) => {
+    node.minX = Math.min(node.minX!, c.minX);
+    node.maxX = Math.max(node.maxX!, c.maxX);
+    node.minY = Math.min(node.minY!, c.minY);
+    node.maxY = Math.max(node.maxY!, c.maxY);
+  });
+  const padding = 50;
+  node.minX -= padding;
+  node.maxX += padding;
+  node.maxY += padding;
+  node.minY = Math.min(node.minY!, y - 30);
 }
 
 const getEnclosingColor = (depth: number): string => {
   const pastels = [
-    '#f0fdf4', // light green
-    '#eff6ff', // light blue
-    '#fdf4ff', // light violet
-    '#fef3c7', // light yellow
-    '#f1f5f9', // light slate
-    '#fdf2f8', // light pink
+    '#f0fdf4',
+    '#eff6ff',
+    '#fdf4ff',
+    '#fef3c7',
+    '#f1f5f9',
+    '#fdf2f8',
   ];
   return pastels[depth % pastels.length];
 };
@@ -201,15 +208,15 @@ const getEnclosingColor = (depth: number): string => {
 const getNodeColor = (kind: Node["kind"]): string => {
   switch (kind) {
     case "key":
-      return "#3b82f6"; // blue
+      return "#3b82f6";
     case "index":
-      return "#f59e0b"; // orange
+      return "#f59e0b";
     case "primitive":
-      return "#10b981"; // green
+      return "#10b981";
     case "object":
-      return "#8b5cf6"; // violet
+      return "#8b5cf6";
     case "array":
-      return "#06b6d4"; // cyan
+      return "#06b6d4";
     default:
       return "#6b7280";
   }
@@ -279,7 +286,7 @@ export default function JSONViewer() {
     try {
       const rootNode = buildTree(parsed);
       computeLayout(rootNode);
-      assignPositions(rootNode, 900, 40);
+      assignPositions(rootNode, 1200, 60);
       return rootNode;
     } catch (e) {
       console.error(e ?? "Layout error");
@@ -300,8 +307,8 @@ export default function JSONViewer() {
     }
   };
 
-  const svgWidth = 1900;
-  const svgHeight = tree ? tree.maxY + 250 : 800;
+  const svgWidth = 2400;
+  const svgHeight = tree ? tree.maxY + 350 : 800;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
@@ -351,7 +358,7 @@ export default function JSONViewer() {
                     </marker>
                   </defs>
                   <rect width={svgWidth} height={svgHeight} fill="none" />
-                  {/* Layer 1: hierarchy area circles (back) */}
+                  {/* Layer 1: hierarchy areas */}
                   {flattenNodes(tree)
                     .filter((n) => n.kind === "object" || n.kind === "array")
                     .map((n) => (
@@ -368,25 +375,55 @@ export default function JSONViewer() {
                         pointerEvents="none"
                       />
                     ))}
-                  {/* Layer 2: lines */}
+                  {/* Layer 2: links with distinct styles */}
                   {flattenEdges(tree).map(({ from, to }) => {
-                    const startY = from.y + (from.isSquare && from.height ? from.height / 2 : from.r);
-                    const endY = to.y - (to.isSquare && to.height ? to.height / 2 : to.r);
-                    const midY = (startY + endY) / 2;
+                    const isKvEdge = from.kind === "key" || from.kind === "index";
+                    let d: string;
+                    let strokeWidth: string;
+                    let strokeColor: string;
+                    let markerEnd: string | undefined;
+                    const fromR = from.width ? from.width / 2 : (from.r || 26);
+                    const fromH = from.height ? from.height / 2 : fromR;
+                    const toR = to.width ? to.width / 2 : (to.r || 22);
+                    const toH = to.height ? to.height / 2 : toR;
+
+                    if (isKvEdge) {
+                      // Thick horizontal key->value
+                      const startX = from.x + fromR;
+                      const startY = from.y;
+                      const endX = to.x - toR;
+                      const endY = to.y;
+                      d = `M ${startX} ${startY} L ${endX} ${endY}`;
+                      strokeWidth = "4.5";
+                      strokeColor = "#1e3a8a";
+                      markerEnd = undefined;
+                    } else {
+                      // Thin curved structural parent->kv
+                      const startX = from.x;
+                      const startY = from.y + fromH;
+                      const endX = to.x;
+                      const endY = to.y - toH;
+                      const midY = (startY + endY) / 2;
+                      d = `M ${startX} ${startY} Q ${startX} ${midY} ${endX} ${endY}`;
+                      strokeWidth = "1.8";
+                      strokeColor = "#6b7280";
+                      markerEnd = "url(#arrowhead)";
+                    }
+
                     return (
                       <path
                         key={`line-${from.id}-${to.id}`}
-                        d={`M ${from.x} ${startY} Q ${from.x} ${midY} ${to.x} ${endY}`}
+                        d={d}
                         fill="none"
-                        stroke="#4b5563"
-                        strokeWidth="2.2"
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        markerEnd="url(#arrowhead)"
+                        markerEnd={markerEnd}
                       />
                     );
                   })}
-                  {/* Layer 3: nodes + labels (front) */}
+                  {/* Layer 3: nodes */}
                   {flattenNodes(tree).map(renderNode)}
                 </svg>
               </div>
@@ -394,7 +431,7 @@ export default function JSONViewer() {
           </div>
         </div>
         <div className="mt-8 text-sm text-gray-600 text-center">
-          Enhanced: Filled pastel hierarchy areas by depth, curved non-overlapping arrows, horizontal array indices for clarity. Keys (blue), Indices (orange rects), Primitives (green), Objects/Arrays (colored areas), fully expanded.
+          Phase A: Key-value pairs now horizontally paired with thick blue links. Structural parent-child links thin curved gray arrows. Full-expanded, stable.
         </div>
       </div>
     </div>
