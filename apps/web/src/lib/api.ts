@@ -126,6 +126,22 @@ export async function createNode(
   return json;
 }
 
+export async function updateNode(
+  graphId: string,
+  nodeId: string,
+  patch: { label?: string; note?: string },
+): Promise<{ id: string }> {
+  const qs = new URLSearchParams({ graphId, id: nodeId });
+  const res = await fetch(`${apiBase()}/nodes?${qs}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', ...authHeader() },
+    body: JSON.stringify(patch),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(JSON.stringify(json));
+  return json;
+}
+
 export async function fetchEdges(graphId: string, shareToken?: string): Promise<EdgeItem[]> {
   const qs = new URLSearchParams({ graphId });
   if (shareToken) qs.append('shareToken', shareToken);
