@@ -445,6 +445,23 @@ exports.handler = async (event) => {
       }));
       return json(201, { ok: true, id: nodeLocalId });
     }
+    if (method === 'PUT') {
+      const nodeId = String(qs.id || '').trim();
+      if (!nodeId) return json400('missing_id');
+      const pk = `node#${graphId}#${nodeId}`;
+      const nres = await ddb.send(new GetCommand({ TableName: table, Key: { pk } }));
+      if (!nres.Item) return json404('node_not_found');
+      const node = nres.Item;
+      let payload;
+      try { payload = JSON.parse(event.body || '{}'); } catch { return json400('invalid_json'); }
+      const label = payload.label !== undefined ? String(payload.label || '').trim() : node.label;
+      const note = payload.note !== undefined ? String(payload.note || '').trim() : node.note || '';
+      await ddb.send(new PutCommand({
+        TableName: table,
+        Item: { ...node, label, note },
+      }));
+      return json(200, { id: nodeId });
+    }
     return json400('method_not_allowed');
   }
 
