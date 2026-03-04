@@ -1,9 +1,11 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import { updateNode } from '@/lib/api';
 import { Suspense, useEffect, useState, useMemo } from 'react';
 import { fetchGraph, GraphDetail, fetchNodes, NodeItem, fetchEdges, EdgeItem } from '@/lib/api';
 import { MarkdownEditor } from '@/components/MarkdownEditor';
+import { useCallback } from 'react';
 import { MarkdownViewer } from '@/components/MarkdownViewer';
 
 function NotesPageInner() {
