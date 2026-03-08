@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, useMemo } from 'react';
-import { fetchGraph, GraphDetail, fetchNodes, NodeItem, fetchEdges, EdgeItem } from '@/lib/api';
+import { fetchGraph, GraphDetail, fetchNodes, NodeItem, fetchEdges, EdgeItem, updateNode } from '@/lib/api';
 import { MarkdownEditor } from '@/components/MarkdownEditor';
 import { MarkdownViewer } from '@/components/MarkdownViewer';
 
@@ -14,7 +14,12 @@ function NotesPageInner() {
   const [nodes, setNodes] = useState<NodeItem[]>([]);
   const [edges, setEdges] = useState<EdgeItem[]>([]);
   const [status, setStatus] = useState<'loading' | 'error' | 'idle'>('loading');
+  const [loadError, setLoadError] = useState<string>('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [draftLabel, setDraftLabel] = useState('');
+  const [draftNote, setDraftNote] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string>('');
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId),
@@ -24,10 +29,12 @@ function NotesPageInner() {
   useEffect(() => {
     const loadData = async () => {
       if (!graphId) {
+        setLoadError('missing_graph_id');
         setStatus('error');
         return;
       }
       setStatus('loading');
+      setLoadError('');
       try {
         const graphData = await fetchGraph(graphId, shareToken);
         setGraph(graphData);
@@ -43,6 +50,7 @@ function NotesPageInner() {
         }
       } catch (e) {
         console.error('Load error:', e);
+        setLoadError(String(e));
         setStatus('error');
       }
     };
@@ -56,6 +64,42 @@ function NotesPageInner() {
       .map((e) => nodes.find((n) => n.id === e.from)?.label || e.from)
       .filter(Boolean);
   }, [edges, nodes, selectedNodeId]);
+
+  const canEdit = graph?.userRole === 'owner' || graph?.userRole === 'editor';
+
+  useEffect(() => {
+    if (!selectedNode) {
+      setDraftLabel('');
+      setDraftNote('');
+      setSaveStatus('idle');
+      return;
+    }
+    setDraftLabel(selectedNode.label || '');
+    setDraftNote(selectedNode.note || '');
+    setSaveStatus('idle');
+    setSaveError('');
+  }, [selectedNode?.id]);
+
+  const onSave = async () => {
+    if (!selectedNode || !canEdit) return;
+    setSaveStatus('saving');
+    setSaveError('');
+    try {
+      await updateNode(graphId, selectedNode.id, {
+        label: draftLabel.trim() || selectedNode.label,
+        note: draftNote,
+      });
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === selectedNode.id ? { ...n, label: draftLabel.trim() || n.label, note: draftNote } : n,
+        ),
+      );
+      setSaveStatus('saved');
+    } catch (e) {
+      setSaveStatus('error');
+      setSaveError(String(e));
+    }
+  };
 
   if (status === 'loading') {
     return (
@@ -77,13 +121,22 @@ function NotesPageInner() {
   if (status === 'error' || !graph) {
     return (
       <div style={{ padding: '50vh 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>Notes not found</div>
-        <div className="muted">
-          Check the URL or your permissions.{' '}
-          <a href="/graphs" className="btn secondary">
-            Back to graphs
-          </a>
+        <div style={{ fontSize: '1.5rem', marginBottom: 'var(--spacing-sm)' }}>
+          {loadError === 'missing_graph_id' ? 'Graph ID is missing' : 'Notes not found'}
         </div>
+        <div className="muted" style={{ marginBottom: 'var(--spacing-sm)' }}>
+          {loadError === 'missing_graph_id'
+            ? 'Open from graph list or append ?id=<graphId> to URL.'
+            : 'Check the URL or your permissions.'}
+        </div>
+        {loadError && loadError !== 'missing_graph_id' ? (
+          <div className="muted" style={{ fontSize: '0.75rem', marginBottom: 'var(--spacing-sm)' }}>
+            {loadError}
+          </div>
+        ) : null}
+        <a href="/graphs" className="btn secondary">
+          Back to graphs
+        </a>
       </div>
     );
   }
@@ -171,7 +224,7 @@ function NotesPageInner() {
         </div>
       </div>
 
-      {/* Center: editor placeholder area */}
+      {/* Center: editor */}
       <div
         style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 'var(--spacing-xl)' }}
       >
@@ -180,19 +233,32 @@ function NotesPageInner() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 'var(--spacing-lg)',
+            gap: 'var(--spacing-md)',
+            marginBottom: 'var(--spacing-md)',
           }}
         >
-          <h2 style={{ margin: 0 }}>{selectedNode ? selectedNode.label : 'Select a note'}</h2>
-          <div className="muted" style={{ fontSize: '0.875rem' }}>
-            T3: Explicit save coming
-          </div>
+          <input
+            value={draftLabel}
+            onChange={(e) => setDraftLabel(e.target.value)}
+            disabled={!selectedNode || !canEdit}
+            placeholder="Note title"
+            style={{ flex: 1, fontSize: '1.1rem', fontWeight: 600 }}
+          />
+          <button className="btn" onClick={() => void onSave()} disabled={!selectedNode || !canEdit || saveStatus === 'saving'}>
+            {saveStatus === 'saving' ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <div className="muted" style={{ fontSize: '0.8rem', marginBottom: 'var(--spacing-sm)' }}>
+          {canEdit
+            ? saveStatus === 'saved'
+              ? 'Saved'
+              : saveStatus === 'error'
+                ? `Save failed: ${saveError}`
+                : 'Explicit save mode'
+            : 'Read-only (viewer role)'}
         </div>
         {selectedNode ? (
-          <MarkdownEditor
-            value={selectedNode.note || ''}
-            onChange={() => {}} // placeholder, no save
-          />
+          <MarkdownEditor value={draftNote} onChange={setDraftNote} />
         ) : (
           <div
             className="muted"
@@ -225,7 +291,7 @@ function NotesPageInner() {
           <h3 style={{ margin: 0, paddingBottom: 'var(--spacing-sm)' }}>Preview</h3>
           {selectedNode ? (
             <div style={{ paddingBottom: 'var(--spacing-xl)' }}>
-              <MarkdownViewer text={selectedNode.note || ''} />
+              <MarkdownViewer text={draftNote || ''} />
             </div>
           ) : null}
         </div>
