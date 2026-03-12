@@ -137,7 +137,7 @@ function NotesPageInner() {
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 'var(--spacing-sm)' }}>
                 {myGraphs.map((g) => (
                   <li key={g.id}>
-                    <a className="btn secondary" href={`/notes?id=${g.id}`}>{g.name}</a>
+                    <a className="btn secondary" href={`/notes?id=${encodeURIComponent(g.id)}`}>{g.name}</a>
                   </li>
                 ))}
               </ul>
@@ -151,7 +151,7 @@ function NotesPageInner() {
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 'var(--spacing-sm)' }}>
                 {publicGraphs.slice(0, 20).map((g) => (
                   <li key={g.id}>
-                    <a className="btn secondary" href={`/notes?id=${g.id}`}>{g.name}</a>
+                    <a className="btn secondary" href={`/notes?id=${encodeURIComponent(g.id)}`}>{g.name}</a>
                   </li>
                 ))}
               </ul>
