@@ -15,7 +15,7 @@ export default function SharePanel({ graphId }: Props) {
     try {
       const token = await generateShareToken(graphId);
       setShareToken(token);
-      const link = `${window.location.origin}/g?id=${graphId}&token=${token}`;
+      const link = `${window.location.origin}/g?id=${encodeURIComponent(graphId)}&token=${encodeURIComponent(token)}`;
       navigator.clipboard.writeText(link);
       setStatus(`Generated & copied: ${link.slice(-50)}`);
     } catch (e) {
@@ -49,7 +49,7 @@ export default function SharePanel({ graphId }: Props) {
               wordBreak: 'break-all',
             }}
           >
-            {window.location.origin}/g?id={graphId}&token={shareToken}
+            {window.location.origin}/g?id={encodeURIComponent(graphId)}&token={encodeURIComponent(shareToken)}
           </div>
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
             <button className="btn secondary" onClick={generate}>
