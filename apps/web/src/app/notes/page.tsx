@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState, useMemo } from 'react';
-import { fetchGraph, GraphDetail, fetchNodes, NodeItem, fetchEdges, EdgeItem, updateNode } from '@/lib/api';
+import { fetchGraph, GraphDetail, fetchNodes, NodeItem, fetchEdges, EdgeItem, updateNode, fetchGraphs, GraphItem } from '@/lib/api';
 import { MarkdownEditor } from '@/components/MarkdownEditor';
 import { MarkdownViewer } from '@/components/MarkdownViewer';
 
@@ -20,6 +20,9 @@ function NotesPageInner() {
   const [draftNote, setDraftNote] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string>('');
+  const [myGraphs, setMyGraphs] = useState<GraphItem[]>([]);
+  const [publicGraphs, setPublicGraphs] = useState<GraphItem[]>([]);
+  const [selectorLoading, setSelectorLoading] = useState(false);
 
   const selectedNode = useMemo(
     () => nodes.find((n) => n.id === selectedNodeId),
@@ -27,10 +30,26 @@ function NotesPageInner() {
   );
 
   useEffect(() => {
+    if (graphId) return;
+    const loadGraphSelector = async () => {
+      setSelectorLoading(true);
+      try {
+        const [my, pub] = await Promise.all([fetchGraphs('my'), fetchGraphs('public')]);
+        setMyGraphs(my);
+        setPublicGraphs(pub);
+      } catch (e) {
+        console.error('Selector load error:', e);
+      } finally {
+        setSelectorLoading(false);
+      }
+    };
+    void loadGraphSelector();
+  }, [graphId]);
+
+  useEffect(() => {
     const loadData = async () => {
       if (!graphId) {
-        setLoadError('missing_graph_id');
-        setStatus('error');
+        setStatus('idle');
         return;
       }
       setStatus('loading');
@@ -100,6 +119,48 @@ function NotesPageInner() {
       setSaveError(String(e));
     }
   };
+
+  if (!graphId) {
+    return (
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '40px 20px' }}>
+        <h1 style={{ marginBottom: 'var(--spacing-sm)' }}>Select a graph for Notes</h1>
+        <div className="muted" style={{ marginBottom: 'var(--spacing-lg)' }}>
+          Open a graph to use the Obsidian-like notes workspace.
+        </div>
+        {selectorLoading ? <div className="muted">Loading graph list...</div> : null}
+        <div style={{ display: 'grid', gap: 'var(--spacing-lg)' }}>
+          <section>
+            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>My Graphs</h3>
+            {myGraphs.length === 0 ? (
+              <div className="muted">No private graphs found.</div>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 'var(--spacing-sm)' }}>
+                {myGraphs.map((g) => (
+                  <li key={g.id}>
+                    <a className="btn secondary" href={`/notes?id=${g.id}`}>{g.name}</a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Public Graphs</h3>
+            {publicGraphs.length === 0 ? (
+              <div className="muted">No public graphs found.</div>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 'var(--spacing-sm)' }}>
+                {publicGraphs.slice(0, 20).map((g) => (
+                  <li key={g.id}>
+                    <a className="btn secondary" href={`/notes?id=${g.id}`}>{g.name}</a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   if (status === 'loading') {
     return (
