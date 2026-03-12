@@ -6,6 +6,10 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const EDGE_TYPES = new Set(['depends_on', 'references', 'related_to', 'causes']);
 const ROLES = new Set(['owner', 'editor', 'viewer']);
 
+// TEMPORARY (dev): allow read access to private graphs for any user.
+// Keep writes protected by owner/editor checks.
+const TEMP_OPEN_PRIVATE_READ = true;
+
 function generateId(prefix = '') {
   return `${prefix}${Date.now()}#${Math.random().toString(16).slice(2, 8)}`;
 }
@@ -68,7 +72,7 @@ function getUserRole(event, graph) {
     if (tokenParts.length > 1 && tokenParts[1] === guestId) {
       return 'owner';
     }
-    return null;
+    return TEMP_OPEN_PRIVATE_READ ? 'viewer' : null;
   }
   const sub = getSub(event);
   const qs = event.queryStringParameters || {};
@@ -80,9 +84,11 @@ function getUserRole(event, graph) {
     return 'viewer';
   }
   if (!sub) {
-    return null;
+    return TEMP_OPEN_PRIVATE_READ ? 'viewer' : null;
   }
-  return graph.permissions?.[sub] || null;
+  const role = graph.permissions?.[sub] || null;
+  if (role) return role;
+  return TEMP_OPEN_PRIVATE_READ ? 'viewer' : null;
 }
 
 function canRead(role) {
