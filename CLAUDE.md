@@ -43,3 +43,18 @@ Use the scripts in `tools/autoloop/`.
 - Human approval points (recommended): before pushing, before opening PR, before any infra/deploy.
 
 See: `docs/autoloop.md`.
+
+## gstack
+
+gstack provides advanced skills for shipping, QA, design review, and web browsing.
+
+**Web browsing:** Use the `/browse` skill from gstack for all web browsing tasks. Never use `mcp__claude-in-chrome__*` tools directly.
+
+**Install for new contributors:**
+```bash
+bash tools/install-gstack.sh
+```
+Requires [bun](https://bun.sh). A SessionStart hook will auto-install gstack if bun is available.
+
+**Available gstack skills:**
+`/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/cso`, `/autoplan`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`
