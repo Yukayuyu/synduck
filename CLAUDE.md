@@ -4,10 +4,11 @@ This repository uses **guarded autopilot** rules: Claude may propose and apply c
 
 ## What this repo is
 
-A monorepo for a collaborative online editor/playground.
+A monorepo for conduck — a social knowledge platform with an Obsidian-like graph canvas.
 
-- App: `apps/web` (Next.js, TypeScript)
+- App: `apps/conduck` (Next.js, TypeScript, Tailwind)
 - Infra: `infra` (IaC; to be decided)
+- Archive: see branch `archive/original-app` for the previous synduck app (apps/web)
 
 ## Golden rules (non-negotiable)
 
@@ -18,18 +19,18 @@ A monorepo for a collaborative online editor/playground.
 5. **Stop conditions**: if stuck (same failure 2–3 times) or unclear requirements, stop and ask.
 6. **Secrets**: never print or commit secrets. No copying credentials into files or logs.
 
-## Local dev (web)
+## Local dev (conduck)
 
 ```bash
-cd apps/web
+cd apps/conduck
 npm install
 npm run dev
 ```
 
-## Checks (web)
+## Checks (conduck)
 
 ```bash
-cd apps/web
+cd apps/conduck
 npm run lint
 npm run build
 ```
