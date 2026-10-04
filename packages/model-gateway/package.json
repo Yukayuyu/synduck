@@ -1,1 +1,10 @@
-{ "name": "@acc/model-gateway", "private": true, "type": "module", "exports": "./src/index.ts", "dependencies": { "@acc/domain": "workspace:*", "zod": "^4.1.0" } }
+{
+  "name": "@acc/model-gateway",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@acc/domain": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

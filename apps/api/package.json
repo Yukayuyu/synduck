@@ -1,8 +1,15 @@
 {
-  "name": "@acc/api", "private": true, "type": "module",
+  "name": "@acc/api",
+  "private": true,
+  "type": "module",
   "dependencies": {
-    "@acc/domain": "workspace:*", "@acc/db": "workspace:*",
-    "@acc/context-compiler": "workspace:*", "@acc/model-gateway": "workspace:*",
-    "fastify": "^5.6.0", "@fastify/static": "^8.2.0", "dotenv": "^17.2.0", "zod": "^4.1.0"
+    "@acc/domain": "workspace:*",
+    "@acc/db": "workspace:*",
+    "@acc/context-compiler": "workspace:*",
+    "@acc/model-gateway": "workspace:*",
+    "fastify": "^5.6.0",
+    "@fastify/static": "^8.2.0",
+    "dotenv": "^17.2.0",
+    "zod": "^4.1.0"
   }
 }

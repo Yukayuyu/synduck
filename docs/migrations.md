@@ -10,4 +10,6 @@ View nodes reference canonical domain IDs. The first slice implements conversati
 
 Context sets and compiled packages are immutable snapshots; lifecycle and target-turn fields may transition to `used`. A preview records the graph revision. Generation rejects a stale preview instead of silently rebuilding a different input. Exclude dominates pin and select. Context pinning and node geometry are separate concepts.
 
+Context items record the source actor and turn sequence. Conversation blocks retain chronological ordering within the same priority. Explicit exclusion conservatively blocks an excerpt's whole source block through aliases and follows input-package dependencies to exclude derived assistant answers transitively. This prevents a prior answer from reintroducing removed material; it may omit more than the exact excerpt range. The inspector explains this policy.
+
 SQLite tables retain validated JSON entity payloads alongside typed indexed keys and foreign keys. Layout coordinates are part of node payloads, not conversation content. Future schema changes need a new numbered migration and a documented compatibility strategy.

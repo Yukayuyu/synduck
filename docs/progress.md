@@ -15,4 +15,33 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Checkpoints
 
 - ACC-001: complete. Frozen installation, simultaneous web/API startup, proxied health request, typecheck, lint, SQLite runtime test and production client build passed.
-- Other issues: not yet complete; see subsequent checkpoints and validation evidence.
+- ACC-002: canonical schema baseline implemented. Workspace, Conversation, Turn, ContentBlock, Excerpt, Node, structural/semantic Edge, ContextSet, ContextItem, ContextConflict and ContextPackage have TypeScript and runtime schemas. Image selectors and P1 node representations remain deferred.
+- ACC-003 / ACC-005: the slice's SQLite tables, indexes, foreign keys, atomic commands, ordered turns, context snapshots, node creation and moves are implemented. General deletion / undo and a complete per-entity CRUD API remain open; do not close the entire original issues.
+- ACC-004: canvas pan / zoom, drag, React Flow selection and persisted viewport implemented. Browser test renders 100+ nodes and performs a real drag before reload.
+- ACC-006: conversation / turn engine implemented with parent and sequence metadata, model identifiers, context references and failure lifecycle. Storage accepts ordinal content blocks; the current UI generates one text block per turn.
+- ACC-007 / ACC-008: exact text selection, snapshot/hash provenance, return-to-source highlighting and atomic excerpt + branch creation implemented; rollback and stale-source tests pass.
+- ACC-009: fixed-height canvas cards, compact zoom representation and full conversation focus panel implemented. Rich four-level semantic representations remain open.
+- ACC-010: per-turn selection, workspace pin/exclude/restore, immutable context snapshots and stale-preview rejection implemented. Exclude has highest precedence.
+- ACC-011 / ACC-012: deterministic resolve / structural retrieval / scoring / deduplication / budget omissions / lifecycle / conflict package baseline implemented. Explicit over-budget inputs block sending. No model summarization, lexical retrieval or model-based conflict classifier is included.
+- ACC-013: inspector shows included sources, roles, scores, explanations, exclusions, conflicts, conservative estimates, raw package and historical turn packages. Clicking locates a node. Hover-to-highlight and more detailed source-map navigation remain open.
+- ACC-014 / ACC-015: provider-neutral gateway, configurable OpenAI Responses SSE adapter, validated output, source-ID checks, temporary drafts and retryable generation implemented. Demo and injected-transport tests pass. Live provider verification remains pending credentials and model selection, so full real-AI acceptance is not claimed.
+- ACC-021: unit/integration regressions and two browser flows implemented; actual model answer-quality comparisons and machine-readable quality evaluation reports remain open.
+- ACC-022: no provider secrets in client payloads, no raw payload logging, local-only host/origin checks, safe error normalization, immutable input packages and recoverable generation errors implemented. Full audit tooling and destructive action UX are still open.
+- ACC-016–020 / ACC-023–025: not implemented. The native export/import priority differs between the source's MVP table and its issue list; it remains an explicit follow-up rather than being silently treated as completed.
+
+## Validation evidence
+
+- Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` (21 tests), `pnpm build` and `pnpm test:e2e` (2 Chromium tests) pass.
+- Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
+- Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
+- SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
+- SSE transport tests fragment UTF-8 bytes and structured JSON; invalid sources, incomplete responses and HTTP failures are rejected without leaking raw responses.
+- Context policy excludes original sources, aliases and transitive dependent answers even if the model reported no citations. Human prompts remain explicit user input.
+- CI workflow is included. Its hosted execution has not been observed in this task.
+
+## Next milestone
+
+1. Configure a real provider/model, then verify the same end-to-end flow with actual structured streamed responses.
+2. Implement native project export/import, then reference-safe deletion/undo.
+3. Complete the remaining P0 acceptance details and run context-quality fixtures against raw-history / ancestor-only baselines before expanding into P1.
