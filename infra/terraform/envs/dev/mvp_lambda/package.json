@@ -1,9 +1,0 @@
-{
-  "name": "synduck-mvp-lambda",
-  "private": true,
-  "type": "commonjs",
-  "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.888.0",
-    "@aws-sdk/lib-dynamodb": "^3.888.0"
-  }
-}
