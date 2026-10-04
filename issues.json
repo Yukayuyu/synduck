@@ -1,0 +1,363 @@
+[
+  {
+    "id": "ACC-001",
+    "title": "[P0] Bootstrap monorepo and local development environment",
+    "description": "建立 TypeScript monorepo、apps/web、apps/api、packages/domain、packages/db、packages/context-compiler、packages/model-gateway、packages/layout；加入 lint、typecheck、test、dev scripts、.env.example 與 AGENTS.md。",
+    "acceptance_criteria": [
+      "pnpm install 可成功完成",
+      "pnpm dev 可同時啟動 web 與 api",
+      "pnpm typecheck、pnpm lint、pnpm test 可執行",
+      "repository 包含 AGENTS.md 與 docs 目錄",
+      "API key 不會被打包到 browser client"
+    ],
+    "estimate_hours": 6
+  },
+  {
+    "id": "ACC-002",
+    "title": "[P0] Implement canonical domain model and validation schemas",
+    "description": "建立 Workspace、Conversation、Turn、ContentBlock、Excerpt、Node、Edge、ContextSet、ContextItem、ContextConflict、ContextState 的 TypeScript types 與 runtime schemas。",
+    "acceptance_criteria": [
+      "所有核心 entity 都有 canonical TypeScript type",
+      "所有 persistent payload 都有 runtime validation schema",
+      "Node 與 domain entity 不共用同一 type",
+      "StructuralEdge 與 SemanticEdge 可在 type system 區分",
+      "ContextState enum 包含 active、confirmed、hypothesis、superseded、deprecated、rejected、reference、unknown",
+      "schema fixtures 通過 unit tests"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-003",
+    "title": "[P0] Add SQLite schema, migrations and repository layer",
+    "description": "建立 SQLite tables、foreign keys、indexes 與 migration mechanism，實作 WorkspaceRepository、ConversationRepository、GraphRepository、ContextRepository。",
+    "acceptance_criteria": [
+      "全新 database 可從零 migrate",
+      "workspace、conversation、turn、content block、excerpt、node、edge、context set 可 CRUD",
+      "foreign key violation 被拒絕",
+      "app restart 後資料可還原",
+      "schema version 被記錄",
+      "repository interface 不暴露 provider-specific LLM types"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-004",
+    "title": "[P0] Build infinite Canvas shell",
+    "description": "使用 React Flow 建立 pan、zoom、node drag、edge render、selection、viewport persistence 的 Canvas shell。",
+    "acceptance_criteria": [
+      "可以 pan 與 zoom",
+      "可以拖曳 node",
+      "可以選取單個與多個 node",
+      "viewport 可保存與還原",
+      "100 個基本 node 可正常顯示與操作",
+      "Canvas UI state 不直接等同 domain persistence object"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-005",
+    "title": "[P0] Implement Node and Edge CRUD with persistence",
+    "description": "Canvas node/edge 建立、移動、刪除、重載皆同步至 domain/repository layer；建立 structural 與 semantic edge rendering distinction。",
+    "acceptance_criteria": [
+      "新增 node reload 後仍存在",
+      "node position reload 後一致",
+      "structural edge 與 semantic edge 使用不同 representation",
+      "AI proposed semantic edge 有 pending 狀態",
+      "未確認 semantic edge 不被當成 confirmed fact",
+      "刪除 operation 有 referential integrity handling"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-006",
+    "title": "[P0] Implement Conversation, Turn and ContentBlock engine",
+    "description": "建立 Conversation 的新增、Turn append、human/assistant actor、ContentBlock persistence 與 conversation rendering。",
+    "acceptance_criteria": [
+      "可以建立 Conversation",
+      "可以連續新增 human 與 assistant Turns",
+      "每個 Turn 有 parent_turn_id 與 sequence",
+      "Turn 可包含多個 ContentBlock",
+      "assistant Turn 可保存 model_provider、model_id、input_context_set_id",
+      "conversation reload 後 ordering 正確"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-007",
+    "title": "[P0] Implement first-class Text Excerpt and provenance",
+    "description": "讓使用者選取 ContentBlock 文字後建立 Excerpt，保存 source block、character selector、exact snapshot 與 source content hash。",
+    "acceptance_criteria": [
+      "使用者可選取任意文字範圍",
+      "選取後可建立 Excerpt",
+      "Excerpt 保存 source_block_id",
+      "Excerpt 保存 start_char、end_char、exact text",
+      "Excerpt 保存建立當下 source content hash",
+      "可由 Excerpt 反向定位並 highlight 原始文字",
+      "來源改變時可偵測 selector stale"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-008",
+    "title": "[P0] Implement Branch from Excerpt flow",
+    "description": "從 Excerpt 一鍵建立新 Conversation branch，產生必要 structural edges 並進入新 composer。",
+    "acceptance_criteria": [
+      "Branch action 建立新 Conversation",
+      "新 Conversation 記錄 branch_origin_excerpt_id",
+      "建立 excerpt_from 或 branch_from structural relation",
+      "原 Conversation 不被修改或截斷",
+      "新 branch 可以獨立繼續 AI 對話",
+      "重載後 branch provenance 完整"
+    ],
+    "estimate_hours": 8
+  },
+  {
+    "id": "ACC-009",
+    "title": "[P0] Add Conversation focus layer and semantic zoom baseline",
+    "description": "長 Conversation 不直接無限撐高 Canvas node；建立 overview、summary、conversation、focus 四層 representation 與 breadcrumb。",
+    "acceptance_criteria": [
+      "遠距 zoom 僅顯示 compact representation",
+      "近距 zoom 顯示更多 Conversation information",
+      "雙擊 Conversation 可進入 focus layer",
+      "focus layer 顯示完整 Turns",
+      "離開 focus layer 後恢復原 Canvas viewport",
+      "focus layer 有 breadcrumb"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-010",
+    "title": "[P0] Implement Context Set selection controls",
+    "description": "建立 Select for context、Pin、Exclude、Unpin、Restore 等 UI，並建立 draft ContextSet。",
+    "acceptance_criteria": [
+      "node 可被當輪 select",
+      "node 可 workspace pin",
+      "node 可 explicit exclude",
+      "同一 node 的 conflicting UI state 有 deterministic resolution",
+      "送出 prompt 時建立 immutable ContextSet snapshot",
+      "ContextSet 保存 selected、pinned、excluded IDs"
+    ],
+    "estimate_hours": 8
+  },
+  {
+    "id": "ACC-011",
+    "title": "[P0] Implement Context Compiler Resolve and Retrieve stages",
+    "description": "建立 Context Compiler 第一階段：解析 node/domain references、excerpt sources、context states、structural neighborhood，並產生 candidate set。",
+    "acceptance_criteria": [
+      "selected、pinned、excluded node 可解析為 canonical entities",
+      "Excerpt 可解析到 source block",
+      "branch origin 可加入 candidate pool",
+      "direct structural neighbors 可取得",
+      "missing references 產生明確 diagnostic",
+      "excluded node 不會重新從 structural retrieval 混入",
+      "stage 有 unit tests"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-012",
+    "title": "[P0] Implement Context Compiler Rank, Compress, Conflict and Build stages",
+    "description": "完成可解釋 ranking、token budget、summary-based compression、context state policy、conflict records 與 ContextPackage builder。",
+    "acceptance_criteria": [
+      "explicit selected context 不因低 ranking 被靜默移除",
+      "rejected context 預設排除",
+      "superseded context 不被當成 current fact",
+      "ContextItem 保存 score 與 reason",
+      "超過 budget 時可透過 summary 或 low-priority exclusion 壓縮",
+      "summary 仍保存 source IDs",
+      "ContextPackage 包含 included、excluded、conflicts 與 budget",
+      "相同 fixture 產生 deterministic policy result"
+    ],
+    "estimate_hours": 16
+  },
+  {
+    "id": "ACC-013",
+    "title": "[P0] Build Context Inspector",
+    "description": "顯示即將送給模型以及實際記錄於 ContextPackage 的 selected、pinned、retrieved、excluded、conflict 與 token budget。",
+    "acceptance_criteria": [
+      "Inspector 顯示 included context",
+      "Inspector 顯示 excluded context 與 reason",
+      "Inspector 顯示 conflict",
+      "Inspector 顯示 ContextItem role/state",
+      "點擊 ContextItem 可定位 Canvas node",
+      "hover 可 highlight Canvas node",
+      "UI 使用 Included in model input 等精確語言，不宣稱模型一定關注該內容",
+      "assistant Turn 可反查其 ContextPackage"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-014",
+    "title": "[P0] Implement provider-neutral Model Gateway with structured outputs",
+    "description": "建立 LLMProvider interface，至少完成一個可工作的 OpenAI 或 Anthropic adapter；role calls 使用 structured output 並通過 local validation。",
+    "acceptance_criteria": [
+      "domain code 不引用 provider raw SDK response type",
+      "provider/model 可由設定切換",
+      "structured result 通過 local schema validation 才返回 application layer",
+      "invalid structured output 不可寫入 database",
+      "API error 有 normalized error type",
+      "provider secrets 僅存在 server environment"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-015",
+    "title": "[P0] Integrate Answer Generator and streaming conversation response",
+    "description": "將 ContextPackage 傳給 Answer Generator，支援回覆 streaming、Turn lifecycle、used_source_ids 與 proposed graph updates。",
+    "acceptance_criteria": [
+      "送出 prompt 會先建立 ContextSet/ContextPackage",
+      "assistant response 可 streaming 顯示",
+      "完成後保存 Turn 與 ContentBlocks",
+      "assistant Turn 保存 input_context_set_id",
+      "used_source_ids 被保存",
+      "graph updates 只作 proposal，不直接寫入 confirmed graph",
+      "generation failure 可顯示並保留可重試狀態"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-016",
+    "title": "[P1] Implement Summarizer and Semantic Linker roles",
+    "description": "建立 faithful Summarizer 與 Semantic Linker role workflows；summary 保留 provenance，semantic edge 只建立 proposal。",
+    "acceptance_criteria": [
+      "Summarizer output 包含 source_ids",
+      "Summarizer 不將 rejected/hypothesis 自動改成 confirmed",
+      "Semantic Linker 僅使用允許的 semantic edge types",
+      "Semantic Linker 不可建立 reply_to/branch_from",
+      "AI edge 有 confidence、reason、evidence",
+      "AI edge 預設 confirmed=false",
+      "使用者可 accept/reject proposal"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-017",
+    "title": "[P1] Implement Layout Assist and LayoutIntent workflow",
+    "description": "建立 Manual/Assist/Auto mode model，先完成 Assist：LLM 提 semantic intent，layout engine 計算 geometry，使用者 preview 後確認。",
+    "acceptance_criteria": [
+      "Manual mode 不由 AI 移動 node",
+      "Assist mode 顯示 ghost preview",
+      "使用者可 accept 或 reject",
+      "pinned node 永遠不被 LayoutIntent 移動",
+      "LLM output 不直接包含未驗證 database mutation",
+      "geometry 由 deterministic layout engine 計算",
+      "layout operation 可 undo"
+    ],
+    "estimate_hours": 12
+  },
+  {
+    "id": "ACC-018",
+    "title": "[P1] Implement rectangular Image Region addressing",
+    "description": "支援圖片上框選矩形區域、建立 region selector、由 region 建 Excerpt/Node 並開啟 discussion branch。",
+    "acceptance_criteria": [
+      "使用者可在 image node 上拖曳矩形",
+      "保存 normalized x、y、width、height",
+      "保存 source asset ID 與 source pixel dimensions",
+      "可由 selector 重新顯示 overlay",
+      "由 region 建立的 branch 保留 provenance",
+      "圖片 resize 不改變 semantic region"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-019",
+    "title": "[P1] Add SQLite FTS5 lexical retrieval",
+    "description": "對 ContentBlock、Excerpt、Summary 建 FTS5 index，納入 Context Compiler Retrieve stage。",
+    "acceptance_criteria": [
+      "text/markdown content 可全文搜尋",
+      "搜尋結果有 relevance ordering",
+      "新增與更新 ContentBlock 時 index 同步",
+      "deleted content 不出現在結果",
+      "Context Compiler 可將 FTS results 納入 candidate pool",
+      "顯式 excluded item 即使 FTS 命中仍不會加入 package"
+    ],
+    "estimate_hours": 8
+  },
+  {
+    "id": "ACC-020",
+    "title": "[P1] Implement project package and JSON Canvas import/export adapter",
+    "description": "建立 canonical project export/import，另建立 JSON Canvas mapping adapter；JSON Canvas 只作交換格式，不取代 internal domain model。",
+    "acceptance_criteria": [
+      "workspace 可完整 export",
+      "export 包含 domain entities、graph、positions、settings 與 assets manifest",
+      "import 後 provenance IDs 可保持或有 deterministic remap",
+      "基本 JSON Canvas text/file/link/group 可 import",
+      "internal conversation semantics 不被降格成 JSON Canvas canonical schema",
+      "unsupported mapping 有 warning"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-021",
+    "title": "[P0] Build automated tests and Context Compiler evaluation harness",
+    "description": "建立 unit、integration、E2E 與 context quality fixture；比較 ancestor-only、raw-history 與 compiled-context baseline。",
+    "acceptance_criteria": [
+      "domain schema 有 unit tests",
+      "branch/excerpt flow 有 integration test",
+      "Context Compiler 每個 stage 有 fixture",
+      "superseded/rejected conflict cases 有 regression tests",
+      "E2E 覆蓋 create conversation -> excerpt -> branch -> answer",
+      "eval 能比較 raw history 與 compiled context",
+      "eval result 可輸出 machine-readable report"
+    ],
+    "estimate_hours": 16
+  },
+  {
+    "id": "ACC-022",
+    "title": "[P0] Add error handling, privacy boundaries and audit diagnostics",
+    "description": "建立 local diagnostic log、LLM request metadata audit、API key boundary、asset path validation 與 destructive action safeguards。",
+    "acceptance_criteria": [
+      "log 不記錄 API key",
+      "LLM request 可追到 context_package_id",
+      "使用者可知道哪些資料會送到模型 provider",
+      "asset access 被限制在 configured project directories",
+      "destructive graph operations 可 undo 或明確確認",
+      "provider failure 不破壞 existing graph state"
+    ],
+    "estimate_hours": 8
+  },
+  {
+    "id": "ACC-023",
+    "title": "[P1] Add Context lifecycle and supersession UX",
+    "description": "為 node/context fact 提供 active、confirmed、hypothesis、superseded、deprecated、rejected、reference 等狀態操作與 visual language。",
+    "acceptance_criteria": [
+      "使用者可修改 context state",
+      "supersedes relation 可連接舊新 node",
+      "superseded/rejected node 有明顯但不干擾的歷史樣式",
+      "Context Compiler 尊重 state policy",
+      "Inspector 可說明因 state 被排除或降權",
+      "state changes 有 history"
+    ],
+    "estimate_hours": 10
+  },
+  {
+    "id": "ACC-024",
+    "title": "[P2] Evaluate embedding and RAG retrieval",
+    "description": "在 FTS baseline 之上研究 embedding retrieval、hybrid ranking、contextual chunking 與 reranking；只有 eval 證明改善後才進 production path。",
+    "acceptance_criteria": [
+      "建立固定 retrieval benchmark",
+      "測量 lexical-only baseline",
+      "測量 embedding-only baseline",
+      "測量 hybrid retrieval",
+      "記錄 recall、context size、latency 與 cost",
+      "未達預定改善門檻時不修改 default retrieval path",
+      "研究報告記錄 chunk/provenance strategy"
+    ],
+    "estimate_hours": 16
+  },
+  {
+    "id": "ACC-025",
+    "title": "[P2] Collaboration architecture spike",
+    "description": "研究多人 Canvas、presence、node movement conflict、conversation append conflict、offline merge 與 CRDT/Yjs 類方案，僅產出 architectural decision record，不直接實作完整 collaboration。",
+    "acceptance_criteria": [
+      "定義 collaboration consistency requirements",
+      "區分 ephemeral presence 與 persistent domain state",
+      "定義 node position conflict policy",
+      "定義 simultaneous Turn/Excerpt creation policy",
+      "比較至少兩種 synchronization approaches",
+      "產出 ADR 與 prototype recommendation",
+      "不破壞 single-user local-first data model"
+    ],
+    "estimate_hours": 8
+  }
+]

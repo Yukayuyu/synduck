@@ -1,0 +1,7 @@
+{
+  "name": "@acc/web", "private": true, "type": "module",
+  "dependencies": {
+    "@acc/domain": "workspace:*", "@xyflow/react": "^12.8.0",
+    "react": "^19.2.0", "react-dom": "^19.2.0", "lucide-react": "^0.468.0"
+  }
+}
