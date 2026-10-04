@@ -36,6 +36,7 @@ This repository starts from the cleared `main`. The previous application remains
 5. An excerpt preserves its source block, half-open UTF-16 range, exact text and SHA-256 source hash. **回到来源并高亮** navigates back to that range.
 6. Use the card's **+**, pin and exclude controls to choose the next input. A branch starts with its excerpt, not the whole parent conversation. Exclusion also follows previous answers that depended on an excluded source.
 7. Drag cards and pan / zoom; positions and viewport persist in SQLite. Double-click a card for the reading layer. Earlier assistant turns retain their own input packages.
+8. Open **备份与恢复** in the top bar to download a native project file, validate an imported backup, or preview an automatic recovery point.
 
 The default is explicitly labelled **local demo**. It generates deterministic demonstration text, makes no model request, and is suitable for exercising the UI. It is not an AI answer or an answer-quality evaluation.
 
@@ -61,4 +62,18 @@ The adapter calls the Responses API with `store: false`, a strict JSON schema an
 - Chromium is picked from `/usr/bin/chromium` when present. Otherwise run `pnpm exec playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
 - The service is intended for a single user on loopback. It has no public hosting / multi-user authentication layer.
 
-Package import/export, graph deletion/undo, generated summaries, lexical retrieval and the other full-backlog features are not part of this slice. See `docs/progress.md` for exact scope and remaining work.
+Graph deletion/undo, generated summaries, lexical retrieval, the JSON Canvas adapter and the other full-backlog features are not part of this slice. See `docs/progress.md` for exact scope and remaining work.
+
+## Native project backups
+
+The top-bar **备份与恢复** dialog exports a versioned `.json` project containing the complete text workspace: conversations, turns, blocks, excerpts, nodes, edges, positions, selection settings, context sets and immutable context packages. It preserves canonical IDs and source provenance. Provider keys, server configuration and unrelated local files are never exported.
+
+Import has two steps: **validate / preview**, then explicitly check **我确认用此备份替换当前工作区** and confirm. Validation checks the format, checksum, IDs, referential integrity, turn ordering, source hashes, exact excerpt ranges and recorded model-input references. A fingerprint detects intervening edits, including geometry changes, so stale previews cannot silently overwrite new work.
+
+Replacement is transactional and automatically stores the previous workspace in `recovery_snapshots` in the same SQLite database. **导入前的恢复点 → 预览恢复** follows the same confirmation process. These recovery points protect against a mistaken import, not loss of the database file; download a separate backup for that. The UI lists the latest 20 recovery points; older records remain in the database and are not automatically deleted.
+
+- Import replaces the current single workspace; it does not merge graphs. IDs stay the same, while the live workspace revision advances to invalidate old send previews.
+- The current native format is version 1 with a 12 MiB limit. It supports the application's text-based data. Asset-bearing / unknown future fields are rejected explicitly, not silently discarded.
+- Backups include original conversation text and model-input snapshots. Keep the downloaded file private as appropriate.
+- The SHA-256 checksum detects corruption; it is not an authenticity signature. Browser content remains escaped text.
+- Export/import waits until active generation finishes. Native project files and Obsidian `.canvas` files are different formats; a JSON Canvas adapter remains on the backlog.

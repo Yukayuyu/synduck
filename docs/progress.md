@@ -27,21 +27,24 @@ First milestone: the demonstrable vertical slice from the supplied specification
 - ACC-014 / ACC-015: provider-neutral gateway, configurable OpenAI Responses SSE adapter, validated output, source-ID checks, temporary drafts and retryable generation implemented. Demo and injected-transport tests pass. Live provider verification remains pending credentials and model selection, so full real-AI acceptance is not claimed.
 - ACC-021: unit/integration regressions and two browser flows implemented; actual model answer-quality comparisons and machine-readable quality evaluation reports remain open.
 - ACC-022: no provider secrets in client payloads, no raw payload logging, local-only host/origin checks, safe error normalization, immutable input packages and recoverable generation errors implemented. Full audit tooling and destructive action UX are still open.
-- ACC-016–020 / ACC-023–025: not implemented. The native export/import priority differs between the source's MVP table and its issue list; it remains an explicit follow-up rather than being silently treated as completed.
+- ACC-020 (native-project part): versioned text-project export/import, full provenance/ID preservation, integrity and reference validation, explicit replacement preview, stale-preview protection and transactional recovery snapshots implemented. The JSON Canvas adapter and asset transport remain open, so the full mixed-scope issue is not closed.
+- ACC-016–019 / ACC-023–025: not implemented.
 
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test` (21 tests), `pnpm build` and `pnpm test:e2e` (2 Chromium tests) pass.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 29 unit/integration tests pass; all 4 browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
 - SSE transport tests fragment UTF-8 bytes and structured JSON; invalid sources, incomplete responses and HTTP failures are rejected without leaking raw responses.
 - Context policy excludes original sources, aliases and transitive dependent answers even if the model reported no citations. Human prompts remain explicit user input.
 - CI workflow is included. Its hosted execution has not been observed in this task.
+- Native project validation covers round-trip provenance, recovery, tampered checksums, dangling references, duplicate IDs, unsupported assets/fields, transaction rollback, explicit API confirmation, geometry-only stale previews, migration from v1 and active-generation protection.
+- Browser coverage downloads a real project file, uploads it for preview, verifies the confirmation gate, restores IDs and sources, then restores the automatic recovery point. A separate malformed-file case confirms no replacement is offered. The project browser suite creates its own data and can run independently.
 
 ## Next milestone
 
 1. Configure a real provider/model, then verify the same end-to-end flow with actual structured streamed responses.
-2. Implement native project export/import, then reference-safe deletion/undo.
+2. Implement reference-safe deletion/undo; native text-project backup and recovery are now available.
 3. Complete the remaining P0 acceptance details and run context-quality fixtures against raw-history / ancestor-only baselines before expanding into P1.

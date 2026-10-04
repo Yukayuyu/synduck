@@ -13,3 +13,11 @@ Context sets and compiled packages are immutable snapshots; lifecycle and target
 Context items record the source actor and turn sequence. Conversation blocks retain chronological ordering within the same priority. Explicit exclusion conservatively blocks an excerpt's whole source block through aliases and follows input-package dependencies to exclude derived assistant answers transitively. This prevents a prior answer from reintroducing removed material; it may omit more than the exact excerpt range. The inspector explains this policy.
 
 SQLite tables retain validated JSON entity payloads alongside typed indexed keys and foreign keys. Layout coordinates are part of node payloads, not conversation content. Future schema changes need a new numbered migration and a documented compatibility strategy.
+
+## 002 / native project format 1
+
+Adds `recovery_snapshots(id, created_at, name, payload)`. This is an additive, transactional migration; existing graph tables, IDs and source data remain intact. Startup and `pnpm db:migrate` apply it idempotently. A test opens an existing version-1 database and verifies that migration preserves its full graph snapshot.
+
+Native project JSON declares `format: ai-context-canvas`, `format_version: 1`, an export timestamp, the canonical snapshot, an empty asset manifest and a SHA-256 checksum over canonicalized JSON. Object keys are sorted for checksum computation; array order is retained. Files are limited to 12 MiB, and unsupported fields/assets are rejected to avoid silent data loss.
+
+Import validates references and hashes before writing, requires explicit confirmation plus the current workspace identity/revision/full-snapshot fingerprint, and saves an automatic recovery copy in the same transaction. All existing workspace graph rows are replaced in foreign-key-safe order, with foreign keys still enabled. An insertion failure rolls back both the replacement and its recovery record. Restored entity IDs and historical context packages are preserved. The live workspace revision advances beyond both old and imported revisions to invalidate any existing preview. Context and graph schemas remain domain version 0.1.0.

@@ -12,6 +12,7 @@ import {
   ScanLine,
   CircleHelp,
   Database,
+  FolderArchive,
   LoaderCircle,
 } from 'lucide-react';
 import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
@@ -19,6 +20,7 @@ import { api, streamAnswer, type ClientState } from './api';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
 import { Focus, type SelectedText, type SourceHighlight } from './Focus';
+import { ProjectDialog } from './ProjectDialog';
 import './styles.css';
 
 export default function App() {
@@ -39,6 +41,8 @@ export default function App() {
   const [newDialog, setNewDialog] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [help, setHelp] = useState(false);
+  const [projectDialog, setProjectDialog] = useState(false);
+  const [canvasEpoch, setCanvasEpoch] = useState(0);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
   const generationLock = useRef(false);
@@ -251,6 +255,15 @@ export default function App() {
           <small>EARLY ACCESS</small>
         </a>
         <div className="header-right">
+          <button
+            className="icon-button"
+            aria-label="备份与恢复"
+            title="备份与恢复"
+            disabled={busy}
+            onClick={() => setProjectDialog(true)}
+          >
+            <FolderArchive size={19} />
+          </button>
           <span className="mode-pill">
             <span className="status-dot" />
             {state.provider.demo ? '本地演示' : state.provider.model || '待配置模型'}
@@ -345,7 +358,7 @@ export default function App() {
             </button>
           </div>
           <div className="canvas-stage">
-            <ReactFlowProvider>
+            <ReactFlowProvider key={canvasEpoch}>
               <Canvas
                 state={state}
                 activeNode={activeId}
@@ -536,6 +549,24 @@ export default function App() {
             </button>
           </section>
         </div>
+      )}
+      {projectDialog && (
+        <ProjectDialog
+          onClose={() => setProjectDialog(false)}
+          onImported={async () => {
+            if (viewportTimer.current) clearTimeout(viewportTimer.current);
+            invalidate();
+            setActiveId(null);
+            setSelected([]);
+            setPrompts({});
+            setInspected(null);
+            setHighlight(null);
+            setLocate(null);
+            await refresh();
+            setCanvasEpoch((epoch) => epoch + 1);
+            setProjectDialog(false);
+          }}
+        />
       )}
     </div>
   );

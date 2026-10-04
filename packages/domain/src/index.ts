@@ -285,6 +285,54 @@ export interface AppSnapshot extends GraphSnapshot {
   context_sets: ContextSet[];
   packages: ContextPackage[];
 }
+
+export const MAX_PROJECT_BYTES = 12 * 1024 * 1024;
+export const ProjectSnapshotSchema = z
+  .object({
+    workspace: WorkspaceSchema.strict(),
+    conversations: z.array(ConversationSchema.strict()).max(10000),
+    turns: z.array(TurnSchema.strict()).max(100000),
+    blocks: z.array(ContentBlockSchema.strict()).max(100000),
+    excerpts: z.array(ExcerptSchema.strict()).max(100000),
+    nodes: z.array(NodeSchema.strict()).max(100000),
+    edges: z.array(EdgeSchema).max(200000),
+    context_sets: z.array(ContextSetSchema.strict()).max(100000),
+    packages: z.array(ContextPackageSchema.strict()).max(100000),
+  })
+  .strict();
+
+export const ProjectFileSchema = z
+  .object({
+    format: z.literal('ai-context-canvas'),
+    format_version: z.literal(1),
+    exported_at: Time,
+    snapshot: ProjectSnapshotSchema,
+    // The current application has no asset ingestion. Reject rather than drop
+    // unsupported files, paths or binary payloads from a future format.
+    assets: z.array(z.never()).max(0),
+    checksum: Hash,
+  })
+  .strict();
+export type ProjectFile = z.infer<typeof ProjectFileSchema>;
+export interface ProjectPreview {
+  name: string;
+  checksum: string;
+  counts: {
+    conversations: number;
+    turns: number;
+    excerpts: number;
+    nodes: number;
+    contexts: number;
+  };
+  warnings: string[];
+  current: {
+    workspace_id: string;
+    revision: number;
+    snapshot_hash: string;
+    name: string;
+    nodes: number;
+  };
+}
 export const CreateConversationSchema = z
   .object({ title: z.string().trim().min(1).max(160) })
   .strict();

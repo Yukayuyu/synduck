@@ -10,7 +10,16 @@ import {
   Id,
   type ContextSet,
 } from '@acc/domain';
-import { Store, id, now } from '@acc/db';
+import {
+  Store,
+  id,
+  now,
+  exportProject,
+  previewProject,
+  importProject,
+  listRecoverySnapshots,
+  recoveryProject,
+} from '@acc/db';
 import { compileContext } from '@acc/context-compiler';
 import { type ModelProvider } from '@acc/model-gateway';
 
@@ -40,6 +49,10 @@ export function createApp(store: Store, provider: ModelProvider) {
       return reply.code(415).send({ error: 'json_required', message: '需要 JSON 请求。' });
   });
   app.setErrorHandler((error, _request, reply) => {
+    if ((error as { statusCode?: number }).statusCode === 413)
+      return reply
+        .code(413)
+        .send({ error: 'payload_too_large', message: '文件过大，项目备份上限为 12 MiB。' });
     if (error instanceof z.ZodError)
       return reply
         .code(400)
@@ -251,6 +264,44 @@ export function createApp(store: Store, provider: ModelProvider) {
     } finally {
       reply.raw.end();
     }
+  });
+  app.get('/api/project/export', async (_request, reply) => {
+    const project = exportProject(store);
+    return reply
+      .header('Cache-Control', 'no-store')
+      .header(
+        'Content-Disposition',
+        `attachment; filename="context-canvas-${project.exported_at.slice(0, 10)}.json"`,
+      )
+      .send(project);
+  });
+  app.post('/api/project/validate', { bodyLimit: 16 * 1024 * 1024 }, async (request) => {
+    const { project } = z.object({ project: z.unknown() }).strict().parse(request.body);
+    return previewProject(store, project);
+  });
+  app.post('/api/project/import', { bodyLimit: 16 * 1024 * 1024 }, async (request) => {
+    const input = z
+      .object({
+        project: z.unknown(),
+        confirm_replace: z.literal(true),
+        expected: z
+          .object({
+            workspace_id: Id,
+            revision: z.number().int().nonnegative(),
+            snapshot_hash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+          })
+          .strict(),
+      })
+      .strict()
+      .parse(request.body);
+    return importProject(store, input.project, input.expected);
+  });
+  app.get('/api/project/recovery', async (_request, reply) =>
+    reply.header('Cache-Control', 'no-store').send(listRecoverySnapshots(store)),
+  );
+  app.get('/api/project/recovery/:id', async (request, reply) => {
+    const { id } = z.object({ id: Id }).parse(request.params);
+    return reply.header('Cache-Control', 'no-store').send(recoveryProject(store, id));
   });
   return app;
 }

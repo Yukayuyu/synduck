@@ -71,6 +71,14 @@ export class Store {
         this.db.prepare('INSERT INTO schema_migrations VALUES(1, ?)').run(now());
       });
     }
+    if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get()) {
+      this.transaction(() => {
+        this.db.exec(
+          'CREATE TABLE recovery_snapshots(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));',
+        );
+        this.db.prepare('INSERT INTO schema_migrations VALUES(2, ?)').run(now());
+      });
+    }
     if (this.all('workspaces', WorkspaceSchema).length === 0) {
       const at = now();
       this.saveWorkspace({
@@ -483,3 +491,12 @@ export class Store {
       this.failAnswer(t.id, '服务重启中断了生成，可重试。');
   }
 }
+
+export {
+  exportProject,
+  validateProject,
+  previewProject,
+  importProject,
+  listRecoverySnapshots,
+  recoveryProject,
+} from './project.ts';
