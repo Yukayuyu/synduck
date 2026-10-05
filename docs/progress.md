@@ -33,7 +33,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 29 unit/integration tests pass; all 4 browser tests pass. The 2 project tests also pass when run independently.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 38 unit/integration tests pass; all 7 Chromium browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
@@ -48,3 +48,11 @@ First milestone: the demonstrable vertical slice from the supplied specification
 1. Configure a real provider/model, then verify the same end-to-end flow with actual structured streamed responses.
 2. Implement reference-safe deletion/undo; native text-project backup and recovery are now available.
 3. Complete the remaining P0 acceptance details and run context-quality fixtures against raw-history / ancestor-only baselines before expanding into P1.
+
+## ChatGPT account and cross-device extension (2026-10-05)
+
+The user explicitly expanded the original mobile-client non-goal to include Windows and iOS browser use. Implemented official Codex 0.160.0 App Server device authorization, account status/cancel/logout, persisted provider selection, isolated application credentials and ephemeral structured generation. Host tools are denied, environment access is empty, and shell/search/plugins/memory are disabled; source validation remains mandatory. Codex's own protocol instructions are outside the application-level context estimate. Real ChatGPT login and generation are not yet validated.
+
+Optional password-protected HTTPS proxy mode adds host/origin checks, bounded login attempts and expiring HttpOnly/SameSite/Secure sessions. Default loopback remains. Responsive phone tabs, touch-selection support and home-screen metadata are implemented, along with a Windows-compatible Node development launcher. No native iOS app, offline mode, autonomous graph edits, hosted deployment or multiplayer was added. See `docs/windows-ios.md`.
+
+Validation: 38 unit/integration tests and 7 Chromium browser flows pass, including new auth and touch-layout checks. The real pinned Codex binary initialized against a disposable empty home and returned signed-out status without calling a model. WebKit downloads are blocked by the cloud egress policy (HTTP 403); Safari/iOS and native Windows remain unverified. CI definitions cover Windows core checks and Linux WebKit mobile tests; hosted results have not been observed.

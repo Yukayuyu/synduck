@@ -1,13 +1,17 @@
 name: Context Canvas
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/ai-context-canvas']
   pull_request:
 permissions:
   contents: read
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -20,10 +24,14 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium webkit
+        if: runner.os == 'Linux'
       - run: pnpm test:e2e
+        if: runner.os == 'Linux'
+      - run: pnpm exec playwright test --config playwright.webkit.config.ts
+        if: runner.os == 'Linux'
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results
+          name: browser-test-results-${{ matrix.os }}
           path: test-results/

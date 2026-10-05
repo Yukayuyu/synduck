@@ -22,32 +22,46 @@ import {
 } from '@acc/db';
 import { compileContext } from '@acc/context-compiler';
 import { type ModelProvider } from '@acc/model-gateway';
+import { ProviderRegistry, ProviderMode } from '../../../packages/model-gateway/src/registry';
+import { registerAccess, type AccessConfig } from './access';
 
-export function createApp(store: Store, provider: ModelProvider) {
+export function createApp(
+  store: Store,
+  provider: ModelProvider,
+  options: { access?: AccessConfig; models?: ProviderRegistry } = {},
+) {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
-  // A local app is not an authenticated public service. Bind loopback and reject
-  // cross-origin browser writes, including DNS-rebinding / form submissions.
-  app.addHook('onRequest', async (request, reply) => {
-    const host = (request.headers.host || '').split(':')[0];
-    if (!['127.0.0.1', 'localhost', 'localhost.localdomain'].includes(host))
-      return reply.code(403).send({ error: 'host_rejected', message: '仅支持本机访问。' });
-    const origin = request.headers.origin;
-    if (
-      origin &&
-      ![
-        `http://127.0.0.1:${process.env.APP_PORT || 3000}`,
-        `http://localhost:${process.env.APP_PORT || 3000}`,
-        `http://127.0.0.1:${process.env.API_PORT || 3001}`,
-        `http://localhost:${process.env.API_PORT || 3001}`,
-      ].includes(origin)
-    )
-      return reply.code(403).send({ error: 'origin_rejected', message: '不接受其他网站的请求。' });
-    if (
-      ['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method) &&
-      !request.headers['content-type']?.startsWith('application/json')
-    )
-      return reply.code(415).send({ error: 'json_required', message: '需要 JSON 请求。' });
-  });
+  registerAccess(app, options.access);
+  const idle = () => {
+    if (store.snapshot().turns.some((turn) => turn.status === 'streaming'))
+      throw new DomainError('generation_active', '回答正在生成，請完成後再變更模型或登入。', 409);
+  };
+  app.get('/api/models', async () => ({
+    provider: provider.name,
+    model: provider.model,
+    codex_available: !!options.models,
+  }));
+  if (options.models) {
+    const models = options.models;
+    app.get('/api/models/codex', async () => models.codex.status());
+    app.post('/api/models/codex/login', async () => {
+      idle();
+      return models.codex.startLogin();
+    });
+    app.post('/api/models/codex/cancel', async () => {
+      idle();
+      return models.codex.cancelLogin();
+    });
+    app.post('/api/models/codex/logout', async () => {
+      idle();
+      return models.codex.logout();
+    });
+    app.post('/api/models/select', async (request) => {
+      idle();
+      const { provider: mode } = z.object({ provider: ProviderMode }).strict().parse(request.body);
+      return models.select(mode);
+    });
+  }
   app.setErrorHandler((error, _request, reply) => {
     if ((error as { statusCode?: number }).statusCode === 413)
       return reply

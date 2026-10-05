@@ -21,6 +21,7 @@ import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
 import { Focus, type SelectedText, type SourceHighlight } from './Focus';
 import { ProjectDialog } from './ProjectDialog';
+import { ModelDialog } from './ModelDialog';
 import './styles.css';
 
 export default function App() {
@@ -42,6 +43,8 @@ export default function App() {
   const [newTitle, setNewTitle] = useState('');
   const [help, setHelp] = useState(false);
   const [projectDialog, setProjectDialog] = useState(false);
+  const [modelDialog, setModelDialog] = useState(false);
+  const [mobileView, setMobileView] = useState<'canvas' | 'conversations' | 'context'>('canvas');
   const [canvasEpoch, setCanvasEpoch] = useState(0);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
@@ -75,6 +78,7 @@ export default function App() {
   const prompt = prompts[conversationId] || '';
   const open = useCallback(
     (n: CanvasNode) => {
+      setMobileView('canvas');
       setActiveId(n.id);
       setHighlight(null);
       invalidate();
@@ -243,7 +247,7 @@ export default function App() {
       </div>
     );
   return (
-    <div className="app-shell">
+    <div className={`app-shell mobile-${mobileView}`}>
       <header className="app-header">
         <a className="brand" href="/" aria-label="Context Canvas 首页">
           <span className="brand-mark">
@@ -264,10 +268,19 @@ export default function App() {
           >
             <FolderArchive size={19} />
           </button>
-          <span className="mode-pill">
+          <button
+            className="mode-pill"
+            aria-label="模型與登入"
+            disabled={busy}
+            onClick={() => setModelDialog(true)}
+          >
             <span className="status-dot" />
-            {state.provider.demo ? '本地演示' : state.provider.model || '待配置模型'}
-          </span>
+            {state.provider.demo
+              ? '本地演示'
+              : state.provider.name === 'codex'
+                ? 'ChatGPT / Codex'
+                : state.provider.model || '待配置模型'}
+          </button>
           <button className="icon-button" aria-label="使用帮助" onClick={() => setHelp(true)}>
             <CircleHelp size={19} />
           </button>
@@ -340,7 +353,7 @@ export default function App() {
           </div>
           <div className="sidebar-footer">
             <Database size={14} />
-            <span>保存在本机 SQLite</span>
+            <span>保存在後端工作區</span>
             <span className="status-dot" />
           </div>
         </aside>
@@ -462,6 +475,33 @@ export default function App() {
           onLocate={moveTo}
         />
       </div>
+      <nav className="mobile-tabs" aria-label="工作區分頁">
+        <button aria-pressed={mobileView === 'canvas'} onClick={() => setMobileView('canvas')}>
+          <Network size={18} />
+          畫布
+        </button>
+        <button
+          aria-pressed={mobileView === 'conversations'}
+          onClick={() => setMobileView('conversations')}
+        >
+          <MessageSquare size={18} />
+          對話
+        </button>
+        <button aria-pressed={mobileView === 'context'} onClick={() => setMobileView('context')}>
+          <ScanLine size={18} />
+          上下文
+        </button>
+      </nav>
+      {modelDialog && (
+        <ModelDialog
+          provider={state.provider.name}
+          onClose={() => setModelDialog(false)}
+          onChanged={async () => {
+            invalidate();
+            await refresh();
+          }}
+        />
+      )}
       {error && (
         <div className="error-toast" role="alert">
           <span>{error}</span>
@@ -541,8 +581,7 @@ export default function App() {
               </li>
             </ol>
             <p className="quiet-note">
-              本地演示不调用 AI。真实模型需由服务端配置 LLM_PROVIDER、LLM_MODEL 和
-              LLM_API_KEY；密钥不会进入浏览器。
+              示範模式不呼叫 AI。點擊上方「模型與登入」可連接 ChatGPT 帳號或選擇 API 模式。
             </p>
             <button className="primary" onClick={() => setHelp(false)}>
               开始探索

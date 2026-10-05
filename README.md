@@ -40,9 +40,15 @@ This repository starts from the cleared `main`. The previous application remains
 
 The default is explicitly labelled **local demo**. It generates deterministic demonstration text, makes no model request, and is suitable for exercising the UI. It is not an AI answer or an answer-quality evaluation.
 
+## ChatGPT account, Windows and iOS
+
+Open **模型與登入** in the header to sign in with your ChatGPT account through the bundled official Codex App Server (device authorization), then select **ChatGPT / Codex**. No API key is required for that provider. The selected mode persists across restarts; official Codex credentials stay in the application-owned `data/codex/`, separate from your other Codex installations. Real account authorization and model generation remain unverified in this cloud environment.
+
+See [Windows, iOS and ChatGPT setup](docs/windows-ios.md) for PowerShell commands, HTTPS access, workspace authentication, phone navigation and the exact validation limits. iOS uses Safari and an optional home-screen shortcut; it requires a running backend. This is not an offline or native iOS application.
+
 ## Real model configuration
 
-Configure the server's `.env` or secure environment settings:
+For direct OpenAI API access, configure the server's `.env` or secure environment settings:
 
 ```dotenv
 LLM_PROVIDER=openai
@@ -50,7 +56,7 @@ LLM_MODEL=<a Responses API model with structured outputs available to your accou
 LLM_API_KEY=<enter securely; never commit>
 ```
 
-Restart the API after configuration. `OPENAI_API_KEY` is accepted as a local fallback, but use `LLM_API_KEY` for cloud proxy bindings. The only model destination is `api.openai.com`. On a proxy-managed cloud machine, start with `NODE_USE_ENV_PROXY=1 pnpm dev` so Node's fetch uses the provided HTTPS proxy. Keep TLS verification enabled.
+Restart the API after configuration and select **OpenAI API** in the model dialog if a previous mode was saved. `OPENAI_API_KEY` is accepted as a local fallback, but use `LLM_API_KEY` for cloud proxy bindings. The only model destination is `api.openai.com`. On a proxy-managed cloud machine, start with `NODE_USE_ENV_PROXY=1 pnpm dev` so Node's fetch uses the provided HTTPS proxy. Keep TLS verification enabled.
 
 The adapter calls the Responses API with `store: false`, a strict JSON schema and server-side validation. Streamed drafts are temporary; only a complete schema-valid answer with valid source IDs is persisted. Provider errors leave a retryable assistant turn and preserve its original input. If exclusion rules have changed, re-preview instead of retrying an obsolete package. Live OpenAI access has **not** been verified; current automated coverage uses an injected SSE transport, not an external account.
 
@@ -60,7 +66,7 @@ The adapter calls the Responses API with `store: false`, a strict JSON schema an
 - `DATABASE_PATH`, `ASSET_PATH`, `APP_PORT`, `API_PORT` are configurable. `.env` is loaded by the API, migrations and Vite configuration; shell variables take precedence.
 - Browser tests use a fresh temporary database, explicit demo mode and a separate port. They never write to the development workspace or invoke paid model APIs.
 - Chromium is picked from `/usr/bin/chromium` when present. Otherwise run `pnpm exec playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
-- The service is intended for a single user on loopback. It has no public hosting / multi-user authentication layer.
+- The service is intended for a single owner. Loopback is the default; optional HTTPS reverse-proxy access requires PUBLIC_ORIGIN and APP_PASSWORD. It is not a multi-user service.
 
 Graph deletion/undo, generated summaries, lexical retrieval, the JSON Canvas adapter and the other full-backlog features are not part of this slice. See `docs/progress.md` for exact scope and remaining work.
 

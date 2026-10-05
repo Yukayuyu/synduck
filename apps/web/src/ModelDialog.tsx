@@ -1,0 +1,179 @@
+import { useEffect, useState } from 'react';
+import { X, ExternalLink } from 'lucide-react';
+import { api } from './api';
+
+type AccountState = {
+  connected: boolean;
+  account: { email: string | null; plan: string } | null;
+  login: {
+    status: 'idle' | 'pending' | 'complete' | 'failed';
+    verificationUrl?: string;
+    userCode?: string;
+  };
+};
+export function ModelDialog({
+  provider,
+  onClose,
+  onChanged,
+}: {
+  provider: string;
+  onClose: () => void;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [account, setAccount] = useState<AccountState | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [selection, setSelection] = useState(provider);
+  const [protectedWorkspace, setProtectedWorkspace] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void api<AccountState>('/models/codex')
+      .then((s) => {
+        if (alive) setAccount(s);
+      })
+      .catch((e) => {
+        if (alive) setError(e.message);
+      });
+    void api<{ required: boolean }>('/session')
+      .then((s) => {
+        if (alive) setProtectedWorkspace(s.required);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (account?.login.status !== 'pending') return;
+    let alive = true;
+    const timer = setInterval(() => {
+      void api<AccountState>('/models/codex')
+        .then((s) => {
+          if (alive) setAccount(s);
+        })
+        .catch((e) => {
+          if (alive) setError(e.message);
+        });
+    }, 2000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [account?.login.status]);
+  const action = async (path: string) => {
+    setBusy(true);
+    setError('');
+    try {
+      setAccount(await api<AccountState>(`/models/codex/${path}`, {}));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '操作失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <section
+        className="modal model-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="model-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="modal-close" aria-label="關閉模型設定" onClick={onClose}>
+          <X size={18} />
+        </button>
+        <span className="overline">MODEL CONNECTION</span>
+        <h2 id="model-title">模型與登入</h2>
+        <p className="project-description">
+          用你的 ChatGPT 帳號透過官方 Codex 連接 AI。額度依帳號方案而定，登入資料只保存在後端。
+        </p>
+        <div className="account-card">
+          <strong>ChatGPT / Codex</strong>
+          <p>
+            {account?.connected
+              ? `已連接 · ${account.account?.email || 'ChatGPT 帳號'} · ${account.account?.plan || ''}`
+              : account
+                ? '尚未連接'
+                : '正在確認連線…'}
+          </p>
+          {account?.login.status === 'pending' ? (
+            <>
+              <p>開啟官方授權頁面，登入後輸入以下一次性代碼：</p>
+              <code className="device-code">{account.login.userCode}</code>
+              <a
+                className="primary"
+                href={account.login.verificationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                前往 ChatGPT 授權 <ExternalLink size={14} />
+              </a>
+              <p role="status">等待授權完成… 若代碼過期，請取消後重試。</p>
+              <button className="secondary" disabled={busy} onClick={() => void action('cancel')}>
+                取消登入
+              </button>
+            </>
+          ) : (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => void action(account?.connected ? 'logout' : 'login')}
+            >
+              {busy ? '處理中…' : account?.connected ? '登出 ChatGPT' : '使用 ChatGPT 帳號登入'}
+            </button>
+          )}
+          {account?.login.status === 'failed' && (
+            <p role="alert">登入未完成或已過期。請確認 ChatGPT 設定允許 Codex 裝置碼登入後重試。</p>
+          )}
+        </div>
+        <label htmlFor="provider-choice">回答模式</label>
+        <select
+          id="provider-choice"
+          value={selection}
+          onChange={(e) => setSelection(e.target.value)}
+        >
+          <option value="demo">示範模式（不呼叫 AI）</option>
+          <option value="codex">ChatGPT / Codex</option>
+          <option value="openai">OpenAI API（後端需設定密鑰）</option>
+        </select>
+        <p className="project-description">
+          Codex 每次使用獨立對話，只傳送你預覽的內容與固定回答指令。Codex
+          本身仍會加入執行環境資訊；上下文估算不是帳單用量。圖形操作仍需手動確認。
+        </p>
+        <button
+          className="primary"
+          disabled={busy || (selection === 'codex' && !account?.connected)}
+          onClick={() => {
+            setBusy(true);
+            setError('');
+            void api('/models/select', { provider: selection })
+              .then(onChanged)
+              .then(onClose)
+              .catch((e) => setError(e.message))
+              .finally(() => setBusy(false));
+          }}
+        >
+          使用此模式
+        </button>
+        {protectedWorkspace && (
+          <button
+            className="secondary workspace-logout"
+            onClick={() => {
+              void api('/session/logout', {})
+                .then(() => window.dispatchEvent(new Event('canvas-session-expired')))
+                .catch((e) => setError(e.message));
+            }}
+          >
+            登出工作區
+          </button>
+        )}
+        {error && (
+          <p className="project-error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}

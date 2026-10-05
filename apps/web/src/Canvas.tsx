@@ -204,8 +204,8 @@ export function Canvas({
       nodesConnectable={false}
       deleteKeyCode={null}
       panOnScroll
-      selectionOnDrag
-      panOnDrag={[1, 2]}
+      selectionOnDrag={!window.matchMedia('(pointer: coarse)').matches}
+      panOnDrag={window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]}
       proOptions={{ hideAttribution: true }}
     >
       <Background color="#d6d9d3" gap={22} size={1} />

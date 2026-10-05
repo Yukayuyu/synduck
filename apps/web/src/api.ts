@@ -14,6 +14,7 @@ export async function api<T>(path: string, body?: unknown, method = 'POST'): Pro
           body: JSON.stringify(body),
         },
   );
+  if (response.status === 401) window.dispatchEvent(new Event('canvas-session-expired'));
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || '请求失败');
   return data as T;
@@ -29,6 +30,7 @@ export async function streamAnswer(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event('canvas-session-expired'));
     const error = await response.json();
     throw new Error(error.message || '发送失败');
   }

@@ -62,14 +62,13 @@ export function Focus(props: Props) {
         .getElementById(`block-${highlight.blockId}`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [highlight]);
-  const capture = (event: React.MouseEvent<HTMLDivElement>, block: ContentBlock) => {
+  const capture = (element: HTMLElement, block: ContentBlock) => {
     const selected = window.getSelection();
     if (!selected || selected.isCollapsed || !selected.rangeCount) {
       setSelection(null);
       return;
     }
     const range = selected.getRangeAt(0);
-    const element = event.currentTarget;
     if (!element.contains(range.startContainer) || !element.contains(range.endContainer)) {
       setSelection(null);
       return;
@@ -85,6 +84,23 @@ export function Focus(props: Props) {
       selector: { type: 'text_range', start_char: start, end_char: start + exact.length, exact },
     });
   };
+  useEffect(() => {
+    // iOS selection handles update selection without a mouseup event.
+    const changed = () => {
+      const selected = window.getSelection();
+      if (!selected || selected.isCollapsed || !selected.anchorNode) return;
+      const element = (
+        selected.anchorNode instanceof Element
+          ? selected.anchorNode
+          : selected.anchorNode.parentElement
+      )?.closest<HTMLElement>('[data-testid="content-block"]');
+      if (!element?.closest('.focus-panel')) return;
+      const block = state.blocks.find((b) => `block-${b.id}` === element.id);
+      if (block) capture(element, block);
+    };
+    document.addEventListener('selectionchange', changed);
+    return () => document.removeEventListener('selectionchange', changed);
+  }, [state.blocks, node.id]);
   return (
     <section className="focus-panel" aria-label={excerpt ? '摘录详情' : '对话详情'}>
       <div className="focus-heading">
@@ -194,7 +210,7 @@ export function Focus(props: Props) {
                         data-testid="content-block"
                         key={block.id}
                         className="message-text"
-                        onMouseUp={(event) => capture(event, block)}
+                        onMouseUp={(event) => capture(event.currentTarget, block)}
                       >
                         {marked ? (
                           <>
