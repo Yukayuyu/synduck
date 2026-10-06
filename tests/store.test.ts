@@ -66,4 +66,39 @@ describe('SQLite provenance', () => {
       store.close();
     }
   });
+  it('places new canvas cards and branches without rearranging or overlapping existing cards', () => {
+    const store = new Store(':memory:');
+    try {
+      const first = store.createConversation('First', undefined, { x: -500, y: -500 });
+      const second = store.createConversation('Second', undefined, { x: -500, y: -500 });
+      expect(second.node.y).toBeGreaterThan(first.node.y + first.node.height);
+      store.appendTurn(first.conversation.id, 'human', 'An exact source for branching');
+      const before = store.snapshot();
+      const block = before.blocks[0];
+      const created = store.createExcerpt({
+        source_block_id: block.id,
+        source_content_hash: block.content_hash,
+        selector: { type: 'text_range', start_char: 0, end_char: 8, exact: 'An exact' },
+        branch: true,
+      });
+      expect(created.node.x).toBeGreaterThan(first.node.x + first.node.width);
+      expect(created.branch!.node.x).toBeGreaterThan(created.node.x + created.node.width);
+      for (const node of before.nodes)
+        expect(store.snapshot().nodes.find((n) => n.id === node.id)).toEqual(node);
+      const nodes = store.snapshot().nodes;
+      for (let i = 0; i < nodes.length; i++)
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i],
+            b = nodes[j];
+          expect(
+            a.x + a.width <= b.x ||
+              b.x + b.width <= a.x ||
+              a.y + a.height <= b.y ||
+              b.y + b.height <= a.y,
+          ).toBe(true);
+        }
+    } finally {
+      store.close();
+    }
+  });
 });

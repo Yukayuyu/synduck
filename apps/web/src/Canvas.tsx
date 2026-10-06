@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ReactFlow,
   Background,
@@ -29,6 +29,7 @@ type CardData = {
   context: boolean;
   pinned: boolean;
   excluded: boolean;
+  content: ReactNode;
   onOpen: () => void;
   onSelect: () => void;
   onPin: () => void;
@@ -56,8 +57,10 @@ function Card({ data }: NodeProps<CardNode>) {
         {data.title}
         <ArrowUpRight size={16} />
       </button>
-      {zoom > 0.55 && (
-        <p className="card-preview">{data.preview || '每个想法，都可以从这里生长。'}</p>
+      {zoom > 0.45 ? (
+        <div className="card-content nodrag nopan nowheel">{data.content}</div>
+      ) : (
+        <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
       )}
       {zoom > 0.55 && (
         <div className="card-footer">
@@ -105,6 +108,9 @@ interface Props {
   onControl: (id: string, action: 'pin' | 'unpin' | 'exclude' | 'restore') => void;
   onMove: (id: string, x: number, y: number) => void;
   onViewport: (v: Viewport) => void;
+  renderContent: (node: CanvasNode) => ReactNode;
+  tool: 'select' | 'hand';
+  onCreateAt: (position: { x: number; y: number }) => void;
 }
 
 export function Canvas({
@@ -117,6 +123,9 @@ export function Canvas({
   onControl,
   onMove,
   onViewport,
+  renderContent,
+  tool,
+  onCreateAt,
 }: Props) {
   const flow = useReactFlow();
   const latest = useRef({ nodes: state.nodes, activeNode });
@@ -126,8 +135,11 @@ export function Canvas({
       state.nodes.map((n) => ({
         id: n.id,
         type: 'card',
+        dragHandle: '.card-eyebrow',
+        zIndex: activeNode === n.id ? 10 : 0,
         position: { x: n.x, y: n.y },
         data: {
+          content: renderContent(n),
           title: n.title,
           type: n.type,
           preview:
@@ -153,18 +165,22 @@ export function Canvas({
             ),
         },
       })),
-    [state, activeNode, selected, onOpen, onSelect, onControl],
+    [state, activeNode, selected, onOpen, onSelect, onControl, renderContent],
   );
   const [nodes, setNodes] = useState(mapped);
   useEffect(() => setNodes(mapped), [mapped]);
   useEffect(() => {
     if (!locate) return;
     const node = latest.current.nodes.find((n) => n.id === locate.id);
-    if (node)
-      void flow.setCenter(node.x + 150 + (latest.current.activeNode ? 185 : 0), node.y + 90, {
-        zoom: 1,
-        duration: 350,
+    if (node) {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const zoom = Math.min(1, (width - 36) / 360, (height - 175) / 670);
+      void flow.setCenter(node.x + 180, node.y + (node.ref_type === 'excerpt' ? 190 : 325), {
+        zoom: Math.max(0.5, zoom),
+        duration: 250,
       });
+    }
   }, [locate, flow]);
   const changes = useCallback(
     (changes: NodeChange<CardNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),
@@ -192,10 +208,12 @@ export function Canvas({
       edges={edges}
       nodeTypes={nodeTypes}
       onNodesChange={changes}
-      onNodeDoubleClick={(_e, node) => {
-        const n = state.nodes.find((n) => n.id === node.id);
-        if (n) onOpen(n);
+      onDoubleClick={(event) => {
+        if ((event.target as HTMLElement).classList.contains('react-flow__pane'))
+          onCreateAt(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
       }}
+      zoomOnDoubleClick={false}
+      onMoveStart={() => window.dispatchEvent(new Event('canvas-view-changed'))}
       onNodeDragStop={(_e, node) => onMove(node.id, node.position.x, node.position.y)}
       onMoveEnd={(_e, viewport) => onViewport(viewport)}
       defaultViewport={state.workspace.settings.viewport}
@@ -204,11 +222,11 @@ export function Canvas({
       nodesConnectable={false}
       deleteKeyCode={null}
       panOnScroll
-      selectionOnDrag={!window.matchMedia('(pointer: coarse)').matches}
-      panOnDrag={window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]}
+      selectionOnDrag={tool === 'select' && !window.matchMedia('(pointer: coarse)').matches}
+      panOnDrag={tool === 'hand' || window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]}
       proOptions={{ hideAttribution: true }}
     >
-      <Background color="#d6d9d3" gap={22} size={1} />
+      <Background color="#d5d7dc" gap={24} size={1} />
       <Controls showInteractive={false} />
       <MiniMap
         nodeColor={(n) => (n.data.type === 'excerpt' ? '#c4b4dc' : '#9fb7a8')}

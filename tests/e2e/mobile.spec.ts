@@ -13,7 +13,6 @@ test('phone layout supports conversation, context inspection, touch selection, p
   await page.getByRole('button', { name: '创建对话' }).tap();
   await page.getByLabel('你的问题', { exact: true }).fill('手機上的上下文');
   await page.getByRole('button', { name: '预览上下文', exact: true }).tap();
-  await tabs.getByRole('button', { name: '上下文', exact: true }).tap();
   await expect(page.getByText('上下文已编译 · 等待发送')).toBeVisible();
   await tabs.getByRole('button', { name: '畫布', exact: true }).tap();
   await page.getByRole('button', { name: '发送此上下文' }).tap();
@@ -31,14 +30,18 @@ test('phone layout supports conversation, context inspection, touch selection, p
     document.dispatchEvent(new Event('selectionchange'));
   });
   await page.getByRole('button', { name: '摘录并分支' }).tap();
-  await expect(page.getByText('源自摘录')).toBeVisible();
+  await expect(
+    page.locator('.focus-panel[data-active="true"]').getByText('源自摘录'),
+  ).toBeVisible();
   await page.reload();
   await tabs.getByRole('button', { name: '對話', exact: true }).tap();
   await page
     .getByRole('navigation', { name: '对话列表' })
     .getByRole('button', { name: title, exact: true })
     .tap();
-  await expect(page.getByTestId('turn-assistant').last()).toContainText('本地演示');
+  await expect(
+    page.locator('.focus-panel[data-active="true"]').getByTestId('turn-assistant').last(),
+  ).toContainText('本地演示');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -46,6 +49,7 @@ test('phone layout supports conversation, context inspection, touch selection, p
     'href',
     '/manifest.webmanifest',
   );
+  await expect(page.locator('.canvas-card.active')).toBeInViewport({ ratio: 0.95 });
   await page.screenshot({ path: 'test-results/mobile-conversation.png' });
 });
 

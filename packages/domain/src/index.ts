@@ -334,7 +334,10 @@ export interface ProjectPreview {
   };
 }
 export const CreateConversationSchema = z
-  .object({ title: z.string().trim().min(1).max(160) })
+  .object({
+    title: z.string().trim().min(1).max(160),
+    position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict().optional(),
+  })
   .strict();
 export const CreateExcerptSchema = z
   .object({

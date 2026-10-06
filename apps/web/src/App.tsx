@@ -3,17 +3,16 @@ import { ReactFlowProvider } from '@xyflow/react';
 import {
   Plus,
   Network,
-  ChevronDown,
   MessageSquare,
   ArrowUpRight,
-  Layers,
   X,
   GitBranch,
   ScanLine,
   CircleHelp,
-  Database,
   FolderArchive,
   LoaderCircle,
+  MousePointer2,
+  Hand,
 } from 'lucide-react';
 import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
 import { api, streamAnswer, type ClientState } from './api';
@@ -23,6 +22,7 @@ import { Focus, type SelectedText, type SourceHighlight } from './Focus';
 import { ProjectDialog } from './ProjectDialog';
 import { ModelDialog } from './ModelDialog';
 import './styles.css';
+import './canvas-first.css';
 
 export default function App() {
   const [state, setState] = useState<ClientState | null>(null);
@@ -44,7 +44,8 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
-  const [mobileView, setMobileView] = useState<'canvas' | 'conversations' | 'context'>('canvas');
+  const [panel, setPanel] = useState<'conversations' | 'context' | null>(null);
+  const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [canvasEpoch, setCanvasEpoch] = useState(0);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
@@ -78,7 +79,7 @@ export default function App() {
   const prompt = prompts[conversationId] || '';
   const open = useCallback(
     (n: CanvasNode) => {
-      setMobileView('canvas');
+      setPanel(null);
       setActiveId(n.id);
       setHighlight(null);
       invalidate();
@@ -107,9 +108,12 @@ export default function App() {
     },
     [refresh, invalidate, fail],
   );
-  const create = async (title: string) => {
+  const create = async (title: string, position?: { x: number; y: number }) => {
     try {
-      const result = await api<{ node: CanvasNode }>('/conversations', { title });
+      const result = await api<{ node: CanvasNode }>('/conversations', {
+        title,
+        position,
+      });
       await refresh();
       open(result.node);
       moveTo(result.node.id);
@@ -178,6 +182,7 @@ export default function App() {
       if (version === compileVersion.current) {
         setPreview(result.package);
         setInspected({ pkg: result.package, historical: false });
+        setPanel('context');
       }
     } catch (e) {
       fail(e);
@@ -193,8 +198,11 @@ export default function App() {
             p.context_set_id === state.turns.find((t) => t.id === retryId)?.input_context_set_id,
         )
       : preview;
-    const targetConversation = conversationId;
+    const targetConversation = retryId
+      ? state?.turns.find((t) => t.id === retryId)?.conversation_id || conversationId
+      : conversationId;
     setBusy(true);
+    setPanel(null);
     setDraft({ conversationId: targetConversation, text: '' });
     setError('');
     try {
@@ -247,27 +255,17 @@ export default function App() {
       </div>
     );
   return (
-    <div className={`app-shell mobile-${mobileView}`}>
-      <header className="app-header">
-        <a className="brand" href="/" aria-label="Context Canvas 首页">
-          <span className="brand-mark">
-            <Network size={20} />
-          </span>
+    <div className="app-shell canvas-first">
+      <header className="board-header">
+        <div className="board-identity">
+          <Network size={20} />
           <strong>
             context<span>canvas</span>
           </strong>
-          <small>EARLY ACCESS</small>
-        </a>
-        <div className="header-right">
-          <button
-            className="icon-button"
-            aria-label="备份与恢复"
-            title="备份与恢复"
-            disabled={busy}
-            onClick={() => setProjectDialog(true)}
-          >
-            <FolderArchive size={19} />
-          </button>
+          <span className="board-divider" />
+          <span className="workspace-name">{state.workspace.name}</span>
+        </div>
+        <div className="board-menu">
           <button
             className="mode-pill"
             aria-label="模型與登入"
@@ -281,175 +279,75 @@ export default function App() {
                 ? 'ChatGPT / Codex'
                 : state.provider.model || '待配置模型'}
           </button>
-          <button className="icon-button" aria-label="使用帮助" onClick={() => setHelp(true)}>
-            <CircleHelp size={19} />
+          <button
+            className="icon-button"
+            aria-label="备份与恢复"
+            title="备份与恢复"
+            disabled={busy}
+            onClick={() => setProjectDialog(true)}
+          >
+            <FolderArchive size={18} />
           </button>
-          <div className="avatar">我</div>
+          <button
+            className="icon-button"
+            aria-label="使用帮助"
+            title="使用帮助"
+            onClick={() => setHelp(true)}
+          >
+            <CircleHelp size={18} />
+          </button>
         </div>
       </header>
-      <div className="workspace-layout">
-        <aside className="sidebar">
-          <div className="workspace-switch">
-            <span className="workspace-icon">C</span>
-            <div>
-              <small>PERSONAL WORKSPACE</small>
-              <strong>{state.workspace.name}</strong>
-            </div>
-            <ChevronDown size={14} />
-          </div>
-          <div className="sidebar-nav">
-            <span className="nav-active">
-              <Network size={16} />
-              思考画布<span>{state.nodes.length}</span>
-            </span>
-          </div>
-          <div className="sidebar-label">
-            对话脉络
-            <button aria-label="新建对话" onClick={() => setNewDialog(true)}>
-              <Plus size={15} />
-            </button>
-          </div>
-          <nav className="conversation-list" aria-label="对话列表">
-            {state.conversations.map((c) => {
-              const n = state.nodes.find((n) => n.ref_type === 'conversation' && n.ref_id === c.id);
-              return (
-                <button
-                  key={c.id}
-                  className={c.id === conversationId ? 'current' : ''}
-                  onClick={() => {
-                    if (n) {
-                      open(n);
-                      moveTo(n.id);
-                    }
-                  }}
-                >
-                  {c.branch_origin_excerpt_id ? (
-                    <GitBranch size={14} />
-                  ) : (
-                    <MessageSquare size={14} />
-                  )}
-                  <span>{c.title}</span>
-                </button>
-              );
-            })}
-            {!state.conversations.length && (
-              <p className="sidebar-empty">
-                你的第一条思考脉络，
-                <br />
-                从一个问题开始。
-              </p>
-            )}
-          </nav>
-          <div className="sidebar-tip">
-            <Layers size={18} />
-            <p>
-              不只是聊天记录。
-              <br />
-              也是一张会生长的思考地图。
-            </p>
-            <button onClick={() => setHelp(true)}>
-              了解工作方式 <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <div className="sidebar-footer">
-            <Database size={14} />
-            <span>保存在後端工作區</span>
-            <span className="status-dot" />
-          </div>
-        </aside>
-        <main className="canvas-workspace">
-          <div className="canvas-heading">
-            <div>
-              <span className="overline">YOUR THINKING SPACE</span>
-              <h1>
-                把想法连接起来<span>。</span>
-              </h1>
-            </div>
-            <button className="secondary" onClick={() => setNewDialog(true)}>
-              <Plus size={15} />
-              新建对话
-            </button>
-          </div>
-          <div className="canvas-stage">
-            <ReactFlowProvider key={canvasEpoch}>
-              <Canvas
-                state={state}
-                activeNode={activeId}
-                selected={selected}
-                locate={locate}
-                onOpen={open}
-                onSelect={select}
-                onControl={control}
-                onMove={(id, x, y) => {
-                  void api(`/nodes/${id}`, { x, y }, 'PATCH')
-                    .then(() => refresh())
-                    .catch(fail);
-                }}
-                onViewport={(v) => {
-                  if (viewportTimer.current) clearTimeout(viewportTimer.current);
-                  viewportTimer.current = setTimeout(() => {
-                    void api('/workspace', { viewport: v }, 'PATCH').catch(fail);
-                  }, 350);
-                }}
-              />
-            </ReactFlowProvider>
-            {!state.nodes.length && (
-              <div className="canvas-welcome">
-                <div className="welcome-graphic">
-                  <span />
-                  <Network size={52} strokeWidth={1} />
-                  <i />
-                  <b />
-                </div>
-                <span className="overline">A LITTLE SPACE FOR BIG IDEAS</span>
-                <h2>
-                  给你的思考，
-                  <br />
-                  多一点展开的空间。
-                </h2>
-                <p>
-                  从对话出发，摘录值得保留的想法。
-                  <br />
-                  让分支自由生长，让上下文始终清晰。
-                </p>
-                <button className="primary" onClick={() => setNewDialog(true)}>
-                  <Plus size={16} />
-                  开始第一段对话
-                </button>
-                <div className="starter-prompts">
-                  <span>或者试试</span>
-                  {['设计一个新产品', '梳理一项研究'].map((t) => (
-                    <button key={t} onClick={() => void create(t)}>
-                      {t}
-                      <ArrowUpRight size={12} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {state.nodes.length > 0 && (
-              <div className="canvas-hint">
-                <span className="status-dot" />
-                {state.nodes.length} 个节点 · {state.edges.length} 条关系
-                <span>滚轮平移 · 双指缩放 · 双击进入对话</span>
-              </div>
-            )}
-            {active && (
+      <main className="canvas-stage" aria-label="思考畫布">
+        <ReactFlowProvider key={canvasEpoch}>
+          <Canvas
+            state={state}
+            activeNode={activeId}
+            selected={selected}
+            locate={locate}
+            tool={tool}
+            onOpen={(node) => {
+              open(node);
+              moveTo(node.id);
+            }}
+            onSelect={select}
+            onControl={control}
+            onCreateAt={(position) => {
+              void create('新的提問', position);
+            }}
+            onMove={(id, x, y) => {
+              void api(`/nodes/${id}`, { x, y }, 'PATCH')
+                .then(() => refresh())
+                .catch(fail);
+            }}
+            onViewport={(v) => {
+              if (viewportTimer.current) clearTimeout(viewportTimer.current);
+              viewportTimer.current = setTimeout(() => {
+                void api('/workspace', { viewport: v }, 'PATCH').catch(fail);
+              }, 350);
+            }}
+            renderContent={(node) => (
               <Focus
                 state={state}
-                node={active}
-                prompt={prompt}
+                node={node}
+                active={node.id === activeId}
+                locked={busy}
+                prompt={prompts[node.ref_id] || ''}
                 budget={budget}
-                preview={preview}
-                busy={busy && draft.conversationId === conversationId}
-                draft={draft.text}
-                highlight={highlight}
+                preview={node.id === activeId ? preview : null}
+                busy={busy && draft.conversationId === node.ref_id}
+                draft={draft.conversationId === node.ref_id ? draft.text : ''}
+                highlight={node.id === activeId ? highlight : null}
+                onOpen={() => {
+                  open(node);
+                  moveTo(node.id);
+                }}
                 onClose={() => {
                   setActiveId(null);
                   invalidate();
                 }}
                 onPrompt={(value) => {
-                  setPrompts((p) => ({ ...p, [conversationId]: value }));
+                  setPrompts((p) => ({ ...p, [node.ref_id]: value }));
                   invalidate();
                 }}
                 onBudget={(value) => {
@@ -461,37 +359,148 @@ export default function App() {
                 onExcerpt={(s, b) => void excerpt(s, b)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
-                onInspect={(pkg) => setInspected({ pkg, historical: true })}
+                onInspect={(pkg) => {
+                  setInspected({ pkg, historical: true });
+                  setPanel('context');
+                }}
                 onRetry={(id) => void generate(id)}
               />
             )}
+          />
+        </ReactFlowProvider>
+        {!state.nodes.length && (
+          <div className="board-empty">
+            <span className="empty-symbol">
+              <Network size={30} strokeWidth={1.4} />
+            </span>
+            <h1>把想法，攤開來。</h1>
+            <p>在畫布上提問，選取文字，讓下一個想法接著生長。</p>
+            <button className="primary" onClick={() => setNewDialog(true)}>
+              <Plus size={16} />
+              開始第一段對話
+            </button>
+            <small>也可以雙擊空白處，在那裡開始。</small>
           </div>
-        </main>
-        <Inspector
-          state={state}
-          pkg={inspected?.pkg || null}
-          historical={inspected?.historical || false}
-          selected={selected}
-          onLocate={moveTo}
-        />
-      </div>
-      <nav className="mobile-tabs" aria-label="工作區分頁">
-        <button aria-pressed={mobileView === 'canvas'} onClick={() => setMobileView('canvas')}>
-          <Network size={18} />
-          畫布
+        )}
+      </main>
+      <nav className="canvas-tools" aria-label="工作區分頁">
+        <button
+          className="desktop-tool"
+          title="選取工具"
+          aria-label="選取工具"
+          aria-pressed={tool === 'select'}
+          onClick={() => setTool('select')}
+        >
+          <MousePointer2 size={18} />
         </button>
         <button
-          aria-pressed={mobileView === 'conversations'}
-          onClick={() => setMobileView('conversations')}
+          className="desktop-tool"
+          title="平移工具"
+          aria-label="平移工具"
+          aria-pressed={tool === 'hand'}
+          onClick={() => setTool('hand')}
+        >
+          <Hand size={18} />
+        </button>
+        <span className="tool-divider desktop-tool" />
+        <button
+          className="new-canvas-conversation"
+          aria-label="新建对话"
+          title="新建对话"
+          onClick={() => {
+            setNewDialog(true);
+          }}
+        >
+          <Plus size={18} />
+          <span>提問</span>
+        </button>
+        <span className="tool-divider" />
+        <button
+          aria-label="畫布"
+          aria-pressed={panel === null}
+          title="回到畫布"
+          onClick={() => setPanel(null)}
+        >
+          <Network size={18} />
+          <span>畫布</span>
+        </button>
+        <button
+          aria-label="對話"
+          aria-pressed={panel === 'conversations'}
+          title="對話列表"
+          onClick={() => setPanel(panel === 'conversations' ? null : 'conversations')}
         >
           <MessageSquare size={18} />
-          對話
+          <span>對話</span>
         </button>
-        <button aria-pressed={mobileView === 'context'} onClick={() => setMobileView('context')}>
+        <button
+          aria-label="上下文"
+          aria-pressed={panel === 'context'}
+          title="上下文檢查器"
+          onClick={() => setPanel(panel === 'context' ? null : 'context')}
+        >
           <ScanLine size={18} />
-          上下文
+          <span>上下文{selected.length > 0 ? ` · ${selected.length}` : ''}</span>
         </button>
       </nav>
+      {panel && (
+        <section
+          className={`board-drawer ${panel}`}
+          aria-label={panel === 'context' ? '上下文面板' : '對話面板'}
+        >
+          <button
+            className="drawer-close icon-button"
+            aria-label="關閉面板"
+            onClick={() => setPanel(null)}
+          >
+            <X size={18} />
+          </button>
+          {panel === 'context' ? (
+            <Inspector
+              state={state}
+              pkg={inspected?.pkg || null}
+              historical={inspected?.historical || false}
+              selected={selected}
+              onLocate={(id) => {
+                setPanel(null);
+                moveTo(id);
+              }}
+            />
+          ) : (
+            <>
+              <h2>對話</h2>
+              <p className="drawer-caption">所有思路，都在同一張畫布上。</p>
+              <nav className="conversation-list" aria-label="对话列表">
+                {state.conversations.map((c) => (
+                  <button
+                    key={c.id}
+                    className={c.id === conversationId ? 'current' : ''}
+                    onClick={() => {
+                      const n = state.nodes.find(
+                        (n) => n.ref_type === 'conversation' && n.ref_id === c.id,
+                      );
+                      if (n) {
+                        open(n);
+                        moveTo(n.id);
+                      }
+                    }}
+                  >
+                    {c.branch_origin_excerpt_id ? (
+                      <GitBranch size={14} />
+                    ) : (
+                      <MessageSquare size={14} />
+                    )}
+                    <span>{c.title}</span>
+                  </button>
+                ))}
+              </nav>
+              {!state.conversations.length && (
+                <p className="drawer-caption">點擊下方「提問」，開始第一段對話。</p>
+              )}
+            </>
+          )}
+        </section>
+      )}
       {modelDialog && (
         <ModelDialog
           provider={state.provider.name}
@@ -564,19 +573,21 @@ export default function App() {
               <li>
                 <MessageSquare size={18} />
                 <span>
-                  <strong>提出一个问题</strong>预览上下文后发送，回答会留在这条对话中。
+                  <strong>提出一个问题</strong>雙擊畫布空白處建立對話；回答會直接出現在卡片裡。
                 </span>
               </li>
               <li>
                 <GitBranch size={18} />
                 <span>
-                  <strong>选中文字，长出分支</strong>摘录会保存原文范围与来源，随时可以回去查看。
+                  <strong>选中文字，长出分支</strong>
+                  在任何卡片選取文字，點「延伸提問」建立相連的分支，原文與來源會一起保留。
                 </span>
               </li>
               <li>
                 <ScanLine size={18} />
                 <span>
-                  <strong>决定模型会看到什么</strong>选择、固定或排除节点，在右侧检查器核对输入。
+                  <strong>决定模型会看到什么</strong>
+                  選擇、固定或排除卡片，需要時打開下方的上下文檢查器。
                 </span>
               </li>
             </ol>

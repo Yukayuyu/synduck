@@ -29,13 +29,13 @@ This repository starts from the cleared `main`. The previous application remains
 
 ## First working slice
 
-1. Create a conversation and enter a question.
+1. Double-click empty canvas space to create a conversation there, or use **提問** in the floating toolbar. Enter your question directly in the card.
 2. Click **预览上下文**. The inspector shows included / excluded sources, explanations, conflicts and a conservative budget estimate.
-3. Click **发送此上下文** to send that exact immutable package.
-4. Select text in any saved message, then choose **摘录** or **摘录并分支**.
+3. Click **发送此上下文** to send that exact immutable package. The answer streams into its card on the canvas; other conversations remain readable alongside it.
+4. Select text in any saved message on any card, then choose **摘录** or **延伸提問** from the nearby floating toolbar. A linked excerpt and branch appear beside the source.
 5. An excerpt preserves its source block, half-open UTF-16 range, exact text and SHA-256 source hash. **回到来源并高亮** navigates back to that range.
 6. Use the card's **+**, pin and exclude controls to choose the next input. A branch starts with its excerpt, not the whole parent conversation. Exclusion also follows previous answers that depended on an excluded source.
-7. Drag cards and pan / zoom; positions and viewport persist in SQLite. Double-click a card for the reading layer. Earlier assistant turns retain their own input packages.
+7. Drag card headers to move cards; drag message text to select it. Use the hand tool to pan, or pinch / scroll to navigate. Positions and viewport persist in SQLite. Click a card title or **繼續提問** to open its composer. Earlier assistant turns retain their own input packages. Conversation navigation and context inspection are collapsible floating panels, opened from the bottom toolbar.
 8. Open **备份与恢复** in the top bar to download a native project file, validate an imported backup, or preview an automatic recovery point.
 
 The default is explicitly labelled **local demo**. It generates deterministic demonstration text, makes no model request, and is suitable for exercising the UI. It is not an AI answer or an answer-quality evaluation.

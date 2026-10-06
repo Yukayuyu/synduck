@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  ArrowLeft,
   X,
   GitBranch,
   Quote,
@@ -25,6 +25,9 @@ export interface SourceHighlight {
   end: number;
 }
 interface Props {
+  active: boolean;
+  locked: boolean;
+  onOpen: () => void;
   state: ClientState;
   node: CanvasNode;
   prompt: string;
@@ -45,7 +48,9 @@ interface Props {
   onRetry: (turnId: string) => void;
 }
 export function Focus(props: Props) {
-  const { state, node, busy, draft, preview, highlight } = props;
+  const { state, node, busy, draft, preview, highlight, active, locked } = props;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [selectionPosition, setSelectionPosition] = useState({ left: 0, top: 0 });
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
   const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
@@ -57,11 +62,25 @@ export function Focus(props: Props) {
     setSelection(null);
   }, [node.id]);
   useEffect(() => {
-    if (highlight)
-      document
-        .getElementById(`block-${highlight.blockId}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!highlight) return;
+    const block = document.getElementById(`block-${highlight.blockId}`);
+    const scroll = scrollRef.current;
+    if (block && scroll) scroll.scrollTop = block.offsetTop - scroll.offsetTop;
   }, [highlight]);
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (busy && scroll && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120)
+      scroll.scrollTop = scroll.scrollHeight;
+  }, [busy, draft]);
+  useEffect(() => {
+    const clear = () => setSelection(null);
+    window.addEventListener('canvas-view-changed', clear);
+    window.addEventListener('resize', clear);
+    return () => {
+      window.removeEventListener('canvas-view-changed', clear);
+      window.removeEventListener('resize', clear);
+    };
+  }, []);
   const capture = (element: HTMLElement, block: ContentBlock) => {
     const selected = window.getSelection();
     if (!selected || selected.isCollapsed || !selected.rangeCount) {
@@ -79,6 +98,11 @@ export function Focus(props: Props) {
     const start = before.toString().length;
     const exact = range.toString();
     if (!exact || block.text_content?.slice(start, start + exact.length) !== exact) return;
+    const rect = range.getBoundingClientRect();
+    setSelectionPosition({
+      left: Math.max(12, Math.min(window.innerWidth - 310, rect.left)),
+      top: Math.max(76, Math.min(window.innerHeight - 155, rect.bottom + 10)),
+    });
     setSelection({
       block,
       selector: { type: 'text_range', start_char: start, end_char: start + exact.length, exact },
@@ -94,7 +118,10 @@ export function Focus(props: Props) {
           ? selected.anchorNode
           : selected.anchorNode.parentElement
       )?.closest<HTMLElement>('[data-testid="content-block"]');
-      if (!element?.closest('.focus-panel')) return;
+      if (element?.closest<HTMLElement>('.focus-panel')?.dataset.nodeId !== node.id) {
+        setSelection(null);
+        return;
+      }
       const block = state.blocks.find((b) => `block-${b.id}` === element.id);
       if (block) capture(element, block);
     };
@@ -102,18 +129,20 @@ export function Focus(props: Props) {
     return () => document.removeEventListener('selectionchange', changed);
   }, [state.blocks, node.id]);
   return (
-    <section className="focus-panel" aria-label={excerpt ? '摘录详情' : '对话详情'}>
-      <div className="focus-heading">
-        <button onClick={props.onClose} aria-label="返回画布">
-          <ArrowLeft size={16} />
-        </button>
-        <span>
-          画布 <span className="breadcrumb-slash">/</span> {excerpt ? '摘录' : '对话'}
-        </span>
-        <button onClick={props.onClose} aria-label="关闭详情">
-          <X size={16} />
-        </button>
-      </div>
+    <section
+      className={`focus-panel ${active ? 'editing' : 'reading'}`}
+      data-node-id={node.id}
+      data-active={active}
+      aria-label={excerpt ? '摘录详情' : '对话详情'}
+    >
+      {active && (
+        <div className="focus-heading">
+          <span>{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
+          <button onClick={props.onClose} aria-label="返回画布" title="收起輸入框">
+            <X size={15} />
+          </button>
+        </div>
+      )}
       <div className="focus-title">
         <span className="overline">
           {excerpt
@@ -135,7 +164,7 @@ export function Focus(props: Props) {
             <CornerUpRight size={15} />
             回到来源并高亮
           </button>
-          <button className="primary" onClick={() => props.onBranch(excerpt)} disabled={busy}>
+          <button className="primary" onClick={() => props.onBranch(excerpt)} disabled={locked}>
             <GitBranch size={15} />
             从摘录开始分支
           </button>
@@ -160,7 +189,7 @@ export function Focus(props: Props) {
               <CornerUpRight size={14} />
             </button>
           )}
-          <div className="focus-content conversation-scroll">
+          <div ref={scrollRef} className="focus-content conversation-scroll">
             {turns.length === 0 && (
               <div className="conversation-empty">
                 <div className="small-orbit">
@@ -229,7 +258,7 @@ export function Focus(props: Props) {
                     <p>{turn.error}</p>
                     <button
                       className="text-button"
-                      disabled={busy}
+                      disabled={locked}
                       onClick={() => props.onRetry(turn.id)}
                     >
                       <RotateCcw size={13} />
@@ -266,88 +295,113 @@ export function Focus(props: Props) {
               </article>
             )}
           </div>
-          {selection && (
-            <div className="selection-toolbar" role="toolbar" aria-label="文字选区操作">
-              <span>已选 {selection.selector.exact.length} 字符</span>
-              <button
-                disabled={busy}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  props.onExcerpt(selection, false);
-                  setSelection(null);
-                }}
+          {selection &&
+            createPortal(
+              <div
+                className="selection-toolbar canvas-selection-toolbar"
+                role="toolbar"
+                aria-label="文字选区操作"
+                style={{ left: selectionPosition.left, top: selectionPosition.top }}
               >
-                <Quote size={14} />
-                摘录
-              </button>
-              <button
-                disabled={busy}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  props.onExcerpt(selection, true);
-                  setSelection(null);
-                }}
-              >
-                <GitBranch size={14} />
-                摘录并分支
-              </button>
-            </div>
-          )}
-          <form
-            className="composer"
-            onSubmit={(e) => {
-              e.preventDefault();
-              props.onCompile();
-            }}
-          >
-            <label className="sr-only" htmlFor="prompt">
-              你的问题
-            </label>
-            <textarea
-              id="prompt"
-              placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
-              value={props.prompt}
-              onChange={(e) => props.onPrompt(e.target.value)}
-              disabled={busy}
-              rows={3}
-              maxLength={32000}
-            />
-            <div className="composer-options">
-              <label>
-                上下文预算{' '}
-                <select
-                  aria-label="上下文预算"
-                  value={props.budget}
-                  onChange={(e) => props.onBudget(Number(e.target.value))}
-                  disabled={busy}
-                >
-                  <option value={2000}>2,000</option>
-                  <option value={6000}>6,000</option>
-                  <option value={10000}>10,000</option>
-                </select>
-              </label>
-              <span>保守估算</span>
-            </div>
-            <div className="composer-bottom">
-              <span>{preview ? `${preview.items.length} 项上下文已预览` : '先预览，再发送'}</span>
-              {preview ? (
+                <span>{selection.selector.exact.length} 字</span>
                 <button
-                  type="button"
-                  className="primary"
-                  disabled={busy || !preview.sendable}
-                  onClick={props.onSend}
+                  disabled={locked}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    props.onExcerpt(selection, false);
+                    setSelection(null);
+                  }}
                 >
-                  <Send size={14} />
-                  发送此上下文
+                  <Quote size={14} />
+                  摘录
                 </button>
-              ) : (
-                <button type="submit" className="primary" disabled={busy || !props.prompt.trim()}>
-                  <ScanLine size={14} />
-                  预览上下文
+                <button
+                  disabled={locked}
+                  aria-label="摘录并分支"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    props.onExcerpt(selection, true);
+                    setSelection(null);
+                  }}
+                >
+                  <GitBranch size={14} />
+                  延伸提問
                 </button>
-              )}
-            </div>
-          </form>
+                <button aria-label="取消文字選取" onClick={() => setSelection(null)}>
+                  <X size={14} />
+                </button>
+              </div>,
+              document.body,
+            )}
+          {active ? (
+            <form
+              className="composer"
+              onSubmit={(e) => {
+                e.preventDefault();
+                props.onCompile();
+              }}
+            >
+              <label className="sr-only" htmlFor={`prompt-${node.id}`}>
+                你的问题
+              </label>
+              <textarea
+                id={`prompt-${node.id}`}
+                placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
+                value={props.prompt}
+                onChange={(e) => props.onPrompt(e.target.value)}
+                disabled={locked}
+                rows={2}
+                maxLength={32000}
+              />
+              <details className="composer-settings">
+                <summary>上下文預算</summary>
+                <div className="composer-options">
+                  <label>
+                    上下文预算{' '}
+                    <select
+                      aria-label="上下文预算"
+                      value={props.budget}
+                      onChange={(e) => props.onBudget(Number(e.target.value))}
+                      disabled={locked}
+                    >
+                      <option value={2000}>2,000</option>
+                      <option value={6000}>6,000</option>
+                      <option value={10000}>10,000</option>
+                    </select>
+                  </label>
+                  <span>保守估算</span>
+                </div>
+              </details>
+              <div className="composer-bottom">
+                <span>{preview ? `${preview.items.length} 项上下文已预览` : '先预览，再发送'}</span>
+                {preview ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={locked || !preview.sendable}
+                    onClick={props.onSend}
+                  >
+                    <Send size={14} />
+                    发送此上下文
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="primary"
+                    disabled={locked || !props.prompt.trim()}
+                  >
+                    <ScanLine size={14} />
+                    预览上下文
+                  </button>
+                )}
+              </div>
+            </form>
+          ) : (
+            <button className="continue-on-canvas secondary" onClick={props.onOpen}>
+              <Send size={14} />
+              繼續提問
+            </button>
+          )}
         </>
       )}
     </section>

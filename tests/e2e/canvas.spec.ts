@@ -45,6 +45,10 @@ test('select text, branch, inspect and exclude context, then persist through rel
   await page.reload();
   await expect(page.locator('.canvas-card.excerpt').last()).toHaveClass(/excluded/);
   await page
+    .getByRole('navigation', { name: '工作區分頁' })
+    .getByRole('button', { name: '對話', exact: true })
+    .click();
+  await page
     .getByRole('navigation', { name: '对话列表' })
     .getByRole('button', { name: /分支 · 让上下文可见/ })
     .last()

@@ -20,7 +20,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 - ACC-004: canvas pan / zoom, drag, React Flow selection and persisted viewport implemented. Browser test renders 100+ nodes and performs a real drag before reload.
 - ACC-006: conversation / turn engine implemented with parent and sequence metadata, model identifiers, context references and failure lifecycle. Storage accepts ordinal content blocks; the current UI generates one text block per turn.
 - ACC-007 / ACC-008: exact text selection, snapshot/hash provenance, return-to-source highlighting and atomic excerpt + branch creation implemented; rollback and stale-source tests pass.
-- ACC-009: fixed-height canvas cards, compact zoom representation and full conversation focus panel implemented. Rich four-level semantic representations remain open.
+- ACC-009: readable conversation cards with inline composers, compact zoom representation and on-demand floating inspectors implemented. Rich four-level semantic representations remain open.
 - ACC-010: per-turn selection, workspace pin/exclude/restore, immutable context snapshots and stale-preview rejection implemented. Exclude has highest precedence.
 - ACC-011 / ACC-012: deterministic resolve / structural retrieval / scoring / deduplication / budget omissions / lifecycle / conflict package baseline implemented. Explicit over-budget inputs block sending. No model summarization, lexical retrieval or model-based conflict classifier is included.
 - ACC-013: inspector shows included sources, roles, scores, explanations, exclusions, conflicts, conservative estimates, raw package and historical turn packages. Clicking locates a node. Hover-to-highlight and more detailed source-map navigation remain open.
@@ -33,7 +33,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 38 unit/integration tests pass; all 7 Chromium browser tests pass. The 2 project tests also pass when run independently.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 39 unit/integration tests pass; all 9 Chromium browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
@@ -56,3 +56,11 @@ The user explicitly expanded the original mobile-client non-goal to include Wind
 Optional password-protected HTTPS proxy mode adds host/origin checks, bounded login attempts and expiring HttpOnly/SameSite/Secure sessions. Default loopback remains. Responsive phone tabs, touch-selection support and home-screen metadata are implemented, along with a Windows-compatible Node development launcher. No native iOS app, offline mode, autonomous graph edits, hosted deployment or multiplayer was added. See `docs/windows-ios.md`.
 
 Validation: 38 unit/integration tests and 7 Chromium browser flows pass, including new auth and touch-layout checks. The real pinned Codex binary initialized against a disposable empty home and returned signed-out status without calling a model. WebKit downloads are blocked by the cloud egress policy (HTTP 403); Safari/iOS and native Windows remain unverified. CI definitions cover Windows core checks and Linux WebKit mobile tests; hosted results have not been observed.
+
+## Canvas-first interaction (2026-10-06)
+
+Replaced the fixed three-column interface with a full-window canvas, floating top controls and a bottom tool palette. Conversation and context navigation are closed by default and open as dismissible overlays. Full conversation text and live drafts render inside each card; only the selected card shows its composer. All readable cards support exact text selection and a screen-positioned excerpt / follow-up toolbar. Card headers are drag handles, so dragging text does not move the card. Mouse and touch selection stay scoped to their source node.
+
+Double-clicking empty space creates a conversation at the corresponding canvas coordinates. New cards use wider spacing and avoid existing card bounds; existing node positions are never rearranged. Optional creation coordinates are runtime-validated. No schema migration or provenance change is needed.
+
+Checks: 39 unit/integration tests and 9 Chromium browser tests, including real mouse text selection on an inactive card, multiple visible conversations, correct branch source input, canvas-coordinate creation, pan-versus-create separation, mobile visibility, existing 100-node drag/persistence, and project recovery. Windows and native iOS validation remains separate from Chromium phone emulation.

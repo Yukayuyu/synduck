@@ -227,6 +227,31 @@ export class Store {
     });
   }
   private createNode(type: CanvasNode['type'], refId: string, title: string, x: number, y: number) {
+    // Place only the new card. Existing user positions are never rearranged.
+    const occupied = this.snapshot().nodes;
+    const height = type === 'conversation' ? 650 : 420;
+    let collision: CanvasNode | undefined;
+    while (
+      (collision = occupied.find(
+        (node) =>
+          x < node.x + Math.max(node.width, 360) + 60 &&
+          x + 360 + 60 > node.x &&
+          y < node.y + Math.max(node.height, node.ref_type === 'conversation' ? 650 : 420) + 60 &&
+          y + height + 60 > node.y,
+      ))
+    ) {
+      const next =
+        collision.y +
+        Math.max(collision.height, collision.ref_type === 'conversation' ? 650 : 420) +
+        80;
+      if (!Number.isFinite(next) || next <= y)
+        throw new DomainError(
+          'invalid_position',
+          '此位置無法放置新卡片，請移到畫布其他位置。',
+          400,
+        );
+      y = next;
+    }
     const at = now();
     const n: CanvasNode = {
       id: id(),
@@ -237,8 +262,8 @@ export class Store {
       title,
       x,
       y,
-      width: 300,
-      height: 210,
+      width: 360,
+      height,
       z_index: 0,
       collapsed: false,
       visibility: 'normal',
@@ -291,8 +316,8 @@ export class Store {
         'conversation',
         c.id,
         title,
-        position?.x ?? 100 + (count % 3) * 380,
-        position?.y ?? 100 + Math.floor(count / 3) * 290,
+        position?.x ?? 100 + (count % 3) * 460,
+        position?.y ?? 100 + Math.floor(count / 3) * 740,
       );
       if (!w.root_node_id) this.saveWorkspace({ ...w, root_node_id: node.id });
       this.bump();
@@ -338,8 +363,8 @@ export class Store {
         'excerpt',
         excerpt.id,
         excerpt.title,
-        sourceNode.x + 380,
-        sourceNode.y + siblings * 270,
+        sourceNode.x + 460,
+        sourceNode.y + siblings * 740,
       );
       this.structural(sourceNode.id, node.id, 'excerpt_from');
       const branch = request.branch ? this.branchExcerpt(excerpt.id) : null;
@@ -357,8 +382,8 @@ export class Store {
         (e) => e.source_node_id === node.id && e.type === 'branch_from',
       ).length;
       const result = this.createConversation(`分支 · ${excerpt.title.slice(0, 45)}`, excerpt, {
-        x: node.x + 380,
-        y: node.y + branches * 270,
+        x: node.x + 460,
+        y: node.y + branches * 740,
       });
       this.structural(node.id, result.node.id, 'branch_from');
       return result;

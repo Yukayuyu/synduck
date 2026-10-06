@@ -1,0 +1,607 @@
+/* The board is the workspace. Panels and tools float above it. */
+.canvas-first {
+  --board-ink: #252831;
+  --board-accent: #6259cf;
+  background: #f5f5f7;
+  color: var(--board-ink);
+  position: relative;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.canvas-first > .canvas-stage {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+}
+.board-header {
+  position: absolute;
+  inset: calc(16px + env(safe-area-inset-top)) 18px auto;
+  z-index: 12;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+.board-identity,
+.board-menu {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fffffff5;
+  border: 1px solid #e4e4ea;
+  border-radius: 12px;
+  padding: 8px 13px;
+  box-shadow: 0 3px 14px #29223e08;
+  min-height: 48px;
+}
+.board-identity > svg {
+  color: #6259cf;
+}
+.board-identity strong {
+  font-size: 15px;
+  letter-spacing: -0.6px;
+  font-weight: 650;
+}
+.board-identity strong span {
+  font-weight: 400;
+  color: #81818d;
+}
+.board-divider {
+  height: 18px;
+  border-left: 1px solid #e6e6ec;
+}
+.workspace-name {
+  font-size: 12px;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #6d6c78;
+}
+.board-menu {
+  gap: 5px;
+}
+.board-menu .mode-pill {
+  color: #6f6d7c;
+  font-size: 11px;
+  padding: 8px;
+}
+.canvas-tools {
+  position: absolute;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #e1e1e8;
+  background: #fffffff7;
+  border-radius: 14px;
+  box-shadow: 0 8px 32px #27223512;
+  white-space: nowrap;
+}
+.canvas-tools button {
+  min-width: 40px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: #74717e;
+  font-size: 12px;
+}
+.canvas-tools button[aria-pressed='true'] {
+  color: #6055c6;
+  background: #f0edff;
+}
+.canvas-tools button:hover {
+  background: #f4f3f8;
+  color: #514896;
+}
+.canvas-tools .new-canvas-conversation {
+  background: #6557ce;
+  color: white;
+}
+.canvas-tools .new-canvas-conversation:hover {
+  background: #5548bb;
+  color: white;
+}
+.tool-divider {
+  height: 24px;
+  width: 1px;
+  background: #e8e7ed;
+  margin: 0 4px;
+}
+.board-empty {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  max-width: 90vw;
+  width: 480px;
+}
+.empty-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  background: #eae7fa;
+  border: 1px solid #dfdaf4;
+  border-radius: 18px;
+  color: #8175c9;
+  margin-bottom: 22px;
+}
+.board-empty h1 {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.8px;
+  color: #41404c;
+  margin: 0 0 14px;
+}
+.board-empty p {
+  color: #8b8796;
+  font-size: 13px;
+  line-height: 1.9;
+  margin: 0 0 24px;
+}
+.board-empty .primary {
+  background: #6557ce;
+  color: white;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 8px;
+}
+.board-empty small {
+  display: block;
+  margin-top: 20px;
+  color: #aaa6b3;
+  font-size: 11px;
+}
+.board-drawer {
+  position: absolute;
+  z-index: 13;
+  top: 82px;
+  bottom: 100px;
+  width: 320px;
+  background: #fff;
+  border: 1px solid #e3e2eb;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px #27223512;
+  overflow: hidden;
+}
+.board-drawer.context {
+  right: 18px;
+}
+.board-drawer.conversations {
+  left: 18px;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+}
+.board-drawer h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.drawer-caption {
+  color: #96909f;
+  font-size: 11px;
+  line-height: 1.9;
+  margin: 0 0 22px;
+}
+.drawer-close {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 2;
+  background: #fff;
+  border-radius: 6px;
+}
+.board-drawer .inspector {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border: 0;
+  background: #fff;
+}
+.board-drawer .tiny-tag {
+  display: none;
+}
+.canvas-first .react-flow__node-card {
+  width: 360px;
+}
+.canvas-first .canvas-card {
+  padding: 0;
+  background: #fff;
+  border: 1px solid #dedde7;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px #29213709;
+  overflow: visible;
+}
+.canvas-first .canvas-card.active {
+  border-color: #9182db;
+  box-shadow:
+    0 0 0 2px #b4a9ee35,
+    0 8px 28px #42375d10;
+}
+.canvas-first .canvas-card.context-selected {
+  border-color: #8a7bd3;
+  box-shadow: 0 0 0 2px #b8aded;
+}
+.canvas-first .canvas-card.excerpt {
+  border-top: 3px solid #b3a2d2;
+}
+.canvas-first .card-eyebrow {
+  padding: 13px 16px 0;
+  margin: 0;
+  color: #95909f;
+  cursor: grab;
+  user-select: none;
+  min-height: 30px;
+}
+.canvas-first .card-eyebrow:active {
+  cursor: grabbing;
+}
+.canvas-first .card-title {
+  width: 100%;
+  padding: 10px 16px 14px;
+  font-size: 14px;
+  font-weight: 550;
+  color: #494452;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.5;
+}
+.canvas-first .card-title svg {
+  flex-shrink: 0;
+  color: #aaa4b6;
+}
+.canvas-first .card-preview {
+  padding: 0 16px 16px;
+  height: auto;
+  max-height: 90px;
+}
+.canvas-first .card-content {
+  user-select: text;
+  cursor: auto;
+}
+.canvas-first .card-footer {
+  height: 38px;
+  padding: 0 12px 0 16px;
+  margin: 0;
+  background: #fcfbfe;
+  border-top: 1px solid #efedf3;
+  border-radius: 0 0 12px 12px;
+  font-size: 10px;
+  color: #aaa3b3;
+}
+.canvas-first .card-actions button {
+  color: #9e94ad;
+}
+.canvas-first .focus-panel {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+  color: #514b5a;
+}
+.canvas-first .focus-title {
+  display: none;
+}
+.canvas-first .focus-heading {
+  padding: 0 12px 8px;
+  border: 0;
+  font-size: 10px;
+  color: #a79daf;
+}
+.canvas-first .focus-heading button {
+  min-height: 24px;
+}
+.canvas-first .focus-content {
+  flex: none;
+  padding: 0 16px 12px;
+  max-height: 330px;
+  min-height: 60px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #dcd7e5 transparent;
+}
+.canvas-first .focus-panel.editing .conversation-scroll {
+  height: 270px;
+}
+.canvas-first .focus-panel.reading .conversation-scroll {
+  max-height: 330px;
+}
+.canvas-first .focus-panel .message-text {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #575060;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  overflow-wrap: anywhere;
+}
+.canvas-first .turn {
+  margin: 0;
+  padding: 16px 0;
+}
+.canvas-first .turn-heading {
+  color: #b0a6bb;
+}
+.canvas-first .turn-heading strong {
+  color: #93879f;
+}
+.canvas-first .turn .actor-icon {
+  background: #f1edf7;
+  color: #a190b5;
+}
+.canvas-first .turn-context {
+  color: #aa9cb8;
+}
+.canvas-first .composer {
+  background: #fff;
+  padding: 12px 16px;
+  border-top: 1px solid #eeeaf3;
+}
+.canvas-first .composer textarea {
+  background: #fcfbff;
+  border: 1px solid #e6e0ee;
+  border-radius: 8px;
+  min-height: 65px;
+  padding: 10px;
+  color: #51465c;
+  font-size: 13px;
+}
+.canvas-first .composer textarea::placeholder {
+  color: #b5aabe;
+}
+.canvas-first .composer-bottom {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #b0a3ba;
+}
+.canvas-first .composer .primary {
+  background: #6a5ace;
+  color: #fff;
+  font-size: 11px;
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+.canvas-first .composer-settings {
+  font-size: 10px;
+  color: #afa3b8;
+  padding-top: 8px;
+}
+.canvas-first .composer-settings summary {
+  cursor: pointer;
+}
+.canvas-first .composer-options {
+  padding: 10px 0 0;
+}
+.canvas-first .continue-on-canvas {
+  margin: 6px 16px 14px;
+  width: calc(100% - 32px);
+  min-height: 34px;
+  font-size: 11px;
+  color: #9583ae;
+  border: 1px dashed #e0d7ea;
+  background: #fbf9fe;
+  border-radius: 7px;
+}
+.canvas-first .branch-origin {
+  margin: 0 16px 10px;
+  font-size: 10px;
+  padding: 8px;
+  border-radius: 6px;
+}
+.canvas-first .conversation-empty {
+  padding: 18px 6px;
+}
+.canvas-first .conversation-empty .small-orbit {
+  display: none;
+}
+.canvas-first .conversation-empty h3 {
+  font-size: 13px;
+  color: #9b8aa9;
+}
+.canvas-first .conversation-empty p {
+  font-size: 11px;
+  color: #b3a5bf;
+}
+.canvas-first .excerpt-detail {
+  padding-top: 12px;
+  max-height: 330px;
+}
+.canvas-first .excerpt-detail blockquote {
+  font-size: 14px;
+  line-height: 1.9;
+  color: #746381;
+}
+.canvas-first .excerpt-detail .muted {
+  display: none;
+}
+.canvas-first .excerpt-detail .secondary,
+.canvas-first .excerpt-detail .primary {
+  font-size: 11px;
+  min-height: 34px;
+  padding: 8px 12px;
+}
+.canvas-selection-toolbar {
+  position: fixed;
+  z-index: 50;
+  width: 298px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid #e2ddef;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 30px #352a4a25;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #8c7ba0;
+}
+.canvas-selection-toolbar > span {
+  font-size: 10px;
+  margin-right: auto;
+  color: #aea1bb;
+}
+.canvas-selection-toolbar button {
+  min-height: 34px;
+  padding: 6px;
+  font-size: 12px;
+  border: 0;
+  color: #746184;
+}
+.canvas-selection-toolbar button:hover {
+  background: #f2ecfa;
+  border-radius: 6px;
+}
+.canvas-selection-toolbar button:last-child {
+  min-width: 25px;
+}
+.canvas-first .react-flow__controls {
+  bottom: 20px;
+  left: 18px;
+  box-shadow: 0 3px 16px #28203310;
+  border: 1px solid #e2dfe8;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.canvas-first .react-flow__controls-button {
+  background: #fff;
+  color: #94869e;
+}
+.canvas-first .react-flow__minimap {
+  background: #fff;
+  border: 1px solid #e5e1ec;
+  border-radius: 10px;
+  box-shadow: none;
+  bottom: 20px;
+  right: 18px;
+}
+@media (max-width: 850px) {
+  .board-header {
+    top: calc(10px + env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    gap: 6px;
+  }
+  .board-identity,
+  .board-menu {
+    min-height: 44px;
+    padding: 5px 8px;
+    border-radius: 10px;
+    gap: 7px;
+  }
+  .board-identity strong {
+    font-size: 13px;
+  }
+  .board-identity > svg {
+    width: 17px;
+  }
+  .workspace-name,
+  .board-divider,
+  .board-menu > button[aria-label='使用帮助'] {
+    display: none;
+  }
+  .board-menu .mode-pill {
+    padding: 4px;
+    font-size: 10px;
+    max-width: 125px;
+  }
+  .board-menu .icon-button {
+    min-height: 32px;
+  }
+  .canvas-tools {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 20px);
+    padding: 5px;
+    gap: 2px;
+  }
+  .canvas-tools .desktop-tool {
+    display: none;
+  }
+  .canvas-tools button {
+    padding: 0 9px;
+    min-width: 38px;
+    min-height: 44px;
+    font-size: 11px;
+  }
+  .board-drawer {
+    top: 70px;
+    bottom: calc(83px + env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+  }
+  .board-drawer.context {
+    right: 12px;
+  }
+  .board-drawer.conversations {
+    left: 12px;
+  }
+  .board-empty {
+    width: 300px;
+  }
+  .board-empty h1 {
+    font-size: 26px;
+  }
+  .board-empty p {
+    font-size: 12px;
+  }
+  .canvas-first .react-flow__controls {
+    bottom: 85px;
+    left: 10px;
+  }
+  .canvas-first .react-flow__minimap {
+    display: none;
+  }
+  .canvas-first .composer textarea {
+    font-size: 16px;
+  }
+  .canvas-first .card-title {
+    min-height: 0;
+  }
+  .canvas-first .card-actions button {
+    min-height: 30px;
+  }
+}
+.canvas-first .excerpt-detail .primary {
+  background: #7562a5;
+  color: white;
+  border: 0;
+  border-radius: 6px;
+}
+.canvas-first .excerpt-detail .secondary {
+  border-color: #e4dced;
+  color: #9b87ad;
+  border-radius: 6px;
+}
+.canvas-first .excerpt-detail details {
+  color: #b7a9c4;
+}
+@media (max-width: 850px) {
+  .canvas-first .react-flow__controls {
+    bottom: 82px;
+    left: auto;
+    right: 12px;
+  }
+  .canvas-first .react-flow__controls-zoomin,
+  .canvas-first .react-flow__controls-zoomout {
+    display: none;
+  }
+}

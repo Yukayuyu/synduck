@@ -88,8 +88,8 @@ export function createApp(
     provider: { name: provider.name, model: provider.model, demo: provider.name === 'demo' },
   }));
   app.post('/api/conversations', async (request) => {
-    const { title } = CreateConversationSchema.parse(request.body);
-    return store.createConversation(title);
+    const { title, position } = CreateConversationSchema.parse(request.body);
+    return store.createConversation(title, undefined, position);
   });
   app.post('/api/excerpts', async (request) =>
     store.createExcerpt(CreateExcerptSchema.parse(request.body)),

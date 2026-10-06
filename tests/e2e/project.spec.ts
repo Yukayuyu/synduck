@@ -71,6 +71,10 @@ test('downloads a native backup, previews replacement, restores IDs and exposes 
   await confirm.click();
   await expect(page.getByRole('dialog', { name: '备份与恢复' })).toHaveCount(0);
   await page.reload();
+  await page
+    .getByRole('navigation', { name: '工作區分頁' })
+    .getByRole('button', { name: '對話', exact: true })
+    .click();
   const restored = await (await request.get('/api/state')).json();
   expect(restored.excerpts).toEqual(original.snapshot.excerpts);
   expect(restored.packages).toEqual(original.snapshot.packages);
