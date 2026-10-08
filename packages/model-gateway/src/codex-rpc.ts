@@ -5,6 +5,7 @@ import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { DomainError } from '@acc/domain';
+import { codexError } from './codex-errors';
 
 export type RpcEvent = { method: string; params: Record<string, unknown> };
 export interface CodexConnection {
@@ -198,7 +199,7 @@ export class CodexRpc implements CodexConnection {
     if (!pending) return;
     this.pending.delete(message.id as number);
     clearTimeout(pending.timer);
-    if (message.error) pending.reject(unavailable());
+    if (message.error) pending.reject(codexError(message.error));
     else pending.resolve(message.result);
   }
   private send<T>(method: string, params: object): Promise<T> {

@@ -11,6 +11,10 @@ type AccountState = {
     userCode?: string;
   };
 };
+type Diagnostics = {
+  model: string;
+  last_failure: { code: string; message: string; stage: string; elapsed_ms: number } | null;
+};
 export function ModelDialog({
   provider,
   onClose,
@@ -25,6 +29,7 @@ export function ModelDialog({
   const [busy, setBusy] = useState(false);
   const [selection, setSelection] = useState(provider);
   const [protectedWorkspace, setProtectedWorkspace] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   useEffect(() => {
     let alive = true;
     void api<AccountState>('/models/codex')
@@ -37,6 +42,11 @@ export function ModelDialog({
     void api<{ required: boolean }>('/session')
       .then((s) => {
         if (alive) setProtectedWorkspace(s.required);
+      })
+      .catch(() => {});
+    void api<Diagnostics>('/models/codex/diagnostics')
+      .then((s) => {
+        if (alive) setDiagnostics(s);
       })
       .catch(() => {});
     return () => {
@@ -97,6 +107,11 @@ export function ModelDialog({
                 ? '尚未連接'
                 : '正在確認連線…'}
           </p>
+          {account?.connected && (
+            <p className="project-description">
+              已連接表示帳號已登入；回答仍取決於模型權限、Codex 額度及網路狀態。
+            </p>
+          )}
           {account?.login.status === 'pending' ? (
             <>
               <p>開啟官方授權頁面，登入後輸入以下一次性代碼：</p>
@@ -127,6 +142,20 @@ export function ModelDialog({
             <p role="alert">登入未完成或已過期。請確認 ChatGPT 設定允許 Codex 裝置碼登入後重試。</p>
           )}
         </div>
+        {diagnostics?.last_failure && (
+          <details>
+            <summary>最近一次 Codex 回答失敗的診斷</summary>
+            <p>{diagnostics.last_failure.message}</p>
+            <p className="project-description">
+              模型：{diagnostics.model}
+              <br />
+              錯誤碼：<code>{diagnostics.last_failure.code}</code>
+              <br />
+              階段：{diagnostics.last_failure.stage} · 耗時{' '}
+              {Math.round(diagnostics.last_failure.elapsed_ms / 1000)} 秒
+            </p>
+          </details>
+        )}
         <label htmlFor="provider-choice">回答模式</label>
         <select
           id="provider-choice"

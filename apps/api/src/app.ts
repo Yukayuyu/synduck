@@ -44,6 +44,9 @@ export function createApp(
   if (options.models) {
     const models = options.models;
     app.get('/api/models/codex', async () => models.codex.status());
+    app.get('/api/models/codex/diagnostics', async (_request, reply) =>
+      reply.header('Cache-Control', 'no-store').send(models.codex.diagnostics()),
+    );
     app.post('/api/models/codex/login', async () => {
       idle();
       return models.codex.startLogin();
@@ -213,7 +216,11 @@ export function createApp(
     } catch (error) {
       const message = error instanceof DomainError ? error.message : '生成失败，可重试。';
       store.failAnswer(turn.id, message);
-      emit({ type: 'error', message });
+      emit({
+        type: 'error',
+        code: error instanceof DomainError ? error.code : 'generation_failed',
+        message,
+      });
     } finally {
       reply.raw.end();
     }
@@ -274,7 +281,11 @@ export function createApp(
     } catch (error) {
       const message = error instanceof DomainError ? error.message : '生成失败，可重试。';
       store.failAnswer(turn.id, message);
-      emit({ type: 'error', message });
+      emit({
+        type: 'error',
+        code: error instanceof DomainError ? error.code : 'generation_failed',
+        message,
+      });
     } finally {
       reply.raw.end();
     }

@@ -1,5 +1,107 @@
 import { test, expect } from '@playwright/test';
 
+test('keeps the active editor and caret mounted across canvas zoom and five minutes of typing', async ({
+  page,
+  request,
+}) => {
+  const root = await (
+    await request.post('/api/conversations', {
+      data: { title: '持續輸入的焦點', position: { x: -12000, y: -12000 } },
+    })
+  ).json();
+  await request.patch('/api/workspace', {
+    data: { viewport: { x: 12080, y: 12080, zoom: 1 } },
+  });
+  await page.goto('/');
+  const card = page.locator(`.react-flow__node[data-id="${root.node.id}"]`);
+  await card.locator('.card-title').click();
+  const editor = card.getByLabel('你的问题', { exact: true });
+  await editor.fill('保持這段問題與游標位置');
+  await page.clock.install();
+  await editor.evaluate((element: HTMLTextAreaElement) => {
+    element.focus();
+    element.setSelectionRange(2, 5, 'backward');
+  });
+  for (let i = 0; i < 7; i++) {
+    // Programmatic zoom does not move focus to the toolbar button.
+    await page
+      .locator('.react-flow__controls-zoomout')
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await page.clock.runFor(400);
+  }
+  await page.clock.fastForward(5 * 60 * 1000);
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('保持這段問題與游標位置');
+  expect(
+    await editor.evaluate((element: HTMLTextAreaElement) => ({
+      start: element.selectionStart,
+      end: element.selectionEnd,
+      direction: element.selectionDirection,
+    })),
+  ).toEqual({ start: 2, end: 5, direction: 'backward' });
+  await page.keyboard.insertText('延伸');
+  await expect(editor).toHaveValue('保持延伸題與游標位置');
+});
+
+test('preserves the focused editor during generation and a failed answer without erasing the draft', async ({
+  page,
+  request,
+}) => {
+  const root = await (
+    await request.post('/api/conversations', {
+      data: { title: '回答失敗也保留焦點', position: { x: -14000, y: -14000 } },
+    })
+  ).json();
+  await request.patch('/api/workspace', {
+    data: { viewport: { x: 14080, y: 14080, zoom: 1 } },
+  });
+  await page.goto('/');
+  const card = page.locator(`.react-flow__node[data-id="${root.node.id}"]`);
+  await card.locator('.card-title').click();
+  const editor = card.getByLabel('你的问题', { exact: true });
+  await editor.fill('失敗後繼續編輯這個問題');
+  await card.getByRole('button', { name: '预览上下文', exact: true }).click();
+  await expect(card.getByRole('button', { name: '发送此上下文', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '關閉面板', exact: true }).click();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/answer', async (route) => {
+    await pending;
+    await route.fulfill({
+      contentType: 'application/x-ndjson',
+      body:
+        JSON.stringify({
+          type: 'error',
+          code: 'codex_request_rejected',
+          message: 'Codex 拒絕請求參數或協定',
+        }) + '\n',
+    });
+  });
+  await editor.focus();
+  await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(2, 4));
+  await card
+    .getByRole('button', { name: '发送此上下文', exact: true })
+    .evaluate((button: HTMLButtonElement) => button.click());
+  try {
+    await expect(editor).toHaveAttribute('readonly', '');
+    await expect(editor).toBeFocused();
+  } finally {
+    release();
+  }
+  await expect(page.getByRole('alert')).toContainText('Codex 拒絕請求參數或協定');
+  await expect(editor).not.toHaveAttribute('readonly', '');
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue('失敗後繼續編輯這個問題');
+  expect(
+    await editor.evaluate((element: HTMLTextAreaElement) => [
+      element.selectionStart,
+      element.selectionEnd,
+    ]),
+  ).toEqual([2, 4]);
+});
+
 test('reads multiple conversations on the board and branches from an inactive card without moving its text', async ({
   page,
   request,

@@ -57,7 +57,7 @@ function Card({ data }: NodeProps<CardNode>) {
         {data.title}
         <ArrowUpRight size={16} />
       </button>
-      {zoom > 0.45 ? (
+      {data.active || zoom > 0.45 ? (
         <div className="card-content nodrag nopan nowheel">{data.content}</div>
       ) : (
         <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>

@@ -33,7 +33,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 39 unit/integration tests pass; all 9 Chromium browser tests pass. The 2 project tests also pass when run independently.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 44 unit/integration tests pass; all 11 Chromium browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
@@ -64,3 +64,13 @@ Replaced the fixed three-column interface with a full-window canvas, floating to
 Double-clicking empty space creates a conversation at the corresponding canvas coordinates. New cards use wider spacing and avoid existing card bounds; existing node positions are never rearranged. Optional creation coordinates are runtime-validated. No schema migration or provenance change is needed.
 
 Checks: 39 unit/integration tests and 9 Chromium browser tests, including real mouse text selection on an inactive card, multiple visible conversations, correct branch source input, canvas-coordinate creation, pan-versus-create separation, mobile visibility, existing 100-node drag/persistence, and project recovery. Windows and native iOS validation remains separate from Chromium phone emulation.
+
+## Codex diagnostics and editor focus (2026-10-08)
+
+The previous Codex adapter discarded RPC errors and failed-turn errors and grouped them with tool rejection, interruption and the generation deadline. It also rejected passive `plan` / `contextCompaction` protocol items. Errors now retain safe categories and the request stage without returning upstream messages, credentials or model payloads. Retryable error notifications allow the official client to continue; a terminal error or the bounded generation deadline still stops and unloads the ephemeral thread. Final text can come from completed items or the complete turn payload/stream, but commentary, invalid JSON and unprovided citations are rejected.
+
+The model dialog and `/api/models/codex/diagnostics` expose the most recent safe failure and clarify that account login and workspace authentication do not establish model access or available quota. Diagnostics are memory-only and must be captured after reproducing a failure in the running backend. An immediate failure reported on the user's Windows PC remains unconfirmed until its actual diagnostic category is observed; the cloud environment has no access to that PC's process or credentials.
+
+Reproduced a focus-loss case in the old build: zooming below the card detail threshold unmounted the active textarea. Active cards now retain their composer through zoom, and a generating composer is read-only rather than disabled so it retains focus. Browser regressions preserve the exact text and selection through zoom, five minutes of simulated time, and a delayed failed generation. There is no application timer that resets focus every five minutes; that specific timing on the user's PC remains unconfirmed.
+
+Checks: 44 unit/integration tests and 11 Chromium browser tests; production typecheck/build and lint. The real pinned Codex binary classified an invalid RPC request using an isolated signed-out home, with no model/account login request. Windows native execution and real-account generation remain separate validation steps.

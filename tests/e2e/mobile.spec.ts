@@ -71,6 +71,19 @@ test('device login UI polls official authorization status and selects Codex with
         : { status: connected ? 'complete' : 'idle' },
   });
   await page.route('**/api/models/codex', (route) => route.fulfill({ json: account() }));
+  await page.route('**/api/models/codex/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        model: 'test-model',
+        last_failure: {
+          code: 'codex_schema_rejected',
+          message: 'Codex 拒絕回答的 JSON 格式規格',
+          stage: 'generation',
+          elapsed_ms: 250,
+        },
+      },
+    }),
+  );
   await page.route('**/api/models/codex/login', (route) => {
     pending = true;
     return route.fulfill({ json: account() });
@@ -81,6 +94,8 @@ test('device login UI polls official authorization status and selects Codex with
   });
   await page.goto('/');
   await page.getByRole('button', { name: '模型與登入', exact: true }).tap();
+  await page.getByText('最近一次 Codex 回答失敗的診斷', { exact: true }).click();
+  await expect(page.getByText('codex_schema_rejected', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '使用 ChatGPT 帳號登入', exact: true }).tap();
   await expect(page.getByText('TEST-1234')).toBeVisible();
   await expect(page.getByRole('link', { name: /前往 ChatGPT/ })).toHaveAttribute(

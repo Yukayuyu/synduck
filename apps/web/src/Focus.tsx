@@ -349,7 +349,7 @@ export function Focus(props: Props) {
                 placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
                 value={props.prompt}
                 onChange={(e) => props.onPrompt(e.target.value)}
-                disabled={locked}
+                readOnly={locked}
                 rows={2}
                 maxLength={32000}
               />
