@@ -18,10 +18,16 @@ export class ProviderRegistry implements ModelProvider {
     codex?: CodexProvider,
   ) {
     this.mode = ProviderMode.parse(env.LLM_PROVIDER || 'demo');
+    let savedModel: string | undefined;
     try {
-      this.mode = z
-        .object({ provider: ProviderMode })
-        .parse(JSON.parse(readFileSync(settingsPath, 'utf8'))).provider;
+      const settings = z
+        .object({
+          provider: ProviderMode,
+          codex_model: z.string().trim().min(1).max(256).optional(),
+        })
+        .parse(JSON.parse(readFileSync(settingsPath, 'utf8')));
+      this.mode = settings.provider;
+      savedModel = settings.codex_model;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw new Error('Invalid model settings file; restore it before startup.');
@@ -30,8 +36,9 @@ export class ProviderRegistry implements ModelProvider {
       codex ||
       new CodexProvider(
         new CodexRpc(env.APP_CODEX_HOME || './data/codex'),
-        env.CODEX_MODEL || 'gpt-5.4',
+        savedModel ?? env.CODEX_MODEL?.trim() ?? '',
       );
+    if (codex && savedModel !== undefined) this.codex.setModel(savedModel);
     this.providers = {
       demo: new DemoProvider(),
       openai: new OpenAIProvider(env.LLM_MODEL || '', env.LLM_API_KEY || env.OPENAI_API_KEY || ''),
@@ -52,15 +59,48 @@ export class ProviderRegistry implements ModelProvider {
       this.active--;
     }
   }
-  async select(mode: z.infer<typeof ProviderMode>) {
-    if (mode === 'codex' && !(await this.codex.status()).connected)
-      throw new DomainError('codex_login_required', '請先完成 ChatGPT 登入。', 409);
-    if (this.active)
-      throw new DomainError('generation_active', '回答正在生成，請稍後切換模式。', 409);
+  async select(mode: z.infer<typeof ProviderMode>, model?: string) {
+    const idle = () => {
+      if (this.active || this.codex.diagnostics().generating)
+        throw new DomainError('generation_active', '回答正在生成，請稍後切換模型或模式。', 409);
+    };
+    idle();
+    if (model !== undefined && mode !== 'codex')
+      throw new DomainError(
+        'invalid_model_selection',
+        '目前模型選單只適用於 ChatGPT / Codex。',
+        400,
+      );
+    let nextModel = this.codex.model;
+    if (mode === 'codex') {
+      const { models } = await this.codex.listModels();
+      nextModel =
+        model ??
+        (this.codex.model ||
+          models.find((entry) => entry.is_default)?.model ||
+          models[0]?.model ||
+          '');
+      if (!models.some((entry) => entry.model === nextModel))
+        throw new DomainError(
+          'codex_model_unavailable',
+          '所選模型不在目前可選列表中，請在「模型與登入」刷新並重新選擇。',
+          409,
+        );
+    }
+    // Recheck after account/catalog I/O, before changing persisted settings.
+    idle();
     mkdirSync(dirname(this.settingsPath), { recursive: true });
-    writeFileSync(`${this.settingsPath}.tmp`, JSON.stringify({ provider: mode }), { mode: 0o600 });
+    writeFileSync(
+      `${this.settingsPath}.tmp`,
+      JSON.stringify({
+        provider: mode,
+        ...(nextModel ? { codex_model: nextModel } : {}),
+      }),
+      { mode: 0o600 },
+    );
     renameSync(`${this.settingsPath}.tmp`, this.settingsPath);
     this.mode = mode;
+    if (nextModel) this.codex.setModel(nextModel);
     return { provider: this.name, model: this.model };
   }
   close() {

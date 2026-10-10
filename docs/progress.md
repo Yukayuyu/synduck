@@ -33,7 +33,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 44 unit/integration tests pass; all 11 Chromium browser tests pass. The 2 project tests also pass when run independently.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 48 unit/integration tests pass; all 13 Chromium browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
@@ -74,3 +74,11 @@ The model dialog and `/api/models/codex/diagnostics` expose the most recent safe
 Reproduced a focus-loss case in the old build: zooming below the card detail threshold unmounted the active textarea. Active cards now retain their composer through zoom, and a generating composer is read-only rather than disabled so it retains focus. Browser regressions preserve the exact text and selection through zoom, five minutes of simulated time, and a delayed failed generation. There is no application timer that resets focus every five minutes; that specific timing on the user's PC remains unconfirmed.
 
 Checks: 44 unit/integration tests and 11 Chromium browser tests; production typecheck/build and lint. The real pinned Codex binary classified an invalid RPC request using an isolated signed-out home, with no model/account login request. Windows native execution and real-account generation remain separate validation steps.
+
+## Codex model picker (2026-10-10)
+
+The model dialog now reads the official App Server `model/list` catalog with pagination, using each entry's request model slug rather than its catalog ID. Hidden, non-text and already retired models are omitted. Availability NUX is an announcement of access, not a restriction. Discovery failure is explicit and retryable; the app never invents a fallback list. The picker can refresh and save a choice, preserving unsaved selection through refresh. An old model absent from the catalog requires an explicit replacement.
+
+The selected model is stored as `codex_model` alongside the provider in the existing settings JSON, survives restart and mode switches, and takes precedence over the old environment model. Legacy provider-only files remain valid, with no database migration. New installations have no hardcoded Codex model. Catalog membership is rechecked before saving, and active generation prevents changes even if it starts during catalog I/O. Generation never silently changes the selected model, keeping persisted answer provenance accurate.
+
+Checks: 48 unit/integration tests and 13 Chromium browser tests, including catalog pagination/filtering, newly accessible model selection, settings restart, stale model rejection, catalog failure/retry, HTTP model selection and actual request/provenance consistency, plus a concurrent generation check. Typecheck, lint and production build pass. Catalog and generation responses are simulated; the user's real model access and Windows execution remain unverified in this cloud environment.

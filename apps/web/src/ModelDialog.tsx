@@ -15,6 +15,15 @@ type Diagnostics = {
   model: string;
   last_failure: { code: string; message: string; stage: string; elapsed_ms: number } | null;
 };
+type ModelList = {
+  models: {
+    model: string;
+    name: string;
+    description: string;
+    is_default: boolean;
+  }[];
+  selected_model: string;
+};
 export function ModelDialog({
   provider,
   onClose,
@@ -30,6 +39,11 @@ export function ModelDialog({
   const [selection, setSelection] = useState(provider);
   const [protectedWorkspace, setProtectedWorkspace] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [modelList, setModelList] = useState<ModelList | null>(null);
+  const [codexModel, setCodexModel] = useState('');
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState('');
+  const [modelRefresh, setModelRefresh] = useState(0);
   useEffect(() => {
     let alive = true;
     void api<AccountState>('/models/codex')
@@ -70,6 +84,37 @@ export function ModelDialog({
       clearInterval(timer);
     };
   }, [account?.login.status]);
+  useEffect(() => {
+    if (!account?.connected || selection !== 'codex') return;
+    let alive = true;
+    setLoadingModels(true);
+    setModelError('');
+    setModelList(null);
+    void api<ModelList>('/models/codex/models')
+      .then((list) => {
+        if (!alive) return;
+        setModelList(list);
+        setCodexModel(
+          (previous) =>
+            previous ||
+            list.selected_model ||
+            list.models.find((entry) => entry.is_default)?.model ||
+            list.models[0]?.model ||
+            '',
+        );
+      })
+      .catch((e) => {
+        if (alive) setModelError(e.message);
+      })
+      .finally(() => {
+        if (alive) setLoadingModels(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [account?.connected, selection, modelRefresh]);
+  const chosenModel = modelList?.models.find((entry) => entry.model === codexModel);
+  const canSelectCodex = account?.connected && !loadingModels && !!chosenModel;
   const action = async (path: string) => {
     setBusy(true);
     setError('');
@@ -166,17 +211,63 @@ export function ModelDialog({
           <option value="codex">ChatGPT / Codex</option>
           <option value="openai">OpenAI API（後端需設定密鑰）</option>
         </select>
+        {selection === 'codex' && (
+          <>
+            <label htmlFor="codex-model-choice">Codex 模型</label>
+            <select
+              id="codex-model-choice"
+              value={codexModel}
+              disabled={busy || loadingModels || !account?.connected || !modelList}
+              onChange={(e) => setCodexModel(e.target.value)}
+            >
+              <option value="" disabled>
+                {loadingModels ? '正在取得模型…' : '請選擇模型'}
+              </option>
+              {codexModel && !chosenModel && (
+                <option value={codexModel} disabled>
+                  {codexModel}（已不在可選列表）
+                </option>
+              )}
+              {modelList?.models.map((entry) => (
+                <option key={entry.model} value={entry.model}>
+                  {entry.name} · {entry.model}
+                  {entry.is_default ? '（官方預設）' : ''}
+                </option>
+              ))}
+            </select>
+            <button
+              className="secondary"
+              disabled={busy || loadingModels || !account?.connected}
+              onClick={() => setModelRefresh((value) => value + 1)}
+            >
+              刷新模型列表
+            </button>
+            {!account?.connected && (
+              <p className="project-description">登入 ChatGPT 後即可取得模型列表。</p>
+            )}
+            {chosenModel?.description && (
+              <p className="project-description">{chosenModel.description}</p>
+            )}
+            {!loadingModels && modelList && !canSelectCodex && (
+              <p role="alert">目前沒有選中可用模型，請刷新列表並重新選擇。</p>
+            )}
+            {modelError && <p role="alert">{modelError}</p>}
+          </>
+        )}
         <p className="project-description">
           Codex 每次使用獨立對話，只傳送你預覽的內容與固定回答指令。Codex
           本身仍會加入執行環境資訊；上下文估算不是帳單用量。圖形操作仍需手動確認。
         </p>
         <button
           className="primary"
-          disabled={busy || (selection === 'codex' && !account?.connected)}
+          disabled={busy || (selection === 'codex' && !canSelectCodex)}
           onClick={() => {
             setBusy(true);
             setError('');
-            void api('/models/select', { provider: selection })
+            void api('/models/select', {
+              provider: selection,
+              ...(selection === 'codex' ? { model: codexModel } : {}),
+            })
               .then(onChanged)
               .then(onClose)
               .catch((e) => setError(e.message))

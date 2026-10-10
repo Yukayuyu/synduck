@@ -89,9 +89,19 @@ test('device login UI polls official authorization status and selects Codex with
     return route.fulfill({ json: account() });
   });
   await page.route('**/api/models/select', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ provider: 'codex' });
+    expect(route.request().postDataJSON()).toEqual({ provider: 'codex', model: 'test-model' });
     await route.fulfill({ json: { provider: 'codex', model: 'test-model' } });
   });
+  await page.route('**/api/models/codex/models', (route) =>
+    route.fulfill({
+      json: {
+        selected_model: '',
+        models: [
+          { model: 'test-model', name: 'Test Model', description: 'Text model', is_default: true },
+        ],
+      },
+    }),
+  );
   await page.goto('/');
   await page.getByRole('button', { name: '模型與登入', exact: true }).tap();
   await page.getByText('最近一次 Codex 回答失敗的診斷', { exact: true }).click();
@@ -105,6 +115,7 @@ test('device login UI polls official authorization status and selects Codex with
   connected = true;
   await expect(page.getByText(/已連接 · example/)).toBeVisible();
   await page.getByLabel('回答模式').selectOption('codex');
+  await expect(page.getByLabel('Codex 模型', { exact: true })).toHaveValue('test-model');
   await page.getByRole('button', { name: '使用此模式', exact: true }).tap();
   await expect(page.getByRole('dialog', { name: '模型與登入' })).not.toBeVisible();
 });

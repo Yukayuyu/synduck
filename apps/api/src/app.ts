@@ -44,6 +44,9 @@ export function createApp(
   if (options.models) {
     const models = options.models;
     app.get('/api/models/codex', async () => models.codex.status());
+    app.get('/api/models/codex/models', async (_request, reply) =>
+      reply.header('Cache-Control', 'no-store').send(await models.codex.listModels()),
+    );
     app.get('/api/models/codex/diagnostics', async (_request, reply) =>
       reply.header('Cache-Control', 'no-store').send(models.codex.diagnostics()),
     );
@@ -61,8 +64,14 @@ export function createApp(
     });
     app.post('/api/models/select', async (request) => {
       idle();
-      const { provider: mode } = z.object({ provider: ProviderMode }).strict().parse(request.body);
-      return models.select(mode);
+      const { provider: mode, model } = z
+        .object({
+          provider: ProviderMode,
+          model: z.string().trim().min(1).max(256).optional(),
+        })
+        .strict()
+        .parse(request.body);
+      return models.select(mode, model);
     });
   }
   app.setErrorHandler((error, _request, reply) => {

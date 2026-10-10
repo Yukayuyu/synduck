@@ -89,7 +89,7 @@ export function codexError(error: unknown): DomainError {
   )
     return new DomainError(
       'codex_model_unavailable',
-      '目前設定的 Codex 模型無法使用，請確認帳號權限與 CODEX_MODEL 設定。',
+      '目前設定的 Codex 模型無法使用，請在「模型與登入」刷新模型列表並重新選擇。',
       502,
     );
   if (

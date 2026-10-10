@@ -34,6 +34,19 @@ const DeviceLogin = z.object({
   verificationUrl: z.string().url(),
   userCode: z.string().min(1).max(100),
 });
+const ModelEntry = z.object({
+  model: z.string().min(1).max(256),
+  displayName: z.string().max(256),
+  description: z.string().max(10000),
+  hidden: z.boolean(),
+  isDefault: z.boolean(),
+  inputModalities: z.array(z.string()).optional(),
+  upgradeInfo: z.object({ retirementAt: z.number().nullable().optional() }).nullable().optional(),
+});
+const ModelPage = z.object({
+  data: z.array(ModelEntry).max(1000),
+  nextCursor: z.string().max(10000).nullable().optional(),
+});
 export type LoginState = {
   status: 'idle' | 'pending' | 'complete' | 'failed';
   verificationUrl?: string;
@@ -41,7 +54,7 @@ export type LoginState = {
 };
 export class CodexProvider implements ModelProvider {
   readonly name = 'codex';
-  readonly model: string;
+  private selectedModel: string;
   private login: LoginState & { loginId?: string } = { status: 'idle' };
   private loginStarting = false;
   private generating = false;
@@ -56,15 +69,72 @@ export class CodexProvider implements ModelProvider {
   private unsubscribe: () => void;
   constructor(
     private readonly rpc: CodexConnection,
-    model = 'gpt-5.4',
+    model = '',
   ) {
-    this.model = model;
+    this.selectedModel = model;
     this.unsubscribe = rpc.subscribe(({ method, params }) => {
       if (method === 'account/login/completed' && params.loginId === this.login.loginId)
         this.login = { status: params.success === true ? 'complete' : 'failed' };
       if (method === 'canvas/disconnected' && this.login.status === 'pending')
         this.login = { status: 'failed' };
     });
+  }
+  get model() {
+    return this.selectedModel;
+  }
+  setModel(model: string) {
+    this.assertIdle();
+    this.selectedModel = model;
+  }
+  async listModels() {
+    if (!(await this.status()).connected)
+      throw new DomainError('codex_login_required', '請先完成 ChatGPT 登入，再取得模型列表。', 409);
+    try {
+      const models = new Map<
+        string,
+        {
+          model: string;
+          name: string;
+          description: string;
+          is_default: boolean;
+        }
+      >();
+      const cursors = new Set<string>();
+      let cursor: string | null = null;
+      for (let page = 0; page < 20; page++) {
+        const response = ModelPage.parse(
+          await this.rpc.request('model/list', {
+            cursor,
+            limit: 100,
+            includeHidden: false,
+          }),
+        );
+        for (const entry of response.data) {
+          if (entry.hidden || (entry.inputModalities && !entry.inputModalities.includes('text')))
+            continue;
+          const retired = entry.upgradeInfo?.retirementAt;
+          if (retired != null && retired <= Date.now() / 1000) continue;
+          models.set(entry.model, {
+            model: entry.model,
+            name: entry.displayName,
+            description: entry.description,
+            is_default: entry.isDefault,
+          });
+        }
+        cursor = response.nextCursor || null;
+        if (!cursor) return { models: [...models.values()], selected_model: this.model };
+        if (cursors.has(cursor)) break;
+        cursors.add(cursor);
+      }
+      throw new Error('Invalid model pagination');
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      throw new DomainError(
+        'codex_model_list_failed',
+        '無法取得 Codex 模型列表，請刷新或確認連線後重試。',
+        502,
+      );
+    }
   }
   async status() {
     const result = AccountResponse.parse(
@@ -159,6 +229,12 @@ export class CodexProvider implements ModelProvider {
     let threadId = '';
     let completed = false;
     try {
+      if (!this.model)
+        throw new DomainError(
+          'codex_model_required',
+          '請在「模型與登入」選擇 Codex 模型後再提交。',
+          409,
+        );
       if (!(await this.status()).connected)
         throw new DomainError(
           'codex_login_required',

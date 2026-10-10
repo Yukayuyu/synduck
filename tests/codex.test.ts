@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -27,6 +27,15 @@ const pkg: ContextPackage = {
   trace: { resolved_candidates: 0, included_items: 0, deduplicated_items: 0 },
 };
 const answer = { answer: 'Safe answer 🌱', used_source_ids: [], suggested_graph_updates: [] };
+const catalogModel = (model: string, extra: object = {}) => ({
+  id: `catalog-${model}`,
+  model,
+  displayName: `Model ${model}`,
+  description: 'Text model',
+  hidden: false,
+  isDefault: false,
+  ...extra,
+});
 class FakeCodex implements CodexConnection {
   calls: { method: string; params: object }[] = [];
   listeners = new Set<(event: RpcEvent) => void>();
@@ -45,6 +54,10 @@ class FakeCodex implements CodexConnection {
   silent = false;
   errorNotification = true;
   messagePhase = 'final_answer';
+  modelPages: Record<string, { data: object[]; nextCursor: string | null }> = {
+    first: { data: [catalogModel('test-model', { isDefault: true })], nextCursor: null },
+  };
+  modelListFailure = false;
   emit(method: string, params: Record<string, unknown>) {
     for (const listener of this.listeners) listener({ method, params });
   }
@@ -71,8 +84,16 @@ class FakeCodex implements CodexConnection {
         userCode: 'ABCD-12345',
       };
     if (method === 'account/logout') this.connected = false;
+    if (method === 'model/list') {
+      if (this.modelListFailure) throw new Error('sensitive-auth-token');
+      result = this.modelPages[(params as { cursor?: string }).cursor || 'first'];
+    }
     if (method === 'thread/start')
-      result = { thread: { id: 'thread1' }, model: 'test-model', instructionSources: [] };
+      result = {
+        thread: { id: 'thread1' },
+        model: (params as { model: string }).model,
+        instructionSources: [],
+      };
     if (method === 'turn/start') {
       if (this.turnRejected) throw this.failure;
       if (this.silent) return {} as T;
@@ -359,6 +380,175 @@ describe('ChatGPT through official Codex protocol', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+  it('reads every model page, excludes hidden/retired/non-text models and exposes only catalog fields', async () => {
+    const rpc = new FakeCodex();
+    rpc.modelPages = {
+      first: {
+        data: [
+          catalogModel('current', { isDefault: true, accessToken: 'never-expose' }),
+          catalogModel('hidden', { hidden: true }),
+          catalogModel('retired', { upgradeInfo: { retirementAt: 1 } }),
+          catalogModel('image-only', { inputModalities: ['image'] }),
+        ],
+        nextCursor: 'page2',
+      },
+      page2: {
+        data: [
+          catalogModel('second', { inputModalities: ['text'] }),
+          catalogModel('newly-available', { availabilityNux: { message: 'Try this new model.' } }),
+          catalogModel('current', { isDefault: true }),
+        ],
+        nextCursor: null,
+      },
+    };
+    const provider = new CodexProvider(rpc, 'retired');
+    try {
+      const list = await provider.listModels();
+      expect(list.models.map((model) => model.model)).toEqual([
+        'current',
+        'second',
+        'newly-available',
+      ]);
+      expect(list.selected_model).toBe('retired');
+      expect(list.models.at(-1)?.model).toBe('newly-available');
+      expect(JSON.stringify(list)).not.toContain('never-expose');
+      expect(
+        rpc.calls.filter((call) => call.method === 'model/list').map((call) => call.params),
+      ).toEqual([
+        { cursor: null, limit: 100, includeHidden: false },
+        { cursor: 'page2', limit: 100, includeHidden: false },
+      ]);
+      rpc.modelListFailure = true;
+      await expect(provider.listModels()).rejects.toMatchObject({
+        code: 'codex_model_list_failed',
+      });
+      rpc.modelListFailure = false;
+      rpc.modelPages.first.nextCursor = 'page2';
+      rpc.modelPages.page2.nextCursor = 'page2';
+      await expect(provider.listModels()).rejects.toMatchObject({
+        code: 'codex_model_list_failed',
+      });
+      rpc.connected = false;
+      await expect(provider.listModels()).rejects.toMatchObject({ code: 'codex_login_required' });
+    } finally {
+      await provider.close();
+    }
+  });
+  it('persists a selected catalog model across restart and mode changes, overriding the old environment model', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-model-picker-'));
+    const path = join(directory, 'settings.json');
+    const rpc = new FakeCodex();
+    rpc.modelPages.first.data.push(catalogModel('new-model'));
+    const provider = new CodexProvider(rpc, 'gpt-5.4');
+    const registry = new ProviderRegistry(path, {}, provider);
+    try {
+      await expect(registry.select('codex')).rejects.toMatchObject({
+        code: 'codex_model_unavailable',
+      });
+      expect(await registry.select('codex', 'new-model')).toEqual({
+        provider: 'codex',
+        model: 'new-model',
+      });
+      expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+        provider: 'codex',
+        codex_model: 'new-model',
+      });
+      const restored = new ProviderRegistry(
+        path,
+        { CODEX_MODEL: 'gpt-5.4' },
+        new CodexProvider(rpc, 'gpt-5.4'),
+      );
+      expect(restored.model).toBe('new-model');
+      await expect(restored.generate(pkg)).resolves.toEqual(answer);
+      expect(rpc.calls.findLast((call) => call.method === 'thread/start')?.params).toMatchObject({
+        model: 'new-model',
+      });
+      await restored.select('demo');
+      expect(JSON.parse(readFileSync(path, 'utf8')).codex_model).toBe('new-model');
+      const before = readFileSync(path, 'utf8');
+      await expect(restored.select('codex', 'invented')).rejects.toMatchObject({
+        code: 'codex_model_unavailable',
+      });
+      expect(readFileSync(path, 'utf8')).toBe(before);
+      expect(restored.name).toBe('demo');
+      rpc.modelPages.first.data.push(
+        catalogModel('newly-available', { availabilityNux: { message: 'Try this new model.' } }),
+      );
+      await expect(restored.select('codex', 'newly-available')).resolves.toMatchObject({
+        model: 'newly-available',
+      });
+      await expect(restored.select('demo', 'new-model')).rejects.toMatchObject({
+        code: 'invalid_model_selection',
+      });
+      await restored.close();
+    } finally {
+      await registry.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('keeps legacy provider-only settings and uses the catalog default when no model was configured', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-model-legacy-'));
+    const path = join(directory, 'settings.json');
+    writeFileSync(path, JSON.stringify({ provider: 'codex' }));
+    const rpc = new FakeCodex();
+    const provider = new CodexProvider(rpc);
+    const registry = new ProviderRegistry(path, {}, provider);
+    try {
+      expect(registry.model).toBe('');
+      await expect(provider.generate(pkg)).rejects.toMatchObject({ code: 'codex_model_required' });
+      expect(rpc.calls.some((call) => call.method === 'thread/start')).toBe(false);
+      await registry.select('codex');
+      expect(registry.model).toBe('test-model');
+    } finally {
+      await registry.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('rejects a model change if generation starts while the catalog is loading', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-model-race-'));
+    const path = join(directory, 'settings.json');
+    const rpc = new FakeCodex();
+    rpc.modelPages.first.data.push(catalogModel('new-model'));
+    const provider = new CodexProvider(rpc, 'test-model');
+    const registry = new ProviderRegistry(path, {}, provider);
+    let release = () => {};
+    try {
+      await registry.select('codex', 'test-model');
+      const before = readFileSync(path, 'utf8');
+      const catalog = await provider.listModels();
+      const pause = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.spyOn(provider, 'listModels').mockImplementationOnce(async () => {
+        await pause;
+        return catalog;
+      });
+      const changed = expect(registry.select('codex', 'new-model')).rejects.toMatchObject({
+        code: 'generation_active',
+      });
+      rpc.silent = true;
+      const generated = registry.generate(pkg);
+      await vi.waitFor(() =>
+        expect(rpc.calls.some((call) => call.method === 'turn/start')).toBe(true),
+      );
+      release();
+      await changed;
+      expect(readFileSync(path, 'utf8')).toBe(before);
+      expect(registry.model).toBe('test-model');
+      rpc.emit('turn/completed', {
+        threadId: 'thread1',
+        turn: {
+          status: 'completed',
+          items: [{ type: 'agentMessage', text: JSON.stringify(answer) }],
+        },
+      });
+      await expect(generated).resolves.toEqual(answer);
+    } finally {
+      release();
+      await registry.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('connects the HTTP model controls to generation and saves Codex provenance', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'canvas-codex-api-'));
     const rpc = new FakeCodex();
@@ -371,10 +561,27 @@ describe('ChatGPT through official Codex protocol', () => {
     try {
       rpc.connected = false;
       expect((await post('/api/models/select', { provider: 'codex' })).statusCode).toBe(409);
+      expect((await app.inject('/api/models/codex/models')).statusCode).toBe(409);
       expect((await post('/api/models/codex/login')).json().login.status).toBe('pending');
       rpc.connected = true;
       rpc.emit('account/login/completed', { loginId: 'login1', success: true });
-      expect((await post('/api/models/select', { provider: 'codex' })).statusCode).toBe(200);
+      rpc.modelPages.first.data.push(catalogModel('chosen-model'));
+      const catalog = await app.inject('/api/models/codex/models');
+      expect(catalog.headers['cache-control']).toBe('no-store');
+      expect(catalog.json().models.map((entry: { model: string }) => entry.model)).toEqual([
+        'test-model',
+        'chosen-model',
+      ]);
+      expect(catalog.body).not.toMatch(/never-expose|test@example/);
+      expect((await post('/api/models/select', { provider: 'codex', model: '' })).statusCode).toBe(
+        400,
+      );
+      expect(
+        (await post('/api/models/select', { provider: 'codex', model: 'invented' })).statusCode,
+      ).toBe(409);
+      expect(
+        (await post('/api/models/select', { provider: 'codex', model: 'chosen-model' })).statusCode,
+      ).toBe(200);
       const conversation = (await post('/api/conversations', { title: 'Account test' })).json();
       const compiled = (
         await post('/api/compile', {
@@ -386,12 +593,12 @@ describe('ChatGPT through official Codex protocol', () => {
       const response = await post('/api/answer', { context_set_id: compiled.context_set.id });
       expect(response.body).toContain('"type":"complete"');
       const state = (await app.inject('/api/state')).json();
-      expect(state.provider).toMatchObject({ name: 'codex', model: 'test-model', demo: false });
+      expect(state.provider).toMatchObject({ name: 'codex', model: 'chosen-model', demo: false });
       expect(
         state.turns.find((turn: { actor: string }) => turn.actor === 'assistant'),
       ).toMatchObject({
         model_provider: 'codex',
-        model_id: 'test-model',
+        model_id: 'chosen-model',
         input_context_set_id: compiled.context_set.id,
         status: 'complete',
       });

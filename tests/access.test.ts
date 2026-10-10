@@ -30,6 +30,7 @@ describe('protected cross-device workspace', () => {
         '/api/project/export',
         '/api/project/recovery',
         '/api/models',
+        '/api/models/codex/models',
       ])
         expect((await app.inject({ url, headers })).statusCode).toBe(401);
       expect(
