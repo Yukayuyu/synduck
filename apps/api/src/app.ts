@@ -23,6 +23,7 @@ import {
 import { compileContext } from '@acc/context-compiler';
 import { type ModelProvider } from '@acc/model-gateway';
 import { ProviderRegistry, ProviderMode } from '../../../packages/model-gateway/src/registry';
+import { ReasoningEffort } from '../../../packages/model-gateway/src/codex';
 import { registerAccess, type AccessConfig } from './access';
 
 export function createApp(
@@ -64,14 +65,19 @@ export function createApp(
     });
     app.post('/api/models/select', async (request) => {
       idle();
-      const { provider: mode, model } = z
+      const {
+        provider: mode,
+        model,
+        reasoning_effort: reasoningEffort,
+      } = z
         .object({
           provider: ProviderMode,
           model: z.string().trim().min(1).max(256).optional(),
+          reasoning_effort: ReasoningEffort.nullable().optional(),
         })
         .strict()
         .parse(request.body);
-      return models.select(mode, model);
+      return models.select(mode, model, reasoningEffort);
     });
   }
   app.setErrorHandler((error, _request, reply) => {

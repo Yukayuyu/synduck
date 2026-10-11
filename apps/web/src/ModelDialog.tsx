@@ -21,9 +21,24 @@ type ModelList = {
     name: string;
     description: string;
     is_default: boolean;
+    default_reasoning_effort: string;
+    supported_reasoning_efforts: { effort: string; description: string }[];
   }[];
   selected_model: string;
+  selected_reasoning_effort: string | null;
 };
+const effortNames: Record<string, string> = {
+  none: '不額外思考',
+  minimal: '極低',
+  low: '低',
+  medium: '中',
+  high: '高',
+  xhigh: '很高',
+  max: '最高',
+  ultra: '超高',
+};
+const effortLabel = (effort: string) =>
+  effortNames[effort] ? `${effortNames[effort]} · ${effort}` : effort;
 export function ModelDialog({
   provider,
   onClose,
@@ -41,6 +56,7 @@ export function ModelDialog({
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [modelList, setModelList] = useState<ModelList | null>(null);
   const [codexModel, setCodexModel] = useState('');
+  const [codexEffort, setCodexEffort] = useState<string | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState('');
   const [modelRefresh, setModelRefresh] = useState(0);
@@ -94,6 +110,7 @@ export function ModelDialog({
       .then((list) => {
         if (!alive) return;
         setModelList(list);
+        setCodexEffort((previous) => previous ?? list.selected_reasoning_effort ?? '');
         setCodexModel(
           (previous) =>
             previous ||
@@ -114,7 +131,11 @@ export function ModelDialog({
     };
   }, [account?.connected, selection, modelRefresh]);
   const chosenModel = modelList?.models.find((entry) => entry.model === codexModel);
-  const canSelectCodex = account?.connected && !loadingModels && !!chosenModel;
+  const chosenEffort = chosenModel?.supported_reasoning_efforts.find(
+    (option) => option.effort === codexEffort,
+  );
+  const validEffort = !codexEffort || !!chosenEffort;
+  const canSelectCodex = account?.connected && !loadingModels && !!chosenModel && validEffort;
   const action = async (path: string) => {
     setBusy(true);
     setError('');
@@ -218,7 +239,10 @@ export function ModelDialog({
               id="codex-model-choice"
               value={codexModel}
               disabled={busy || loadingModels || !account?.connected || !modelList}
-              onChange={(e) => setCodexModel(e.target.value)}
+              onChange={(e) => {
+                setCodexModel(e.target.value);
+                setCodexEffort('');
+              }}
             >
               <option value="" disabled>
                 {loadingModels ? '正在取得模型…' : '請選擇模型'}
@@ -248,8 +272,43 @@ export function ModelDialog({
             {chosenModel?.description && (
               <p className="project-description">{chosenModel.description}</p>
             )}
-            {!loadingModels && modelList && !canSelectCodex && (
+            <label htmlFor="codex-effort-choice">思考深度</label>
+            <select
+              id="codex-effort-choice"
+              value={codexEffort ?? ''}
+              disabled={busy || loadingModels || !account?.connected || !chosenModel}
+              onChange={(e) => setCodexEffort(e.target.value)}
+            >
+              <option value="">
+                模型預設
+                {chosenModel ? `（${effortLabel(chosenModel.default_reasoning_effort)}）` : ''}
+              </option>
+              {codexEffort && !chosenEffort && (
+                <option value={codexEffort} disabled>
+                  {codexEffort}（已不支援）
+                </option>
+              )}
+              {chosenModel?.supported_reasoning_efforts.map((option) => (
+                <option key={option.effort} value={option.effort}>
+                  {effortLabel(option.effort)}
+                </option>
+              ))}
+            </select>
+            {chosenEffort?.description && (
+              <p className="project-description">{chosenEffort.description}</p>
+            )}
+            {chosenModel && (
+              <p className="project-description">
+                {chosenModel.supported_reasoning_efforts.length
+                  ? '較高的思考深度通常需要更長的回答時間。切換模型後請重新選擇深度。'
+                  : '此模型未提供可調整的思考深度，使用模型預設。'}
+              </p>
+            )}
+            {!loadingModels && modelList && !chosenModel && (
               <p role="alert">目前沒有選中可用模型，請刷新列表並重新選擇。</p>
+            )}
+            {!loadingModels && chosenModel && !validEffort && (
+              <p role="alert">此模型已不支援所選的思考深度，請重新選擇或使用模型預設。</p>
             )}
             {modelError && <p role="alert">{modelError}</p>}
           </>
@@ -266,7 +325,9 @@ export function ModelDialog({
             setError('');
             void api('/models/select', {
               provider: selection,
-              ...(selection === 'codex' ? { model: codexModel } : {}),
+              ...(selection === 'codex'
+                ? { model: codexModel, reasoning_effort: codexEffort || null }
+                : {}),
             })
               .then(onChanged)
               .then(onClose)

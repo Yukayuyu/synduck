@@ -34,6 +34,12 @@ const catalogModel = (model: string, extra: object = {}) => ({
   description: 'Text model',
   hidden: false,
   isDefault: false,
+  defaultReasoningEffort: 'medium',
+  supportedReasoningEfforts: [
+    { reasoningEffort: 'low', description: 'Faster answers' },
+    { reasoningEffort: 'medium', description: 'Balanced reasoning' },
+    { reasoningEffort: 'high', description: 'Deeper reasoning' },
+  ],
   ...extra,
 });
 class FakeCodex implements CodexConnection {
@@ -410,6 +416,15 @@ describe('ChatGPT through official Codex protocol', () => {
         'newly-available',
       ]);
       expect(list.selected_model).toBe('retired');
+      expect(list.selected_reasoning_effort).toBeNull();
+      expect(list.models[0]).toMatchObject({
+        default_reasoning_effort: 'medium',
+        supported_reasoning_efforts: [
+          { effort: 'low', description: 'Faster answers' },
+          { effort: 'medium', description: 'Balanced reasoning' },
+          { effort: 'high', description: 'Deeper reasoning' },
+        ],
+      });
       expect(list.models.at(-1)?.model).toBe('newly-available');
       expect(JSON.stringify(list)).not.toContain('never-expose');
       expect(
@@ -523,7 +538,7 @@ describe('ChatGPT through official Codex protocol', () => {
         await pause;
         return catalog;
       });
-      const changed = expect(registry.select('codex', 'new-model')).rejects.toMatchObject({
+      const changed = expect(registry.select('codex', 'new-model', 'high')).rejects.toMatchObject({
         code: 'generation_active',
       });
       rpc.silent = true;
@@ -535,6 +550,7 @@ describe('ChatGPT through official Codex protocol', () => {
       await changed;
       expect(readFileSync(path, 'utf8')).toBe(before);
       expect(registry.model).toBe('test-model');
+      expect(provider.reasoningEffort).toBeNull();
       rpc.emit('turn/completed', {
         threadId: 'thread1',
         turn: {
@@ -545,6 +561,92 @@ describe('ChatGPT through official Codex protocol', () => {
       await expect(generated).resolves.toEqual(answer);
     } finally {
       release();
+      await registry.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('persists reasoning depth across restart and mode changes, sends it to Codex and validates it against the selected model', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-effort-test-'));
+    const path = join(directory, 'settings.json');
+    const rpc = new FakeCodex();
+    const provider = new CodexProvider(rpc, 'test-model');
+    const registry = new ProviderRegistry(path, {}, provider);
+    let restored: ProviderRegistry | undefined;
+    try {
+      await registry.select('codex', 'test-model', 'high');
+      expect(JSON.parse(readFileSync(path, 'utf8')).codex_reasoning_effort).toBe('high');
+      await registry.select('demo');
+      restored = new ProviderRegistry(path, {}, new CodexProvider(rpc));
+      expect(restored.codex.reasoningEffort).toBe('high');
+      await restored.select('codex');
+      expect((await restored.codex.listModels()).selected_reasoning_effort).toBe('high');
+      await expect(restored.generate(pkg)).resolves.toEqual(answer);
+      expect(rpc.calls.findLast((call) => call.method === 'turn/start')?.params).toMatchObject({
+        effort: 'high',
+      });
+      const before = readFileSync(path, 'utf8');
+      await expect(restored.select('codex', 'test-model', 'invented')).rejects.toMatchObject({
+        code: 'codex_reasoning_effort_unavailable',
+      });
+      await expect(restored.select('demo', undefined, 'high')).rejects.toMatchObject({
+        code: 'invalid_model_selection',
+      });
+      expect(readFileSync(path, 'utf8')).toBe(before);
+      expect(restored.codex.reasoningEffort).toBe('high');
+      await restored.select('codex', 'test-model', null);
+      expect(JSON.parse(readFileSync(path, 'utf8')).codex_reasoning_effort).toBeUndefined();
+      await restored.generate(pkg);
+      expect(rpc.calls.findLast((call) => call.method === 'turn/start')?.params).not.toHaveProperty(
+        'effort',
+      );
+      await restored.select('codex', 'test-model', 'high');
+      rpc.modelPages.first.data.push(catalogModel('plain', { supportedReasoningEfforts: [] }));
+      await expect(restored.select('codex', 'plain', 'high')).rejects.toMatchObject({
+        code: 'codex_reasoning_effort_unavailable',
+      });
+      await restored.select('codex', 'plain');
+      expect(restored.codex.reasoningEffort).toBeNull();
+      await restored.generate(pkg);
+      expect(rpc.calls.findLast((call) => call.method === 'turn/start')?.params).not.toHaveProperty(
+        'effort',
+      );
+    } finally {
+      await restored?.close();
+      await registry.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  it('uses new reasoning levels advertised by the catalog and rejects a level removed since selection', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-effort-catalog-'));
+    const rpc = new FakeCodex();
+    rpc.modelPages.first.data = [
+      catalogModel('test-model', {
+        defaultReasoningEffort: 'future-depth',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'future-depth', description: 'New level', token: 'never-expose' },
+        ],
+      }),
+    ];
+    const provider = new CodexProvider(rpc, 'test-model');
+    const registry = new ProviderRegistry(join(directory, 'settings.json'), {}, provider);
+    try {
+      const catalog = await provider.listModels();
+      expect(catalog.models[0].supported_reasoning_efforts).toEqual([
+        { effort: 'future-depth', description: 'New level' },
+      ]);
+      expect(JSON.stringify(catalog)).not.toContain('never-expose');
+      await registry.select('codex', 'test-model', 'future-depth');
+      await registry.generate(pkg);
+      expect(rpc.calls.findLast((call) => call.method === 'turn/start')?.params).toMatchObject({
+        effort: 'future-depth',
+      });
+      rpc.modelPages.first.data = [catalogModel('test-model')];
+      await expect(registry.select('codex')).rejects.toMatchObject({
+        code: 'codex_reasoning_effort_unavailable',
+      });
+      await registry.select('codex', 'test-model', null);
+      expect(provider.reasoningEffort).toBeNull();
+    } finally {
       await registry.close();
       rmSync(directory, { recursive: true, force: true });
     }
@@ -580,8 +682,32 @@ describe('ChatGPT through official Codex protocol', () => {
         (await post('/api/models/select', { provider: 'codex', model: 'invented' })).statusCode,
       ).toBe(409);
       expect(
-        (await post('/api/models/select', { provider: 'codex', model: 'chosen-model' })).statusCode,
+        (
+          await post('/api/models/select', {
+            provider: 'codex',
+            model: 'chosen-model',
+            reasoning_effort: 'high',
+          })
+        ).statusCode,
       ).toBe(200);
+      expect(
+        (
+          await post('/api/models/select', {
+            provider: 'codex',
+            model: 'chosen-model',
+            reasoning_effort: '',
+          })
+        ).statusCode,
+      ).toBe(400);
+      expect(
+        (
+          await post('/api/models/select', {
+            provider: 'codex',
+            model: 'chosen-model',
+            reasoning_effort: 'invented',
+          })
+        ).statusCode,
+      ).toBe(409);
       const conversation = (await post('/api/conversations', { title: 'Account test' })).json();
       const compiled = (
         await post('/api/compile', {
@@ -592,6 +718,9 @@ describe('ChatGPT through official Codex protocol', () => {
       ).json();
       const response = await post('/api/answer', { context_set_id: compiled.context_set.id });
       expect(response.body).toContain('"type":"complete"');
+      expect(rpc.calls.findLast((call) => call.method === 'turn/start')?.params).toMatchObject({
+        effort: 'high',
+      });
       const state = (await app.inject('/api/state')).json();
       expect(state.provider).toMatchObject({ name: 'codex', model: 'chosen-model', demo: false });
       expect(

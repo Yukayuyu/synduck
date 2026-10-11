@@ -89,15 +89,30 @@ test('device login UI polls official authorization status and selects Codex with
     return route.fulfill({ json: account() });
   });
   await page.route('**/api/models/select', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ provider: 'codex', model: 'test-model' });
+    expect(route.request().postDataJSON()).toEqual({
+      provider: 'codex',
+      model: 'test-model',
+      reasoning_effort: 'high',
+    });
     await route.fulfill({ json: { provider: 'codex', model: 'test-model' } });
   });
   await page.route('**/api/models/codex/models', (route) =>
     route.fulfill({
       json: {
         selected_model: '',
+        selected_reasoning_effort: null,
         models: [
-          { model: 'test-model', name: 'Test Model', description: 'Text model', is_default: true },
+          {
+            model: 'test-model',
+            name: 'Test Model',
+            description: 'Text model',
+            is_default: true,
+            default_reasoning_effort: 'medium',
+            supported_reasoning_efforts: [
+              { effort: 'medium', description: 'Balanced' },
+              { effort: 'high', description: 'Deeper' },
+            ],
+          },
         ],
       },
     }),
@@ -116,6 +131,7 @@ test('device login UI polls official authorization status and selects Codex with
   await expect(page.getByText(/已連接 · example/)).toBeVisible();
   await page.getByLabel('回答模式').selectOption('codex');
   await expect(page.getByLabel('Codex 模型', { exact: true })).toHaveValue('test-model');
+  await page.getByLabel('思考深度', { exact: true }).selectOption('high');
   await page.getByRole('button', { name: '使用此模式', exact: true }).tap();
   await expect(page.getByRole('dialog', { name: '模型與登入' })).not.toBeVisible();
 });

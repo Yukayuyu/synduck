@@ -33,7 +33,7 @@ First milestone: the demonstrable vertical slice from the supplied specification
 ## Validation evidence
 
 - Node 24.19.0; pnpm 11.19.0; lockfile committed; supply-chain checks left enabled.
-- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 48 unit/integration tests pass; all 13 Chromium browser tests pass. The 2 project tests also pass when run independently.
+- `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and Chromium end-to-end checks pass. Current results: 50 unit/integration tests pass; all 15 Chromium browser tests pass. The 2 project tests also pass when run independently.
 - Browser flow: conversation → labelled demo answer → real DOM text selection → excerpt + branch → exact context preview → answer → source highlight → pin/exclude → reload.
 - Browser scale check: 100 additional nodes, actual pointer drag, persisted coordinates and viewport after reload.
 - SQLite integration closes and reopens an on-disk database and verifies provenance and branch integrity. Excerpt/branch failure rolls back the whole transaction.
@@ -82,3 +82,11 @@ The model dialog now reads the official App Server `model/list` catalog with pag
 The selected model is stored as `codex_model` alongside the provider in the existing settings JSON, survives restart and mode switches, and takes precedence over the old environment model. Legacy provider-only files remain valid, with no database migration. New installations have no hardcoded Codex model. Catalog membership is rechecked before saving, and active generation prevents changes even if it starts during catalog I/O. Generation never silently changes the selected model, keeping persisted answer provenance accurate.
 
 Checks: 48 unit/integration tests and 13 Chromium browser tests, including catalog pagination/filtering, newly accessible model selection, settings restart, stale model rejection, catalog failure/retry, HTTP model selection and actual request/provenance consistency, plus a concurrent generation check. Typecheck, lint and production build pass. Catalog and generation responses are simulated; the user's real model access and Windows execution remain unverified in this cloud environment.
+
+## Codex reasoning depth (2026-10-11)
+
+Added a reasoning-depth menu beside the model picker, using the official catalog's `supportedReasoningEfforts` and `defaultReasoningEffort`. Known levels have Chinese labels; future advertised values remain selectable without inventing extra levels. The model-default option omits the effort override. Models without adjustable effort only offer the default. Switching models resets the unsaved depth to default; catalog refresh preserves choices, and an unsupported saved level requires an explicit replacement.
+
+The optional `codex_reasoning_effort` field in the existing settings JSON survives restarts and provider switches. Legacy settings remain valid, with no SQLite migration. Selection validates model-specific support before saving and keeps the existing generation lock, including concurrent catalog I/O. Generation sends the saved value in official `turn/start.effort`; no override is sent for the default. Tool and agent policies remain fixed.
+
+Checks: 50 unit/integration tests and 15 Chromium browser tests, including model-specific options, persistence and restart, request propagation, removed and future levels, default reset, models without adjustable effort, and mobile selection. Typecheck, lint and production build pass. Real-account generation and native Windows remain unverified in this cloud environment.

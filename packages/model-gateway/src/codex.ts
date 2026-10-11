@@ -34,12 +34,22 @@ const DeviceLogin = z.object({
   verificationUrl: z.string().url(),
   userCode: z.string().min(1).max(100),
 });
+export const ReasoningEffort = z.string().trim().min(1).max(128);
 const ModelEntry = z.object({
   model: z.string().min(1).max(256),
   displayName: z.string().max(256),
   description: z.string().max(10000),
   hidden: z.boolean(),
   isDefault: z.boolean(),
+  defaultReasoningEffort: ReasoningEffort,
+  supportedReasoningEfforts: z
+    .array(
+      z.object({
+        reasoningEffort: ReasoningEffort,
+        description: z.string().max(10000),
+      }),
+    )
+    .max(64),
   inputModalities: z.array(z.string()).optional(),
   upgradeInfo: z.object({ retirementAt: z.number().nullable().optional() }).nullable().optional(),
 });
@@ -55,6 +65,7 @@ export type LoginState = {
 export class CodexProvider implements ModelProvider {
   readonly name = 'codex';
   private selectedModel: string;
+  private selectedReasoningEffort: string | null;
   private login: LoginState & { loginId?: string } = { status: 'idle' };
   private loginStarting = false;
   private generating = false;
@@ -70,8 +81,10 @@ export class CodexProvider implements ModelProvider {
   constructor(
     private readonly rpc: CodexConnection,
     model = '',
+    reasoningEffort: string | null = null,
   ) {
     this.selectedModel = model;
+    this.selectedReasoningEffort = reasoningEffort;
     this.unsubscribe = rpc.subscribe(({ method, params }) => {
       if (method === 'account/login/completed' && params.loginId === this.login.loginId)
         this.login = { status: params.success === true ? 'complete' : 'failed' };
@@ -82,9 +95,13 @@ export class CodexProvider implements ModelProvider {
   get model() {
     return this.selectedModel;
   }
-  setModel(model: string) {
+  get reasoningEffort() {
+    return this.selectedReasoningEffort;
+  }
+  setSelection(model: string, reasoningEffort: string | null) {
     this.assertIdle();
     this.selectedModel = model;
+    this.selectedReasoningEffort = reasoningEffort;
   }
   async listModels() {
     if (!(await this.status()).connected)
@@ -97,6 +114,8 @@ export class CodexProvider implements ModelProvider {
           name: string;
           description: string;
           is_default: boolean;
+          default_reasoning_effort: string;
+          supported_reasoning_efforts: { effort: string; description: string }[];
         }
       >();
       const cursors = new Set<string>();
@@ -119,10 +138,24 @@ export class CodexProvider implements ModelProvider {
             name: entry.displayName,
             description: entry.description,
             is_default: entry.isDefault,
+            default_reasoning_effort: entry.defaultReasoningEffort,
+            supported_reasoning_efforts: [
+              ...new Map(
+                entry.supportedReasoningEfforts.map((option) => [
+                  option.reasoningEffort,
+                  { effort: option.reasoningEffort, description: option.description },
+                ]),
+              ).values(),
+            ],
           });
         }
         cursor = response.nextCursor || null;
-        if (!cursor) return { models: [...models.values()], selected_model: this.model };
+        if (!cursor)
+          return {
+            models: [...models.values()],
+            selected_model: this.model,
+            selected_reasoning_effort: this.reasoningEffort,
+          };
         if (cursors.has(cursor)) break;
         cursors.add(cursor);
       }
@@ -155,6 +188,7 @@ export class CodexProvider implements ModelProvider {
   diagnostics() {
     return {
       model: this.model,
+      reasoning_effort: this.reasoningEffort,
       generating: this.generating,
       last_failure: this.lastFailure,
       last_retry: this.lastRetry,
@@ -400,6 +434,7 @@ export class CodexProvider implements ModelProvider {
         void this.rpc
           .request('turn/start', {
             threadId,
+            ...(this.reasoningEffort !== null ? { effort: this.reasoningEffort } : {}),
             input: [{ type: 'text', text: modelInput(pkg), text_elements: [] }],
             environments: [],
             outputSchema: z.toJSONSchema(AnswerSchema),
