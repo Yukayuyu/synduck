@@ -27,7 +27,11 @@ The original specification is in `docs/source-spec.md`. Focused specifications a
 
 This repository starts from the cleared `main`. The previous application remains on `backup/main-before-clear-20261004`.
 
-## Local tasks and updates (0.2.0)
+## MCP and visual desktop tasks (0.3.0)
+
+Open **本地任務 → 整合設定** to connect a local stdio or remote Streamable HTTP MCP service, or choose a Windows application window. Every tool call, screenshot and desktop input is approved individually. Canvas task cards show screenshots, operation paths and confirmation status; the review dialog compares before/after frames, annotates click locations and exports records with image hashes. Read [MCP, desktop control and provenance](docs/mcp-desktop-traces.md) for setup and validation limits. Desktop control targets the backend Windows computer; physical Windows and live ChatGPT image-tool execution remain unverified.
+
+## Local tasks and updates (since 0.2.0)
 
 Open **本地任務** to select a backend project directory. Manual file/command tests work without AI; Codex tasks use the selected model and reasoning level, with explicit approval for each command or write. Tool outcomes and task history stay in `data/local-runtime/`; they do not mutate sealed canvas inputs. Open **版本與更新** for automatic release checks, optional browser notifications, verified downloads and ZIP import. The Windows launcher installs into separate version folders and keeps the previous version and data for recovery. See [local runtime and updates](docs/local-runtime-updates.md) for first-time Windows migration, capability limits and release instructions. `pnpm start:local` runs the source launcher; `pnpm package:windows` creates a portable source-and-built-client package.
 

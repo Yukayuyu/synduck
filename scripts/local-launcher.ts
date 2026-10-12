@@ -58,6 +58,16 @@ async function lock() {
     let alive = true;
     try {
       process.kill(pid, 0);
+      // A terminated child can remain unreaped in a cloud container. It owns no
+      // running server; kill(pid, 0) alone would block this installation forever.
+      if (process.platform === 'linux') {
+        try {
+          const state = await fs.readFile('/proc/' + pid + '/stat', 'utf8');
+          alive = !['Z', 'X'].includes(state.slice(state.lastIndexOf(')') + 2).split(' ')[0]);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') alive = false;
+        }
+      }
     } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code === 'ESRCH') alive = false;
     }

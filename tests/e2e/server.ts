@@ -22,4 +22,33 @@ process.on('exit', () => {
   rmSync(directory, { recursive: true, force: true });
   rmSync(project, { recursive: true, force: true });
 });
-await import('../../apps/api/src/server.ts');
+// Only this isolated test server injects a deterministic desktop driver.
+// Production always uses the native Windows driver.
+const { Store } = await import('@acc/db');
+const { ProviderRegistry } = await import('../../packages/model-gateway/src/registry');
+const { LocalExecutor } = await import('../../packages/local-runtime/src/executor');
+const { TestDesktopDriver } = await import('../helpers/desktop');
+const { createApp } = await import('../../apps/api/src/app');
+const { accessConfig } = await import('../../apps/api/src/access');
+const { createRequire } = await import('node:module');
+const fastifyStatic = createRequire(new URL('../../apps/api/package.json',import.meta.url))('@fastify/static');
+const { resolve } = await import('node:path');
+const store = new Store(process.env.DATABASE_PATH);
+const models = new ProviderRegistry(process.env.MODEL_SETTINGS_PATH);
+const local = new LocalExecutor(process.env.LOCAL_RUNTIME_PATH, undefined, undefined, [], {
+  desktop: new TestDesktopDriver(),
+});
+await local.initialize();
+await local.configure(true, project);
+const app = createApp(store, models, { models, local, access: accessConfig() });
+await app.register(fastifyStatic, { root: resolve('apps/web/dist') });
+app.addHook('onClose', async () => {
+  await local.close();
+  await models.close();
+  store.close();
+});
+await app.listen({ host: '127.0.0.1', port: 3101 });
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.on(signal, () => {
+    void app.close().then(() => process.exit(0));
+  });

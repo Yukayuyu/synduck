@@ -24,6 +24,7 @@ import { ModelDialog } from './ModelDialog';
 import { LocalDialog } from './LocalDialog';
 import { LocalControl } from './LocalControl';
 import { UpdateControl } from './UpdateControl';
+import { TraceDialog } from './TaskTrace';
 import './styles.css';
 import './canvas-first.css';
 
@@ -48,6 +49,9 @@ export default function App() {
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
   const [localDialog, setLocalDialog] = useState(false);
+  const [traceId, setTraceId] = useState('');
+  const [traceEpoch, setTraceEpoch] = useState(0);
+  const [traceCount, setTraceCount] = useState(0);
   const [panel, setPanel] = useState<'conversations' | 'context' | null>(null);
   const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [canvasEpoch, setCanvasEpoch] = useState(0);
@@ -314,6 +318,9 @@ export default function App() {
             selected={selected}
             locate={locate}
             tool={tool}
+            traceEpoch={traceEpoch}
+            onTraceCount={setTraceCount}
+            onOpenTrace={setTraceId}
             onOpen={(node) => {
               open(node);
               moveTo(node.id);
@@ -376,7 +383,7 @@ export default function App() {
             )}
           />
         </ReactFlowProvider>
-        {!state.nodes.length && (
+        {!state.nodes.length && !traceCount && (
           <div className="board-empty">
             <span className="empty-symbol">
               <Network size={30} strokeWidth={1.4} />
@@ -628,6 +635,22 @@ export default function App() {
       )}
       {localDialog && (
         <LocalDialog
+          onShowTrace={async (id) => {
+            const current = await api<{ traces: { task_id: string }[] }>('/local/canvas');
+            const traces = await api<{ task_id: string; x: number; y: number }[]>('/local/canvas', {
+              task_id: id,
+              pinned: true,
+              ...(current.traces.some((trace) => trace.task_id === id)
+                ? {}
+                : {
+                    x: Math.max(0, ...state.nodes.map((node) => node.x)) + 480,
+                    y: current.traces.length * 520,
+                  }),
+            });
+            setTraceEpoch((epoch) => epoch + 1);
+            const trace = traces.find((trace) => trace.task_id === id);
+            if (trace) setLocate({ id: 'trace:' + id, tick: Date.now() });
+          }}
           onClose={() => setLocalDialog(false)}
           contextId={preview?.sendable ? preview.context_set_id : undefined}
           onUseResult={async (text) => {
@@ -647,6 +670,20 @@ export default function App() {
               [refId]: [previous[refId], text].filter(Boolean).join('\n\n'),
             }));
             invalidate();
+          }}
+        />
+      )}
+      {traceId && (
+        <TraceDialog
+          id={traceId}
+          onClose={() => setTraceId('')}
+          onContext={(id) => {
+            const pkg = state.packages.find((pkg) => pkg.package_id === id);
+            if (pkg) {
+              setInspected({ pkg, historical: true });
+              setPanel('context');
+              setTraceId('');
+            } else setError('此任務的上下文包不在目前畫布；可在匯出紀錄中查看來源 ID。');
           }}
         />
       )}

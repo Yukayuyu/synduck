@@ -296,7 +296,17 @@ describe('local project executor', () => {
     expect(await readFile(join(project, 'result.txt'), 'utf8')).toBe('Tool result verified');
     expect(task.answer).toContain('approved tool output');
     expect(calls[0].params).toMatchObject({ environments: [], sandbox: 'read-only' });
-    expect(calls[0].params.dynamicTools).toHaveLength(4);
+    expect((calls[0].params.dynamicTools as { name: string }[]).map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'canvas_list_files',
+        'canvas_read_file',
+        'canvas_write_file',
+        'canvas_run_command',
+        'canvas_mcp_tools',
+        'canvas_mcp_call',
+        'canvas_desktop',
+      ]),
+    );
     expect(calls.find((call) => call.method === 'turn/start')?.params.effort).toBe('high');
     expect(
       await host({

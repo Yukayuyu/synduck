@@ -90,6 +90,7 @@ Added a reasoning-depth menu beside the model picker, using the official catalog
 The optional `codex_reasoning_effort` field in the existing settings JSON survives restarts and provider switches. Legacy settings remain valid, with no SQLite migration. Selection validates model-specific support before saving and keeps the existing generation lock, including concurrent catalog I/O. Generation sends the saved value in official `turn/start.effort`; no override is sent for the default. Tool and agent policies remain fixed.
 
 Checks: 50 unit/integration tests and 15 Chromium browser tests, including model-specific options, persistence and restart, request propagation, removed and future levels, default reset, models without adjustable effort, and mobile selection. Typecheck, lint and production build pass. Real-account generation and native Windows remain unverified in this cloud environment.
+
 # 0.2.0: local tasks and managed updates
 
 The local task dialog now provides project-scoped file tools and individually approved command/write operations. Codex tasks use dynamic tool requests and keep their transcript separately from immutable canvas inputs. Manual tests need no model account. Task records include the project, selected model/depth, tool arguments, outcomes and the exact bounded result sent back to the model.
@@ -99,3 +100,13 @@ The Windows portable launcher keeps data outside version directories, verifies p
 This does not implement MCP, a desktop screenshot/action loop, full filesystem RAG, or the context retention and large-canvas fixes identified in the assessment. Live ChatGPT dynamic-tool execution and Windows/iOS physical validation remain separate checks. See `docs/local-runtime-updates.md`.
 
 Checks: 71 unit/integration tests, 18 Chromium browser tests, typecheck, lint and production build pass. The packaged application also passed four real process scenarios on Linux: successful upgrade with data/login/provenance retention, failed-start rollback, pending-journal recovery, and abrupt launcher exit cancelling generation followed by stale-lock recovery. Update feed responses and Codex model requests are simulated; no GitHub Release or paid model request was made.
+
+## 0.3.0: MCP and visual desktop provenance
+
+Added official SDK-based MCP stdio and Streamable HTTP connections with backend secret references, schema discovery/validation and explicit approval for server startup and every tool call. Local tasks also expose an approved Windows target-window tool for screenshots, coordinates, Unicode typing, fixed shortcuts and scrolling. Window/process identity and geometry are checked before input; results distinguish sent input from application success or uncertain side effects.
+
+Canvas task cards persist independently from the native graph, show image/step summaries and link deterministically to an input context when present. The review dialog provides before/after images, click markers, approval and completion times, exact model image hashes, result details and a trace ZIP with image hashes and the existing input package. Evidence survives restarts and old pinned tasks remain reachable outside the recent history list. No SQLite schema migration is required; additions live under data/local-runtime. Desktop enablement expires on restart and project changes disconnect integrations.
+
+Validation uses real local MCP stdio/HTTP services and a controlled model-image loop. Windows bridge enumeration is a platform-only test, skipped on Linux. Physical Windows screenshots/input, live ChatGPT multimodal execution and third-party MCP/OAuth remain unverified; see docs/mcp-desktop-traces.md.
+
+Checks: 82 unit/integration tests pass, with one Windows-only bridge test skipped on Linux; 20 Chromium browser tests, typecheck, lint and production build pass. All four real portable upgrade/recovery scenarios pass on the 0.3.0 package. The source launcher also recovered a terminated zombie owner in this cloud container and served the 0.3.0 client and integration APIs. No Release tag or paid model request was made.

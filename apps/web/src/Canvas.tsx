@@ -17,7 +17,8 @@ import {
 } from '@xyflow/react';
 import { MessageSquare, Quote, ArrowUpRight, Pin, Plus, Check, Ban } from 'lucide-react';
 import type { CanvasNode } from '@acc/domain';
-import type { ClientState } from './api';
+import { api, type ClientState } from './api';
+import { TraceCardContent, type CanvasTrace } from './TaskTrace';
 import '@xyflow/react/dist/style.css';
 
 type CardData = {
@@ -96,7 +97,20 @@ function Card({ data }: NodeProps<CardNode>) {
     </article>
   );
 }
-const nodeTypes = { card: Card };
+type TraceNode = Node<{ trace: CanvasTrace; onOpen: () => void; onRemove: () => void }, 'trace'>;
+type BoardNode = CardNode | TraceNode;
+function TraceCard({ data }: NodeProps<TraceNode>) {
+  return (
+    <div className="trace-node">
+      <Handle type="target" position={Position.Left} />
+      <TraceCardContent trace={data.trace} onOpen={data.onOpen} />
+      <button className="trace-remove nodrag" aria-label="從畫布移除紀錄" onClick={data.onRemove}>
+        移除卡片
+      </button>
+    </div>
+  );
+}
+const nodeTypes = { card: Card, trace: TraceCard };
 
 interface Props {
   state: ClientState;
@@ -111,6 +125,9 @@ interface Props {
   renderContent: (node: CanvasNode) => ReactNode;
   tool: 'select' | 'hand';
   onCreateAt: (position: { x: number; y: number }) => void;
+  onOpenTrace: (id: string) => void;
+  traceEpoch: number;
+  onTraceCount: (count: number) => void;
 }
 
 export function Canvas({
@@ -126,9 +143,44 @@ export function Canvas({
   renderContent,
   tool,
   onCreateAt,
+  onOpenTrace,
+  traceEpoch,
+  onTraceCount,
 }: Props) {
+  const [traces, setTraces] = useState<CanvasTrace[]>([]);
+  const [traceError, setTraceError] = useState('');
+  useEffect(() => {
+    onTraceCount(traces.length);
+  }, [traces.length, onTraceCount]);
+  const loadTraces = useCallback(async () => {
+    const result = await api<{ traces: CanvasTrace[]; busy: boolean }>('/local/canvas');
+    setTraces((previous) =>
+      JSON.stringify(previous) === JSON.stringify(result.traces) ? previous : result.traces,
+    );
+    setTraceError('');
+    return result.busy;
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      let busy = false;
+      try {
+        if (alive) busy = await loadTraces();
+      } catch (e) {
+        if (alive) setTraceError(e instanceof Error ? e.message : '無法載入操作卡片');
+      }
+      if (alive) timer = setTimeout(() => void load(), busy ? 1500 : 10000);
+    };
+    void load();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [loadTraces, traceEpoch]);
   const flow = useReactFlow();
   const latest = useRef({ nodes: state.nodes, activeNode });
+  const lastLocated = useRef('');
   latest.current = { nodes: state.nodes, activeNode };
   const mapped = useMemo<CardNode[]>(
     () =>
@@ -167,12 +219,33 @@ export function Canvas({
       })),
     [state, activeNode, selected, onOpen, onSelect, onControl, renderContent],
   );
-  const [nodes, setNodes] = useState(mapped);
-  useEffect(() => setNodes(mapped), [mapped]);
+  const traceNodes = useMemo<TraceNode[]>(
+    () =>
+      traces.map((trace) => ({
+        id: 'trace:' + trace.task_id,
+        type: 'trace',
+        dragHandle: '.trace-drag',
+        position: { x: trace.x, y: trace.y },
+        data: {
+          trace,
+          onOpen: () => onOpenTrace(trace.task_id),
+          onRemove: () =>
+            void api('/local/canvas', { task_id: trace.task_id, pinned: false })
+              .then(loadTraces)
+              .catch((e) => setTraceError(e.message)),
+        },
+      })),
+    [traces, onOpenTrace, loadTraces],
+  );
+  const [nodes, setNodes] = useState<BoardNode[]>(mapped);
+  useEffect(() => setNodes([...mapped, ...traceNodes]), [mapped, traceNodes]);
   useEffect(() => {
     if (!locate) return;
+    const key = locate.id + ':' + locate.tick;
+    if (lastLocated.current === key) return;
     const node = latest.current.nodes.find((n) => n.id === locate.id);
     if (node) {
+      lastLocated.current = key;
       const width = window.innerWidth;
       const height = window.innerHeight;
       const zoom = Math.min(1, (width - 36) / 360, (height - 175) / 670);
@@ -180,10 +253,19 @@ export function Canvas({
         zoom: Math.max(0.5, zoom),
         duration: 250,
       });
+    } else {
+      const trace = traces.find((trace) => 'trace:' + trace.task_id === locate.id);
+      if (trace) {
+        lastLocated.current = key;
+        void flow.setCenter(trace.x + 180, trace.y + 180, {
+          zoom: Math.min(1, (window.innerWidth - 36) / 380),
+          duration: 250,
+        });
+      }
     }
-  }, [locate, flow]);
+  }, [locate, flow, traces]);
   const changes = useCallback(
-    (changes: NodeChange<CardNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),
+    (changes: NodeChange<BoardNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),
     [],
   );
   const edges = state.edges.map((e) => ({
@@ -202,10 +284,27 @@ export function Canvas({
     labelBgStyle: { fill: '#f6f5f1' },
     labelBgPadding: [6, 4] as [number, number],
   }));
+  const traceEdges = traces.flatMap((trace) => {
+    const pkg = state.packages.find((pkg) => pkg.package_id === trace.context_package_id);
+    const context = state.context_sets.find((context) => context.id === pkg?.context_set_id);
+    if (!context || !state.nodes.some((node) => node.id === context.current_node_id)) return [];
+    return [
+      {
+        id: 'trace-source:' + trace.task_id,
+        source: context.current_node_id,
+        target: 'trace:' + trace.task_id,
+        label: '輸入上下文',
+        type: 'smoothstep',
+        style: { stroke: '#798be2', strokeWidth: 1.5 },
+        labelStyle: { fill: '#6472aa', fontSize: 10 },
+        labelBgStyle: { fill: '#f6f5f1' },
+      },
+    ];
+  });
   return (
     <ReactFlow
       nodes={nodes}
-      edges={edges}
+      edges={[...edges, ...traceEdges]}
       nodeTypes={nodeTypes}
       onNodesChange={changes}
       onDoubleClick={(event) => {
@@ -214,7 +313,18 @@ export function Canvas({
       }}
       zoomOnDoubleClick={false}
       onMoveStart={() => window.dispatchEvent(new Event('canvas-view-changed'))}
-      onNodeDragStop={(_e, node) => onMove(node.id, node.position.x, node.position.y)}
+      onNodeDragStop={(_e, node) => {
+        if (node.type === 'trace')
+          void api('/local/canvas', {
+            task_id: node.data.trace.task_id,
+            pinned: true,
+            x: node.position.x,
+            y: node.position.y,
+          })
+            .then(loadTraces)
+            .catch((e) => setTraceError(e.message));
+        else onMove(node.id, node.position.x, node.position.y);
+      }}
       onMoveEnd={(_e, viewport) => onViewport(viewport)}
       defaultViewport={state.workspace.settings.viewport}
       minZoom={0.25}
@@ -227,6 +337,11 @@ export function Canvas({
       proOptions={{ hideAttribution: true }}
     >
       <Background color="#d5d7dc" gap={24} size={1} />
+      {traceError && (
+        <div className="trace-load-error" role="alert">
+          {traceError}
+        </div>
+      )}
       <Controls showInteractive={false} />
       <MiniMap
         nodeColor={(n) => (n.data.type === 'excerpt' ? '#c4b4dc' : '#9fb7a8')}

@@ -113,10 +113,59 @@ export function registerRuntime(
   app.get('/api/local/status', async () =>
     local ? local.status() : { enabled: false, busy: false, waiting: 0 },
   );
+  app.get('/api/local/canvas', async () => ({
+    traces: local ? await local.canvasTraces() : [],
+    busy: local?.busy || false,
+  }));
   if (local) {
     app.get('/api/local/tasks/:id', async (request) =>
-      local.task(z.object({ id: z.string().uuid() }).parse(request.params).id),
+      local.readTask(z.object({ id: z.string().uuid() }).parse(request.params).id),
     );
+    app.get('/api/local/integrations', async () => local.integrations());
+    app.post('/api/local/mcp/configure', async (request) => {
+      idle();
+      const { servers } = z.object({ servers: z.unknown() }).strict().parse(request.body);
+      return local.configureMcp(servers);
+    });
+    app.get('/api/local/desktop/windows', async () => local.desktop.windows());
+    app.post('/api/local/desktop/configure', async (request) => {
+      idle();
+      const { enabled, window_id } = z
+        .object({ enabled: z.boolean(), window_id: z.string().regex(/^\d*$/) })
+        .strict()
+        .parse(request.body);
+      return local.configureDesktop(enabled, window_id);
+    });
+    app.post('/api/local/canvas', async (request) => {
+      const { task_id, pinned, x, y } = z
+        .object({
+          task_id: z.string().uuid(),
+          pinned: z.boolean(),
+          x: z.number().finite().optional(),
+          y: z.number().finite().optional(),
+        })
+        .strict()
+        .parse(request.body);
+      return local.pinTrace(task_id, pinned, x, y);
+    });
+    app.get('/api/local/tasks/:id/images/:sha', async (request, reply) => {
+      const { id, sha } = z
+        .object({ id: z.string().uuid(), sha: z.string().regex(/^[a-f0-9]{64}$/) })
+        .parse(request.params);
+      const { evidence, bytes } = await local.image(id, sha);
+      return reply.type(evidence.mime).header('X-Content-Type-Options', 'nosniff').send(bytes);
+    });
+    app.get('/api/local/tasks/:id/export', async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const task = await local.readTask(id);
+      const context = store
+        .snapshot()
+        .packages.find((pkg) => pkg.package_id === task.context_package_id);
+      return reply
+        .type('application/zip')
+        .header('Content-Disposition', 'attachment; filename="canvas-task-' + id + '.zip"')
+        .send(Buffer.from(await local.exportTrace(id, context)));
+    });
     app.post('/api/local/configure', async (request) => {
       const { enabled, root } = z
         .object({ enabled: z.boolean(), root: z.string().max(2000) })
@@ -126,11 +175,19 @@ export function registerRuntime(
       return local.configure(enabled, root);
     });
     app.post('/api/local/actions', async (request) => {
-      const { tool, arguments: args } = z
-        .object({ tool: z.string(), arguments: z.unknown() })
+      const {
+        tool,
+        arguments: args,
+        continuation_id,
+      } = z
+        .object({
+          tool: z.string(),
+          arguments: z.unknown(),
+          continuation_id: z.string().uuid().optional(),
+        })
         .strict()
         .parse(request.body);
-      return local.manual(tool, args);
+      return local.manual(tool, args, continuation_id);
     });
     app.post('/api/local/tasks', async (request) => {
       const { prompt, context_set_id: contextId } = z

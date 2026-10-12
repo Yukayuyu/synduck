@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { X, Terminal, Check, Square } from 'lucide-react';
 import { api } from './api';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
+import { IntegrationSettings, ManualIntegrations, type Integrations } from './IntegrationSettings';
+import { TraceSteps } from './TaskTrace';
 type LocalState = {
   available: boolean;
   enabled: boolean;
@@ -14,6 +16,9 @@ const toolNames: Record<string, string> = {
   canvas_read_file: '讀取檔案',
   canvas_write_file: '寫入檔案',
   canvas_run_command: '執行命令',
+  canvas_mcp_tools: '探索 MCP 工具',
+  canvas_mcp_call: '呼叫 MCP 工具',
+  canvas_desktop: '桌面操作',
 };
 const states: Record<string, string> = {
   running: '執行中',
@@ -44,16 +49,20 @@ export function LocalDialog({
   onClose,
   onUseResult,
   contextId,
+  onShowTrace,
 }: {
   onClose: () => void;
   onUseResult: (text: string) => Promise<void>;
   contextId?: string;
+  onShowTrace: (id: string) => Promise<void>;
 }) {
   const [state, setState] = useState<LocalState | null>(null);
   const [root, setRoot] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'codex' | 'manual'>('codex');
+  const [tab, setTab] = useState<'codex' | 'manual' | 'integrations'>('codex');
+  const [integrations, setIntegrations] = useState<Integrations | null>(null);
+  const refreshIntegrations = async () => setIntegrations(await api('/local/integrations'));
   const [prompt, setPrompt] = useState('');
   const [attachContext, setAttachContext] = useState(false);
   const [tool, setTool] = useState('canvas_list_files');
@@ -63,6 +72,14 @@ export function LocalDialog({
   const [working, setWorking] = useState(false);
   const [selectedId, setSelectedId] = useState('');
   const [selected, setSelected] = useState<LocalTask | null>(null);
+  useEffect(() => {
+    void refreshIntegrations().catch(() => {});
+  }, [state?.busy, state?.root, selected?.id, selected?.status]);
+  const submitted = async (id: string) => {
+    setSelected(null);
+    setSelectedId(id);
+    await onShowTrace(id);
+  };
   useEffect(() => {
     let alive = true;
     const load = async (initial = false) => {
@@ -180,6 +197,13 @@ export function LocalDialog({
               <button role="tab" aria-selected={tab === 'manual'} onClick={() => setTab('manual')}>
                 手動測試
               </button>
+              <button
+                role="tab"
+                aria-selected={tab === 'integrations'}
+                onClick={() => setTab('integrations')}
+              >
+                整合設定
+              </button>
             </div>
             {tab === 'codex' ? (
               <div className="runtime-composer">
@@ -212,13 +236,14 @@ export function LocalDialog({
                         ...(attachContext && contextId ? { context_set_id: contextId } : {}),
                       });
                       setSelectedId(task.id);
+                      await onShowTrace(task.id);
                     })
                   }
                 >
                   開始 AI 任務
                 </button>
               </div>
-            ) : (
+            ) : tab === 'manual' ? (
               <div className="runtime-composer">
                 <label>
                   操作
@@ -227,11 +252,16 @@ export function LocalDialog({
                     value={tool}
                     onChange={(e) => setTool(e.target.value)}
                   >
-                    {Object.entries(toolNames).map(([id, name]) => (
-                      <option key={id} value={id}>
-                        {name}
-                      </option>
-                    ))}
+                    {Object.entries(toolNames)
+                      .filter(
+                        ([id]) =>
+                          !['canvas_mcp_tools', 'canvas_mcp_call', 'canvas_desktop'].includes(id),
+                      )
+                      .map(([id, name]) => (
+                        <option key={id} value={id}>
+                          {name}
+                        </option>
+                      ))}
                   </select>
                 </label>
                 {tool !== 'canvas_run_command' && (
@@ -281,12 +311,30 @@ export function LocalDialog({
                         arguments: args,
                       });
                       setSelectedId(task.id);
+                      await onShowTrace(task.id);
                     })
                   }
                 >
                   提出操作
                 </button>
               </div>
+            ) : integrations ? (
+              <IntegrationSettings
+                integrations={integrations}
+                busy={!!state?.busy}
+                onChanged={refreshIntegrations}
+                onTask={submitted}
+              />
+            ) : (
+              <p>正在讀取整合設定…</p>
+            )}
+            {tab === 'manual' && integrations && (
+              <ManualIntegrations
+                integrations={integrations}
+                task={selected}
+                busy={!!state?.busy || !state?.enabled}
+                onTask={submitted}
+              />
             )}
             <div className="runtime-history">
               <label>
@@ -309,6 +357,24 @@ export function LocalDialog({
               </label>
               {selected && (
                 <>
+                  <button onClick={() => void action(() => onShowTrace(selected.id))}>
+                    在畫布顯示操作紀錄
+                  </button>
+                  {selected.actions.some(
+                    (entry) =>
+                      entry.tool === 'canvas_desktop' || entry.tool.startsWith('canvas_mcp'),
+                  ) && (
+                    <TraceSteps
+                      task={selected}
+                      onDecision={async (action_id, approved) => {
+                        await api('/local/tasks/' + selected.id + '/approve', {
+                          action_id,
+                          approved,
+                        });
+                        setSelected(await api('/local/tasks/' + selected.id));
+                      }}
+                    />
+                  )}
                   <div className="runtime-task-heading">
                     <strong>{states[selected.status]}</strong>
                     {selected.model && (
@@ -329,78 +395,83 @@ export function LocalDialog({
                     )}
                   </div>
                   <code>{selected.project_root}</code>
-                  {selected.actions.map((entry) => (
-                    <article className="runtime-action" key={entry.id}>
-                      <strong>
-                        {toolNames[entry.tool]} · {states[entry.status]}
-                      </strong>
-                      <small>操作 {entry.id}</small>
-                      {entry.arguments.path !== undefined && (
-                        <code>{String(entry.arguments.path)}</code>
-                      )}
-                      {entry.tool === 'canvas_run_command' && (
-                        <>
-                          <pre>{String(entry.arguments.command)}</pre>
-                          <p className="project-description">
-                            命令使用後端電腦的系統帳戶權限。專案資料夾是工作目錄，不是作業系統沙盒。
-                          </p>
-                        </>
-                      )}
-                      {entry.tool === 'canvas_write_file' && (
-                        <div className="runtime-diff">
-                          <div>
-                            <span>目前內容</span>
-                            <pre>{entry.before ?? '新檔案'}</pre>
+                  {selected.actions
+                    .filter(
+                      (entry) =>
+                        entry.tool !== 'canvas_desktop' && !entry.tool.startsWith('canvas_mcp'),
+                    )
+                    .map((entry) => (
+                      <article className="runtime-action" key={entry.id}>
+                        <strong>
+                          {toolNames[entry.tool]} · {states[entry.status]}
+                        </strong>
+                        <small>操作 {entry.id}</small>
+                        {entry.arguments.path !== undefined && (
+                          <code>{String(entry.arguments.path)}</code>
+                        )}
+                        {entry.tool === 'canvas_run_command' && (
+                          <>
+                            <pre>{String(entry.arguments.command)}</pre>
+                            <p className="project-description">
+                              命令使用後端電腦的系統帳戶權限。專案資料夾是工作目錄，不是作業系統沙盒。
+                            </p>
+                          </>
+                        )}
+                        {entry.tool === 'canvas_write_file' && (
+                          <div className="runtime-diff">
+                            <div>
+                              <span>目前內容</span>
+                              <pre>{entry.before ?? '新檔案'}</pre>
+                            </div>
+                            <div>
+                              <span>將寫入的內容</span>
+                              <pre>{String(entry.arguments.content)}</pre>
+                            </div>
                           </div>
-                          <div>
-                            <span>將寫入的內容</span>
-                            <pre>{String(entry.arguments.content)}</pre>
+                        )}
+                        {entry.status === 'waiting' && (
+                          <div className="runtime-approval">
+                            <button
+                              className="primary"
+                              disabled={working}
+                              onClick={() =>
+                                void action(() =>
+                                  api(`/local/tasks/${selected.id}/approve`, {
+                                    action_id: entry.id,
+                                    approved: true,
+                                  }),
+                                )
+                              }
+                            >
+                              <Check size={14} />
+                              確認這次操作
+                            </button>
+                            <button
+                              disabled={working}
+                              onClick={() =>
+                                void action(() =>
+                                  api(`/local/tasks/${selected.id}/approve`, {
+                                    action_id: entry.id,
+                                    approved: false,
+                                  }),
+                                )
+                              }
+                            >
+                              拒絕
+                            </button>
                           </div>
-                        </div>
-                      )}
-                      {entry.status === 'waiting' && (
-                        <div className="runtime-approval">
-                          <button
-                            className="primary"
-                            disabled={working}
-                            onClick={() =>
-                              void action(() =>
-                                api(`/local/tasks/${selected.id}/approve`, {
-                                  action_id: entry.id,
-                                  approved: true,
-                                }),
-                              )
-                            }
-                          >
-                            <Check size={14} />
-                            確認這次操作
-                          </button>
-                          <button
-                            disabled={working}
-                            onClick={() =>
-                              void action(() =>
-                                api(`/local/tasks/${selected.id}/approve`, {
-                                  action_id: entry.id,
-                                  approved: false,
-                                }),
-                              )
-                            }
-                          >
-                            拒絕
-                          </button>
-                        </div>
-                      )}
-                      {entry.output && (
-                        <pre className="runtime-output">{displayOutput(entry.output)}</pre>
-                      )}
-                      {entry.model_output && (
-                        <details>
-                          <summary>本次交回 AI 的工具結果</summary>
-                          <pre>{entry.model_output}</pre>
-                        </details>
-                      )}
-                    </article>
-                  ))}
+                        )}
+                        {entry.output && (
+                          <pre className="runtime-output">{displayOutput(entry.output)}</pre>
+                        )}
+                        {entry.model_output && (
+                          <details>
+                            <summary>本次交回 AI 的工具結果</summary>
+                            <pre>{entry.model_output}</pre>
+                          </details>
+                        )}
+                      </article>
+                    ))}
                   {selected.answer && <pre className="runtime-answer">{selected.answer}</pre>}
                   {selected.error && <p role="alert">{selected.error}</p>}
                   {['complete', 'failed', 'cancelled', 'interrupted'].includes(selected.status) && (
