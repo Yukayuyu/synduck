@@ -605,3 +605,138 @@
     display: none;
   }
 }
+/* Local work and update dialogs keep their polling state outside the canvas. */
+.runtime-modal {
+  width: min(900px, calc(100vw - 32px));
+  max-width: 900px;
+}
+.runtime-modal,
+.update-modal {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+.runtime-modal h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-modal label,
+.update-modal label {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.runtime-modal input:not([type='checkbox']),
+.runtime-modal textarea,
+.runtime-modal select,
+.update-modal select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d5ded7;
+  border-radius: 8px;
+  background: #fff;
+  color: #23392d;
+}
+.runtime-modal textarea {
+  min-height: 95px;
+  resize: vertical;
+}
+.runtime-modal .runtime-check,
+.update-modal .runtime-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-check input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  flex: none;
+}
+.runtime-tabs,
+.runtime-buttons,
+.runtime-approval,
+.runtime-task-heading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.runtime-tabs {
+  margin: 22px 0 10px;
+}
+.runtime-tabs [aria-selected='true'] {
+  background: #dbe9df;
+}
+.runtime-settings,
+.runtime-composer,
+.runtime-history {
+  padding: 12px 0;
+  border-bottom: 1px solid #e0e6df;
+}
+.runtime-task-heading span {
+  font-size: 12px;
+  color: #5b6c5f;
+}
+.runtime-action {
+  margin: 12px 0;
+  border: 1px solid #dce4da;
+  border-radius: 10px;
+  padding: 12px;
+}
+.runtime-action small,
+.runtime-action code {
+  display: block;
+  color: #647363;
+  overflow-wrap: anywhere;
+}
+.runtime-modal pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  background: #f0f3ee;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.runtime-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.runtime-diff > div {
+  min-width: 0;
+}
+.runtime-answer {
+  font-family: inherit;
+}
+.update-control {
+  position: relative;
+}
+.update-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #b66c32;
+  top: 5px;
+  right: 5px;
+}
+.update-release {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #d7e3d9;
+  border-radius: 8px;
+}
+.update-import {
+  font-size: 13px;
+}
+@media (max-width: 600px) {
+  .runtime-diff {
+    grid-template-columns: 1fr;
+  }
+  .board-menu {
+    gap: 2px;
+  }
+}

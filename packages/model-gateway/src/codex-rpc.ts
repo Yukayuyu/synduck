@@ -8,6 +8,7 @@ import { DomainError } from '@acc/domain';
 import { codexError } from './codex-errors';
 
 export type RpcEvent = { method: string; params: Record<string, unknown> };
+export type HostToolHandler = (params: Record<string, unknown>) => Promise<unknown>;
 export interface CodexConnection {
   request<T>(method: string, params: object): Promise<T>;
   subscribe(listener: (event: RpcEvent) => void): () => void;
@@ -65,7 +66,10 @@ export class CodexRpc implements CodexConnection {
       timer: ReturnType<typeof setTimeout>;
     }
   >();
-  constructor(private readonly home: string) {}
+  constructor(
+    private readonly home: string,
+    private readonly hostTool?: HostToolHandler,
+  ) {}
 
   private start() {
     if (this.ready) return this.ready;
@@ -185,6 +189,24 @@ export class CodexRpc implements CodexConnection {
     if (message.method) {
       // No approval or tool execution is granted by the host application.
       if (message.id !== undefined) {
+        if (message.method === 'item/tool/call' && this.hostTool) {
+          const child = this.child;
+          void this.hostTool(message.params || {})
+            .then(
+              (result) => {
+                if (child === this.child) this.write({ id: message.id, result });
+              },
+              () => {
+                if (child === this.child)
+                  this.write({
+                    id: message.id,
+                    error: { code: -32603, message: 'Local tool failed.' },
+                  });
+              },
+            )
+            .catch(() => this.close());
+          return;
+        }
         this.write({
           id: message.id,
           error: { code: -32601, message: 'Host tools and approvals are disabled.' },

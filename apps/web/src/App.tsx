@@ -21,6 +21,9 @@ import { Inspector } from './Inspector';
 import { Focus, type SelectedText, type SourceHighlight } from './Focus';
 import { ProjectDialog } from './ProjectDialog';
 import { ModelDialog } from './ModelDialog';
+import { LocalDialog } from './LocalDialog';
+import { LocalControl } from './LocalControl';
+import { UpdateControl } from './UpdateControl';
 import './styles.css';
 import './canvas-first.css';
 
@@ -44,6 +47,7 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
+  const [localDialog, setLocalDialog] = useState(false);
   const [panel, setPanel] = useState<'conversations' | 'context' | null>(null);
   const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [canvasEpoch, setCanvasEpoch] = useState(0);
@@ -266,6 +270,10 @@ export default function App() {
           <span className="workspace-name">{state.workspace.name}</span>
         </div>
         <div className="board-menu">
+          <LocalControl onOpen={() => setLocalDialog(true)} />
+          <UpdateControl
+            canInstall={!busy && !Object.values(prompts).some((text) => text.trim())}
+          />
           <button
             className="mode-pill"
             aria-label="模型與登入"
@@ -615,6 +623,30 @@ export default function App() {
             await refresh();
             setCanvasEpoch((epoch) => epoch + 1);
             setProjectDialog(false);
+          }}
+        />
+      )}
+      {localDialog && (
+        <LocalDialog
+          onClose={() => setLocalDialog(false)}
+          contextId={preview?.sendable ? preview.context_set_id : undefined}
+          onUseResult={async (text) => {
+            let node = active?.ref_type === 'conversation' ? active : null;
+            if (!node) {
+              const created = await api<{ node: CanvasNode }>('/conversations', {
+                title: '本地任務記錄',
+              });
+              await refresh();
+              node = created.node;
+              setActiveId(node.id);
+              moveTo(node.id);
+            }
+            const refId = node.ref_id;
+            setPrompts((previous) => ({
+              ...previous,
+              [refId]: [previous[refId], text].filter(Boolean).join('\n\n'),
+            }));
+            invalidate();
           }}
         />
       )}

@@ -1,5 +1,7 @@
 # Windows、iPhone／iPad 與 ChatGPT 帳號
 
+0.2.0 增加獨立的本地任務工具通道與啟動器更新；請參閱[本地執行器與更新](local-runtime-updates.md)。下文的文字回答限制仍適用於一般畫布回答；本地任務需另外設定專案，命令／寫檔逐次確認。
+
 這是單一擁有者的網頁工作區。Windows 或 Linux 執行 Node.js 後端、SQLite 與官方 Codex；iPhone／iPad 以 Safari 連到同一個後端。不是 iOS 原生 App，也不能在手機上獨立執行後端。後端電腦必須保持開機。
 
 ## Windows 本機啟動

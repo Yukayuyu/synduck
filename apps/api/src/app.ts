@@ -25,16 +25,25 @@ import { type ModelProvider } from '@acc/model-gateway';
 import { ProviderRegistry, ProviderMode } from '../../../packages/model-gateway/src/registry';
 import { ReasoningEffort } from '../../../packages/model-gateway/src/codex';
 import { registerAccess, type AccessConfig } from './access';
+import { registerRuntime, type UpdateService } from './runtime';
+import type { LocalExecutor } from '../../../packages/local-runtime/src/executor';
+import packageJson from '../../../package.json';
 
 export function createApp(
   store: Store,
   provider: ModelProvider,
-  options: { access?: AccessConfig; models?: ProviderRegistry } = {},
+  options: {
+    access?: AccessConfig;
+    models?: ProviderRegistry;
+    local?: LocalExecutor;
+    updates?: UpdateService;
+  } = {},
 ) {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
   registerAccess(app, options.access);
+  registerRuntime(app, store, options.local, options.updates);
   const idle = () => {
-    if (store.snapshot().turns.some((turn) => turn.status === 'streaming'))
+    if (options.local?.busy || store.snapshot().turns.some((turn) => turn.status === 'streaming'))
       throw new DomainError('generation_active', '回答正在生成，請完成後再變更模型或登入。', 409);
   };
   app.get('/api/models', async () => ({
@@ -100,6 +109,8 @@ export function createApp(
     ok: true,
     service: 'context-canvas',
     schema_version: '0.1.0',
+    version: packageJson.version,
+    instance_id: process.env.CANVAS_INSTANCE_ID || null,
   }));
   app.get('/api/state', async () => ({
     ...store.snapshot(),

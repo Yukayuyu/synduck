@@ -9,6 +9,8 @@ import { CodexRpc } from './codex-rpc';
 export const ProviderMode = z.enum(['demo', 'openai', 'codex']);
 export class ProviderRegistry implements ModelProvider {
   private active = 0;
+  private controllers = new Set<AbortController>();
+  private generations = new Set<Promise<unknown>>();
   private mode: z.infer<typeof ProviderMode>;
   readonly codex: CodexProvider;
   private providers: Record<z.infer<typeof ProviderMode>, ModelProvider>;
@@ -55,13 +57,21 @@ export class ProviderRegistry implements ModelProvider {
   get model() {
     return this.providers[this.mode].model;
   }
-  async generate(pkg: ContextPackage, onDraft?: (text: string) => void) {
+  generate(pkg: ContextPackage, onDraft?: (text: string) => void) {
     this.active++;
-    try {
-      return await this.providers[this.mode].generate(pkg, onDraft);
-    } finally {
-      this.active--;
-    }
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    const operation = (async () => {
+      try {
+        return await this.providers[this.mode].generate(pkg, onDraft, controller.signal);
+      } finally {
+        this.active--;
+        this.controllers.delete(controller);
+      }
+    })();
+    this.generations.add(operation);
+    void operation.finally(() => this.generations.delete(operation)).catch(() => {});
+    return operation;
   }
   async select(
     mode: z.infer<typeof ProviderMode>,
@@ -129,7 +139,8 @@ export class ProviderRegistry implements ModelProvider {
     if (nextModel) this.codex.setSelection(nextModel, nextEffort);
     return { provider: this.name, model: this.model };
   }
-  close() {
-    return this.codex.close();
+  async close() {
+    for (const controller of this.controllers) controller.abort();
+    await Promise.allSettled([this.codex.close(), ...this.generations]);
   }
 }

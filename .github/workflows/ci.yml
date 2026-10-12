@@ -24,6 +24,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm package:windows
+      - run: pnpm test:portable
       - run: pnpm exec playwright install --with-deps chromium webkit
         if: runner.os == 'Linux'
       - run: pnpm test:e2e

@@ -1,10 +1,16 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const directory = mkdtempSync(join(tmpdir(), 'context-canvas-e2e-'));
+const project = mkdtempSync(join(tmpdir(), 'context-canvas-project-e2e-'));
+writeFileSync(join(project, 'spec.txt'), 'Local project evidence for the browser test.');
 process.env.DATABASE_PATH = join(directory, 'workspace.sqlite');
 process.env.ASSET_PATH = join(directory, 'assets');
 process.env.LLM_PROVIDER = 'demo';
+process.env.UPDATES_DISABLED = '1';
+delete process.env.LOCAL_EXECUTOR_DISABLED;
+process.env.LOCAL_PROJECT_ROOT = project;
+process.env.LOCAL_RUNTIME_PATH = join(directory, 'local-runtime');
 process.env.MODEL_SETTINGS_PATH = join(directory, 'model-settings.json');
 process.env.APP_CODEX_HOME = join(directory, 'codex');
 delete process.env.PUBLIC_ORIGIN;
@@ -14,5 +20,6 @@ process.env.API_PORT = '3101';
 process.env.APP_PORT = '3100';
 process.on('exit', () => {
   rmSync(directory, { recursive: true, force: true });
+  rmSync(project, { recursive: true, force: true });
 });
 await import('../../apps/api/src/server.ts');

@@ -11,7 +11,11 @@ import {
 export interface ModelProvider {
   readonly name: string;
   readonly model: string;
-  generate(pkg: ContextPackage, onDraft?: (text: string) => void): Promise<Answer>;
+  generate(
+    pkg: ContextPackage,
+    onDraft?: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<Answer>;
 }
 
 export function validateAnswer(raw: unknown, pkg: ContextPackage): Answer {
@@ -32,7 +36,7 @@ export function validateAnswer(raw: unknown, pkg: ContextPackage): Answer {
 export class DemoProvider implements ModelProvider {
   readonly name = 'demo';
   readonly model = 'offline-demo-v1';
-  async generate(pkg: ContextPackage, onDraft?: (text: string) => void) {
+  async generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
     const text = `【本地演示 · 未调用 AI】\n\n你的问题：${pkg.current_prompt}\n\n${
       pkg.items.length
         ? `本轮已包含 ${pkg.items.length} 项上下文。以下为原文引用，未做模型推理：\n\n${pkg.items.map((i, n) => `${n + 1}.「${i.content}」`).join('\n\n')}`
@@ -40,6 +44,7 @@ export class DemoProvider implements ModelProvider {
     }\n\n选中一段文字即可建立摘录，再沿着它开始新的分支。真实回答需要在服务端配置模型。`;
     // Draft events demonstrate lifecycle without pretending to be model tokens.
     for (let i = 0; i < text.length; i += 48) {
+      if (signal?.aborted) throw new DomainError('generation_cancelled', '回答已停止。', 499);
       onDraft?.(text.slice(0, i + 48));
       await new Promise((resolve) => setTimeout(resolve, 8));
     }
@@ -73,7 +78,11 @@ export class OpenAIProvider implements ModelProvider {
     private readonly key: string,
     private readonly transport: typeof fetch = fetch,
   ) {}
-  async generate(pkg: ContextPackage, onDraft?: (text: string) => void): Promise<Answer> {
+  async generate(
+    pkg: ContextPackage,
+    onDraft?: (text: string) => void,
+    signal?: AbortSignal,
+  ): Promise<Answer> {
     if (!this.model || !this.key)
       throw new DomainError(
         'provider_not_configured',
@@ -100,7 +109,9 @@ export class OpenAIProvider implements ModelProvider {
             },
           },
         }),
-        signal: AbortSignal.timeout(90000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(90000)])
+          : AbortSignal.timeout(90000),
       });
       if (!response.ok)
         throw new DomainError(
