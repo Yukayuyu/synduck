@@ -97,6 +97,13 @@ export default function App() {
   const moveTo = useCallback((id: string) => {
     setLocate({ id, tick: Date.now() });
   }, []);
+  const openOnCanvas = useCallback(
+    (node: CanvasNode) => {
+      open(node);
+      moveTo(node.id);
+    },
+    [open, moveTo],
+  );
   const select = useCallback(
     (id: string) => {
       setSelected((ids) => (ids.includes(id) ? ids.filter((n) => n !== id) : [...ids, id]));
@@ -263,7 +270,19 @@ export default function App() {
       </div>
     );
   return (
-    <div className="app-shell canvas-first">
+    <div
+      className="app-shell canvas-first"
+      onKeyDown={(event) => {
+        // The browser owns text editing, shortcuts and IME candidate keys.
+        // Let keyup bubble so a modifier pressed before entering the editor can
+        // release React Flow's global shortcut state; never prevent default input.
+        if (
+          event.target instanceof Element &&
+          event.target.closest('input,textarea,select,[contenteditable],.nokey')
+        )
+          event.stopPropagation();
+      }}
+    >
       <header className="board-header">
         <div className="board-identity">
           <Network size={20} />
@@ -321,10 +340,7 @@ export default function App() {
             traceEpoch={traceEpoch}
             onTraceCount={setTraceCount}
             onOpenTrace={setTraceId}
-            onOpen={(node) => {
-              open(node);
-              moveTo(node.id);
-            }}
+            onOpen={openOnCanvas}
             onSelect={select}
             onControl={control}
             onCreateAt={(position) => {

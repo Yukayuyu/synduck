@@ -110,3 +110,15 @@ Canvas task cards persist independently from the native graph, show image/step s
 Validation uses real local MCP stdio/HTTP services and a controlled model-image loop. Windows bridge enumeration is a platform-only test, skipped on Linux. Physical Windows screenshots/input, live ChatGPT multimodal execution and third-party MCP/OAuth remain unverified; see docs/mcp-desktop-traces.md.
 
 Checks: 82 unit/integration tests pass, with one Windows-only bridge test skipped on Linux; 20 Chromium browser tests, typecheck, lint and production build pass. All four real portable upgrade/recovery scenarios pass on the 0.3.0 package. The source launcher also recovered a terminated zombie owner in this cloud container and served the 0.3.0 client and integration APIs. No Release tag or paid model request was made.
+
+## 0.3.1: ordinary canvas text input (2026-10-14)
+
+Reproduced missing characters with real keyboard typing in the 0.3.0 composer, including punctuation. A reduced React Flow example also lost rapid keystrokes when replacing the node array during each edit; it accepted the complete text with stable nodes. Card contents now render through React Context instead of being cached inside effect-synchronized node data. The stable canvas-open callback keeps layout nodes unchanged while typing and delivers current composer props immediately. The input remains a normal browser textarea, with no forced focus recovery.
+
+Editing regions stop keydown propagation to the canvas without preventing browser defaults. The `nokey` class also protects content from Shift pointer selection capture. Keyup still bubbles to release a canvas modifier pressed before entering an editor. New browser regressions exercise punctuation with real key presses, rapid typing, Ctrl+A, Shift selection and punctuation, undo/redo, Tab navigation, simulated IME candidate confirmation, exact compiled/sent text and clearing after success. Existing zoom, five-minute simulated time, delayed generation and background-notification focus coverage remains in place.
+
+Windows native IME candidate UI and iOS physical keyboard behavior cannot be verified in Linux; simulated composition events are not that validation. No schema migration is required. Local update instructions are in docs/editor-input.md; no Release tag is published by preparing the ZIP.
+
+Checks: typecheck, lint and production build pass; 82 unit/integration tests pass with the Windows-only bridge test skipped on Linux; all 22 Chromium browser tests pass, including exact keyboard-generated text in the real compiled package and persisted human turn. The source launcher serves the 0.3.1 API and freshly built browser assets.
+
+The 0.3.1 portable code also passes all four actual Linux process scenarios: install with data/login/provenance retention, failed-start rollback, interrupted-update journal recovery, and abrupt exit with stale-lock recovery. Native Windows execution remains unverified.

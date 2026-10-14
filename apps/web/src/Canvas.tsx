@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ReactFlow,
   Background,
@@ -30,7 +39,7 @@ type CardData = {
   context: boolean;
   pinned: boolean;
   excluded: boolean;
-  content: ReactNode;
+  node: CanvasNode;
   onOpen: () => void;
   onSelect: () => void;
   onPin: () => void;
@@ -38,9 +47,13 @@ type CardData = {
   [key: string]: unknown;
 };
 type CardNode = Node<CardData, 'card'>;
+// React Flow mirrors node data through effects. Keep text and editor props
+// outside that queue, and keep layout nodes stable while the user types.
+const CardContentContext = createContext<(node: CanvasNode) => ReactNode>(() => null);
 
 function Card({ data }: NodeProps<CardNode>) {
   const zoom = useStore((s) => s.transform[2]);
+  const renderContent = useContext(CardContentContext);
   return (
     <article
       className={`canvas-card ${data.type} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
@@ -59,7 +72,7 @@ function Card({ data }: NodeProps<CardNode>) {
         <ArrowUpRight size={16} />
       </button>
       {data.active || zoom > 0.45 ? (
-        <div className="card-content nodrag nopan nowheel">{data.content}</div>
+        <div className="card-content nodrag nopan nowheel nokey">{renderContent(data.node)}</div>
       ) : (
         <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
       )}
@@ -191,7 +204,7 @@ export function Canvas({
         zIndex: activeNode === n.id ? 10 : 0,
         position: { x: n.x, y: n.y },
         data: {
-          content: renderContent(n),
+          node: n,
           title: n.title,
           type: n.type,
           preview:
@@ -217,7 +230,7 @@ export function Canvas({
             ),
         },
       })),
-    [state, activeNode, selected, onOpen, onSelect, onControl, renderContent],
+    [state, activeNode, selected, onOpen, onSelect, onControl],
   );
   const traceNodes = useMemo<TraceNode[]>(
     () =>
@@ -302,53 +315,57 @@ export function Canvas({
     ];
   });
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={[...edges, ...traceEdges]}
-      nodeTypes={nodeTypes}
-      onNodesChange={changes}
-      onDoubleClick={(event) => {
-        if ((event.target as HTMLElement).classList.contains('react-flow__pane'))
-          onCreateAt(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-      }}
-      zoomOnDoubleClick={false}
-      onMoveStart={() => window.dispatchEvent(new Event('canvas-view-changed'))}
-      onNodeDragStop={(_e, node) => {
-        if (node.type === 'trace')
-          void api('/local/canvas', {
-            task_id: node.data.trace.task_id,
-            pinned: true,
-            x: node.position.x,
-            y: node.position.y,
-          })
-            .then(loadTraces)
-            .catch((e) => setTraceError(e.message));
-        else onMove(node.id, node.position.x, node.position.y);
-      }}
-      onMoveEnd={(_e, viewport) => onViewport(viewport)}
-      defaultViewport={state.workspace.settings.viewport}
-      minZoom={0.25}
-      maxZoom={2}
-      nodesConnectable={false}
-      deleteKeyCode={null}
-      panOnScroll
-      selectionOnDrag={tool === 'select' && !window.matchMedia('(pointer: coarse)').matches}
-      panOnDrag={tool === 'hand' || window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background color="#d5d7dc" gap={24} size={1} />
-      {traceError && (
-        <div className="trace-load-error" role="alert">
-          {traceError}
-        </div>
-      )}
-      <Controls showInteractive={false} />
-      <MiniMap
-        nodeColor={(n) => (n.data.type === 'excerpt' ? '#c4b4dc' : '#9fb7a8')}
-        maskColor="rgba(246,245,241,.75)"
-        pannable
-        zoomable
-      />
-    </ReactFlow>
+    <CardContentContext.Provider value={renderContent}>
+      <ReactFlow
+        nodes={nodes}
+        edges={[...edges, ...traceEdges]}
+        nodeTypes={nodeTypes}
+        onNodesChange={changes}
+        onDoubleClick={(event) => {
+          if ((event.target as HTMLElement).classList.contains('react-flow__pane'))
+            onCreateAt(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+        }}
+        zoomOnDoubleClick={false}
+        onMoveStart={() => window.dispatchEvent(new Event('canvas-view-changed'))}
+        onNodeDragStop={(_e, node) => {
+          if (node.type === 'trace')
+            void api('/local/canvas', {
+              task_id: node.data.trace.task_id,
+              pinned: true,
+              x: node.position.x,
+              y: node.position.y,
+            })
+              .then(loadTraces)
+              .catch((e) => setTraceError(e.message));
+          else onMove(node.id, node.position.x, node.position.y);
+        }}
+        onMoveEnd={(_e, viewport) => onViewport(viewport)}
+        defaultViewport={state.workspace.settings.viewport}
+        minZoom={0.25}
+        maxZoom={2}
+        nodesConnectable={false}
+        deleteKeyCode={null}
+        panOnScroll
+        selectionOnDrag={tool === 'select' && !window.matchMedia('(pointer: coarse)').matches}
+        panOnDrag={
+          tool === 'hand' || window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]
+        }
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background color="#d5d7dc" gap={24} size={1} />
+        {traceError && (
+          <div className="trace-load-error" role="alert">
+            {traceError}
+          </div>
+        )}
+        <Controls showInteractive={false} />
+        <MiniMap
+          nodeColor={(n) => (n.data.type === 'excerpt' ? '#c4b4dc' : '#9fb7a8')}
+          maskColor="rgba(246,245,241,.75)"
+          pannable
+          zoomable
+        />
+      </ReactFlow>
+    </CardContentContext.Provider>
   );
 }
