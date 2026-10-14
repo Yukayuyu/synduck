@@ -20,7 +20,7 @@ import {
   listRecoverySnapshots,
   recoveryProject,
 } from '@acc/db';
-import { compileContext } from '@acc/context-compiler';
+import { compileContext, excludedSources } from '@acc/context-compiler';
 import { type ModelProvider } from '@acc/model-gateway';
 import { ProviderRegistry, ProviderMode } from '../../../packages/model-gateway/src/registry';
 import { ReasoningEffort } from '../../../packages/model-gateway/src/codex';
@@ -126,6 +126,21 @@ export function createApp(
   app.post('/api/branches', async (request) =>
     store.branchExcerpt(z.object({ excerpt_id: Id }).strict().parse(request.body).excerpt_id),
   );
+  app.delete('/api/nodes/:id', async (request) => ({
+    node: store.setNodeDeleted(z.object({ id: Id }).parse(request.params).id, true),
+  }));
+  app.post('/api/nodes/:id/restore', async (request) => ({
+    node: store.setNodeDeleted(z.object({ id: Id }).parse(request.params).id, false),
+  }));
+  app.post('/api/nodes/:id/rename', async (request) => ({
+    node: store.renameNode(
+      z.object({ id: Id }).parse(request.params).id,
+      z
+        .object({ title: z.string().trim().min(1).max(160) })
+        .strict()
+        .parse(request.body).title,
+    ),
+  }));
   app.patch('/api/nodes/:id', async (request) => {
     const nodeId = z.object({ id: Id }).parse(request.params).id;
     const patch = z
@@ -198,6 +213,8 @@ export function createApp(
       (n) => n.ref_type === 'conversation' && n.ref_id === input.conversation_id,
     );
     if (!node) throw new DomainError('missing_conversation', '找不到对话', 404);
+    if (node.visibility === 'hidden')
+      throw new DomainError('deleted_node', '請先從回收桶還原對話，再繼續提問。', 409);
     const set: ContextSet = {
       id: id(),
       workspace_id: s.workspace.id,
@@ -272,8 +289,13 @@ export function createApp(
       const exclusionsChanged =
         JSON.stringify([...s.workspace.settings.excluded_node_ids].sort()) !==
         JSON.stringify([...previousSet.excluded_node_ids].sort());
+      const excluded = excludedSources(s, s.workspace.settings.excluded_node_ids);
       if (
         exclusionsChanged ||
+        excluded.deletedNodes.has(previousSet.current_node_id) ||
+        pkg.items.some(
+          (item) => excluded.nodes.has(item.node_id) || excluded.blocks.has(item.source_block_id),
+        ) ||
         pkg.items.some((i) => s.nodes.find((n) => n.id === i.node_id)?.context_state !== i.state)
       )
         throw new DomainError(

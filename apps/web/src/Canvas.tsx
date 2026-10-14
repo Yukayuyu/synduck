@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type MouseEvent,
 } from 'react';
 import {
   ReactFlow,
@@ -24,10 +25,25 @@ import {
   type Viewport,
   MarkerType,
 } from '@xyflow/react';
-import { MessageSquare, Quote, ArrowUpRight, Pin, Plus, Check, Ban } from 'lucide-react';
+import {
+  MessageSquare,
+  Quote,
+  ArrowUpRight,
+  Pin,
+  Plus,
+  Check,
+  Ban,
+  MoreHorizontal,
+  Trash2,
+  Pencil,
+  Copy,
+  RotateCcw,
+  GitBranch,
+} from 'lucide-react';
 import type { CanvasNode } from '@acc/domain';
 import { api, type ClientState } from './api';
 import { TraceCardContent, type CanvasTrace } from './TaskTrace';
+import { ContextMenu, type MenuAction } from './ContextMenu';
 import '@xyflow/react/dist/style.css';
 
 type CardData = {
@@ -44,14 +60,17 @@ type CardData = {
   onSelect: () => void;
   onPin: () => void;
   onExclude: () => void;
+  onMenu: (event: MouseEvent) => void;
   [key: string]: unknown;
 };
 type CardNode = Node<CardData, 'card'>;
 // React Flow mirrors node data through effects. Keep text and editor props
 // outside that queue, and keep layout nodes stable while the user types.
-const CardContentContext = createContext<(node: CanvasNode) => ReactNode>(() => null);
+const CardContentContext = createContext<(node: CanvasNode, ready: boolean) => ReactNode>(
+  () => null,
+);
 
-function Card({ data }: NodeProps<CardNode>) {
+function Card({ data, width, height }: NodeProps<CardNode>) {
   const zoom = useStore((s) => s.transform[2]);
   const renderContent = useContext(CardContentContext);
   return (
@@ -66,13 +85,23 @@ function Card({ data }: NodeProps<CardNode>) {
         </span>
         {data.pinned && <Pin size={13} aria-label="已固定" />}
         {data.excluded && <Ban size={13} aria-label="已排除" />}
+        <button
+          className="card-menu-button nodrag nopan nokey"
+          aria-label={'卡片操作：' + data.title}
+          title="卡片操作"
+          onClick={data.onMenu}
+        >
+          <MoreHorizontal size={17} />
+        </button>
       </div>
       <button className="card-title nodrag" onClick={data.onOpen}>
         {data.title}
         <ArrowUpRight size={16} />
       </button>
       {data.active || zoom > 0.45 ? (
-        <div className="card-content nodrag nopan nowheel nokey">{renderContent(data.node)}</div>
+        <div className="card-content nodrag nopan nowheel nokey">
+          {renderContent(data.node, Boolean(width && height))}
+        </div>
       ) : (
         <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
       )}
@@ -135,12 +164,19 @@ interface Props {
   onControl: (id: string, action: 'pin' | 'unpin' | 'exclude' | 'restore') => void;
   onMove: (id: string, x: number, y: number) => void;
   onViewport: (v: Viewport) => void;
-  renderContent: (node: CanvasNode) => ReactNode;
+  renderContent: (node: CanvasNode, ready: boolean) => ReactNode;
   tool: 'select' | 'hand';
   onCreateAt: (position: { x: number; y: number }) => void;
   onOpenTrace: (id: string) => void;
   traceEpoch: number;
   onTraceCount: (count: number) => void;
+  locked: boolean;
+  onDelete: (node: CanvasNode) => void;
+  onRename: (node: CanvasNode) => void;
+  onBranch: (node: CanvasNode) => void;
+  onSource: (node: CanvasNode) => void;
+  onTrash: () => void;
+  onError: (error: unknown) => void;
 }
 
 export function Canvas({
@@ -159,7 +195,25 @@ export function Canvas({
   onOpenTrace,
   traceEpoch,
   onTraceCount,
+  locked,
+  onDelete,
+  onRename,
+  onBranch,
+  onSource,
+  onTrash,
+  onError,
 }: Props) {
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    id?: string;
+    point?: { x: number; y: number };
+  } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const openCardMenu = useCallback((id: string, event: MouseEvent) => {
+    const box = event.currentTarget.getBoundingClientRect();
+    setMenu({ id, x: box.right, y: box.bottom + 4 });
+  }, []);
   const [traces, setTraces] = useState<CanvasTrace[]>([]);
   const [traceError, setTraceError] = useState('');
   useEffect(() => {
@@ -197,40 +251,43 @@ export function Canvas({
   latest.current = { nodes: state.nodes, activeNode };
   const mapped = useMemo<CardNode[]>(
     () =>
-      state.nodes.map((n) => ({
-        id: n.id,
-        type: 'card',
-        dragHandle: '.card-eyebrow',
-        zIndex: activeNode === n.id ? 10 : 0,
-        position: { x: n.x, y: n.y },
-        data: {
-          node: n,
-          title: n.title,
-          type: n.type,
-          preview:
-            n.ref_type === 'excerpt'
-              ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
-              : n.representation.summary,
-          count: state.turns.filter((t) => t.conversation_id === n.ref_id).length,
-          active: activeNode === n.id,
-          context: selected.includes(n.id),
-          pinned: state.workspace.settings.pinned_node_ids.includes(n.id),
-          excluded: state.workspace.settings.excluded_node_ids.includes(n.id),
-          onOpen: () => onOpen(n),
-          onSelect: () => onSelect(n.id),
-          onPin: () =>
-            onControl(
-              n.id,
-              state.workspace.settings.pinned_node_ids.includes(n.id) ? 'unpin' : 'pin',
-            ),
-          onExclude: () =>
-            onControl(
-              n.id,
-              state.workspace.settings.excluded_node_ids.includes(n.id) ? 'restore' : 'exclude',
-            ),
-        },
-      })),
-    [state, activeNode, selected, onOpen, onSelect, onControl],
+      state.nodes
+        .filter((n) => n.visibility !== 'hidden')
+        .map((n) => ({
+          id: n.id,
+          type: 'card',
+          dragHandle: '.card-eyebrow',
+          zIndex: activeNode === n.id ? 10 : 0,
+          position: { x: n.x, y: n.y },
+          data: {
+            node: n,
+            title: n.title,
+            type: n.type,
+            preview:
+              n.ref_type === 'excerpt'
+                ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
+                : n.representation.summary,
+            count: state.turns.filter((t) => t.conversation_id === n.ref_id).length,
+            active: activeNode === n.id,
+            context: selected.includes(n.id),
+            pinned: state.workspace.settings.pinned_node_ids.includes(n.id),
+            excluded: state.workspace.settings.excluded_node_ids.includes(n.id),
+            onOpen: () => onOpen(n),
+            onSelect: () => onSelect(n.id),
+            onPin: () =>
+              onControl(
+                n.id,
+                state.workspace.settings.pinned_node_ids.includes(n.id) ? 'unpin' : 'pin',
+              ),
+            onExclude: () =>
+              onControl(
+                n.id,
+                state.workspace.settings.excluded_node_ids.includes(n.id) ? 'restore' : 'exclude',
+              ),
+            onMenu: (event: MouseEvent) => openCardMenu(n.id, event),
+          },
+        })),
+    [state, activeNode, selected, onOpen, onSelect, onControl, openCardMenu],
   );
   const traceNodes = useMemo<TraceNode[]>(
     () =>
@@ -281,26 +338,29 @@ export function Canvas({
     (changes: NodeChange<BoardNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),
     [],
   );
-  const edges = state.edges.map((e) => ({
-    id: e.id,
-    source: e.source_node_id,
-    target: e.target_node_id,
-    label: e.type === 'branch_from' ? '从此分支' : e.type === 'excerpt_from' ? '摘录' : e.type,
-    type: 'smoothstep',
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#a8b4ae', width: 16, height: 16 },
-    style: {
-      stroke: '#a8b4ae',
-      strokeWidth: 1.3,
-      strokeDasharray: e.edge_class === 'semantic' && !e.confirmed ? '5 5' : undefined,
-    },
-    labelStyle: { fill: '#78847e', fontSize: 10 },
-    labelBgStyle: { fill: '#f6f5f1' },
-    labelBgPadding: [6, 4] as [number, number],
-  }));
+  const visibleIds = new Set(mapped.map((n) => n.id));
+  const edges = state.edges
+    .filter((e) => visibleIds.has(e.source_node_id) && visibleIds.has(e.target_node_id))
+    .map((e) => ({
+      id: e.id,
+      source: e.source_node_id,
+      target: e.target_node_id,
+      label: e.type === 'branch_from' ? '从此分支' : e.type === 'excerpt_from' ? '摘录' : e.type,
+      type: 'smoothstep',
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#a8b4ae', width: 16, height: 16 },
+      style: {
+        stroke: '#a8b4ae',
+        strokeWidth: 1.3,
+        strokeDasharray: e.edge_class === 'semantic' && !e.confirmed ? '5 5' : undefined,
+      },
+      labelStyle: { fill: '#78847e', fontSize: 10 },
+      labelBgStyle: { fill: '#f6f5f1' },
+      labelBgPadding: [6, 4] as [number, number],
+    }));
   const traceEdges = traces.flatMap((trace) => {
     const pkg = state.packages.find((pkg) => pkg.package_id === trace.context_package_id);
     const context = state.context_sets.find((context) => context.id === pkg?.context_set_id);
-    if (!context || !state.nodes.some((node) => node.id === context.current_node_id)) return [];
+    if (!context || !visibleIds.has(context.current_node_id)) return [];
     return [
       {
         id: 'trace-source:' + trace.task_id,
@@ -314,6 +374,138 @@ export function Canvas({
       },
     ];
   });
+  const menuNode = state.nodes.find((node) => node.id === menu?.id && node.visibility !== 'hidden');
+  const menuTrace = traces.find((trace) => 'trace:' + trace.task_id === menu?.id);
+  const actions: MenuAction[] = menuNode
+    ? [
+        {
+          label: menuNode.ref_type === 'excerpt' ? '檢視摘錄' : '繼續提問',
+          icon: <MessageSquare size={16} />,
+          run: () => onOpen(menuNode),
+        },
+        {
+          label: '重新命名',
+          icon: <Pencil size={16} />,
+          disabled: locked,
+          run: () => onRename(menuNode),
+        },
+        {
+          label: '複製內容',
+          icon: <Copy size={16} />,
+          run: () => {
+            const excerpt = state.excerpts.find((e) => e.id === menuNode.ref_id);
+            const turns = new Set(
+              state.turns
+                .filter((t) =>
+                  menuNode.ref_type === 'turn'
+                    ? t.id === menuNode.ref_id
+                    : t.conversation_id === menuNode.ref_id,
+                )
+                .map((t) => t.id),
+            );
+            const text =
+              excerpt?.snapshot_text ||
+              state.blocks
+                .filter((b) => b.turn_id && turns.has(b.turn_id))
+                .map((b) => b.text_content || '')
+                .join('\n\n');
+            if (!navigator.clipboard) {
+              onError(new Error('無法寫入剪貼簿，請選取文字後複製。'));
+              return;
+            }
+            void navigator.clipboard
+              .writeText(text || menuNode.title)
+              .catch(() => onError(new Error('無法寫入剪貼簿，請選取文字後複製。')));
+          },
+        },
+        ...(menuNode.ref_type === 'excerpt'
+          ? [
+              {
+                label: '從摘錄延伸提問',
+                icon: <GitBranch size={16} />,
+                disabled: locked,
+                run: () => onBranch(menuNode),
+              },
+              {
+                label: '回到來源',
+                icon: <ArrowUpRight size={16} />,
+                run: () => onSource(menuNode),
+              },
+            ]
+          : []),
+        {
+          label: selected.includes(menuNode.id) ? '取消本輪上下文' : '選為本輪上下文',
+          icon: <Check size={16} />,
+          divider: true,
+          disabled: locked,
+          run: () => onSelect(menuNode.id),
+        },
+        {
+          label: state.workspace.settings.pinned_node_ids.includes(menuNode.id)
+            ? '取消固定'
+            : '固定上下文',
+          icon: <Pin size={16} />,
+          disabled: locked,
+          run: () =>
+            onControl(
+              menuNode.id,
+              state.workspace.settings.pinned_node_ids.includes(menuNode.id) ? 'unpin' : 'pin',
+            ),
+        },
+        {
+          label: state.workspace.settings.excluded_node_ids.includes(menuNode.id)
+            ? '恢復上下文'
+            : '排除上下文',
+          icon: <Ban size={16} />,
+          disabled: locked,
+          run: () =>
+            onControl(
+              menuNode.id,
+              state.workspace.settings.excluded_node_ids.includes(menuNode.id)
+                ? 'restore'
+                : 'exclude',
+            ),
+        },
+        {
+          label: '刪除卡片',
+          icon: <Trash2 size={16} />,
+          divider: true,
+          danger: true,
+          disabled: locked,
+          run: () => onDelete(menuNode),
+        },
+      ]
+    : menuTrace
+      ? [
+          { label: '檢視操作回看', run: () => onOpenTrace(menuTrace.task_id) },
+          {
+            label: '移除紀錄卡片',
+            danger: true,
+            run: () => {
+              void api('/local/canvas', { task_id: menuTrace.task_id, pinned: false })
+                .then(loadTraces)
+                .catch(onError);
+            },
+          },
+        ]
+      : [
+          {
+            label: '在這裡提問',
+            icon: <Plus size={16} />,
+            disabled: locked,
+            run: () => {
+              if (menu?.point) onCreateAt(menu.point);
+            },
+          },
+          {
+            label: '顯示全部卡片',
+            icon: <ArrowUpRight size={16} />,
+            run: () => {
+              void flow.fitView({ padding: 0.15, duration: 200 });
+            },
+          },
+          { label: '回收桶', icon: <RotateCcw size={16} />, divider: true, run: onTrash },
+        ];
   return (
     <CardContentContext.Provider value={renderContent}>
       <ReactFlow
@@ -321,6 +513,55 @@ export function Canvas({
         edges={[...edges, ...traceEdges]}
         nodeTypes={nodeTypes}
         onNodesChange={changes}
+        onKeyDown={(event) => {
+          if (
+            event.nativeEvent.isComposing ||
+            event.nativeEvent.keyCode === 229 ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.altKey ||
+            (event.target as Element).closest('input,textarea,select,[contenteditable],.nokey') ||
+            locked ||
+            window.getSelection()?.toString()
+          )
+            return;
+          const selectedNodes = flow
+            .getNodes()
+            .filter((node) => node.selected && node.type === 'card');
+          if (selectedNodes.length !== 1) return;
+          const node = state.nodes.find(
+            (node) => node.id === selectedNodes[0].id && node.visibility !== 'hidden',
+          );
+          if (node && ['Delete', 'Backspace', 'F2'].includes(event.key)) {
+            event.preventDefault();
+            if (event.key === 'F2') onRename(node);
+            else onDelete(node);
+          }
+        }}
+        onNodeContextMenu={(event, node) => {
+          if (
+            (event.target as Element).closest('input,textarea,select,[contenteditable]') ||
+            window.getSelection()?.toString()
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          setMenu({ id: node.id, x: event.clientX, y: event.clientY });
+        }}
+        onPaneContextMenu={(event) => {
+          if (
+            (event.target as Element).closest(
+              '.react-flow__node,input,textarea,select,[contenteditable]',
+            )
+          )
+            return;
+          event.preventDefault();
+          setMenu({
+            x: event.clientX,
+            y: event.clientY,
+            point: flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+          });
+        }}
         onDoubleClick={(event) => {
           if ((event.target as HTMLElement).classList.contains('react-flow__pane'))
             onCreateAt(flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
@@ -341,15 +582,13 @@ export function Canvas({
         }}
         onMoveEnd={(_e, viewport) => onViewport(viewport)}
         defaultViewport={state.workspace.settings.viewport}
-        minZoom={0.25}
+        minZoom={0.01}
         maxZoom={2}
         nodesConnectable={false}
         deleteKeyCode={null}
         panOnScroll
         selectionOnDrag={tool === 'select' && !window.matchMedia('(pointer: coarse)').matches}
-        panOnDrag={
-          tool === 'hand' || window.matchMedia('(pointer: coarse)').matches ? true : [1, 2]
-        }
+        panOnDrag={tool === 'hand' || window.matchMedia('(pointer: coarse)').matches ? [0, 1] : [1]}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#d5d7dc" gap={24} size={1} />
@@ -366,6 +605,7 @@ export function Canvas({
           zoomable
         />
       </ReactFlow>
+      {menu && <ContextMenu x={menu.x} y={menu.y} actions={actions} onClose={closeMenu} />}
     </CardContentContext.Provider>
   );
 }

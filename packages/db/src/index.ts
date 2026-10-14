@@ -188,6 +188,65 @@ export class Store {
       excerpt_id: v.ref_type === 'excerpt' ? v.ref_id : null,
     });
   }
+  setNodeDeleted(nodeId: string, deleted: boolean) {
+    return this.transaction(() => {
+      const snapshot = this.snapshot();
+      const node = snapshot.nodes.find((n) => n.id === nodeId);
+      if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
+      if (snapshot.turns.some((turn) => turn.status === 'streaming'))
+        throw new DomainError('generation_active', '請等回答完成後再刪除或還原卡片。', 409);
+      if ((node.visibility === 'hidden') === deleted) return node;
+      const position = deleted
+        ? { x: node.x, y: node.y }
+        : this.vacantPosition(
+            node.x,
+            node.y,
+            Math.max(node.width, 360),
+            Math.max(node.height, node.type === 'conversation' ? 650 : 420),
+          );
+      const updated = {
+        ...node,
+        ...position,
+        visibility: deleted ? ('hidden' as const) : ('normal' as const),
+        updated_at: now(),
+      };
+      this.saveNode(updated);
+      this.bump();
+      return updated;
+    });
+  }
+  renameNode(nodeId: string, title: string) {
+    return this.transaction(() => {
+      const snapshot = this.snapshot();
+      const node = snapshot.nodes.find((n) => n.id === nodeId);
+      if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
+      if (node.visibility === 'hidden')
+        throw new DomainError('deleted_node', '請先從回收桶還原卡片。', 409);
+      if (snapshot.turns.some((turn) => turn.status === 'streaming'))
+        throw new DomainError('generation_active', '請等回答完成後再重新命名。', 409);
+      const updated = NodeSchema.parse({
+        ...node,
+        title: title.trim(),
+        representation: { ...node.representation, overview: title.trim() },
+        updated_at: now(),
+      });
+      if (updated.title === node.title) return node;
+      if (node.ref_type === 'conversation') {
+        const conversation = snapshot.conversations.find((c) => c.id === node.ref_id)!;
+        this.saveConversation({
+          ...conversation,
+          title: updated.title,
+          updated_at: updated.updated_at,
+        });
+      } else if (node.ref_type === 'excerpt') {
+        const excerpt = snapshot.excerpts.find((e) => e.id === node.ref_id)!;
+        this.saveExcerpt({ ...excerpt, title: updated.title });
+      }
+      this.saveNode(updated);
+      this.bump();
+      return updated;
+    });
+  }
   saveEdge(value: Edge) {
     const v = EdgeSchema.parse(value);
     this.put('edges', v, {
@@ -226,16 +285,15 @@ export class Store {
       this.put('context_packages', { ...p, id: p.package_id }, { context_set_id: v.id });
     });
   }
-  private createNode(type: CanvasNode['type'], refId: string, title: string, x: number, y: number) {
+  private vacantPosition(x: number, y: number, width: number, height: number) {
     // Place only the new card. Existing user positions are never rearranged.
-    const occupied = this.snapshot().nodes;
-    const height = type === 'conversation' ? 650 : 420;
+    const occupied = this.snapshot().nodes.filter((node) => node.visibility !== 'hidden');
     let collision: CanvasNode | undefined;
     while (
       (collision = occupied.find(
         (node) =>
           x < node.x + Math.max(node.width, 360) + 60 &&
-          x + 360 + 60 > node.x &&
+          x + width + 60 > node.x &&
           y < node.y + Math.max(node.height, node.ref_type === 'conversation' ? 650 : 420) + 60 &&
           y + height + 60 > node.y,
       ))
@@ -252,6 +310,11 @@ export class Store {
         );
       y = next;
     }
+    return { x, y };
+  }
+  private createNode(type: CanvasNode['type'], refId: string, title: string, x: number, y: number) {
+    const height = type === 'conversation' ? 650 : 420;
+    ({ x, y } = this.vacantPosition(x, y, 360, height));
     const at = now();
     const n: CanvasNode = {
       id: id(),
@@ -344,6 +407,8 @@ export class Store {
         (n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id,
       );
       if (!sourceNode) throw new DomainError('missing_source', '来源对话不存在', 404);
+      if (sourceNode.visibility === 'hidden')
+        throw new DomainError('deleted_node', '請先還原來源卡片，再建立摘錄。', 409);
       const excerpt: Excerpt = {
         id: id(),
         workspace_id: s.workspace.id,
@@ -378,6 +443,8 @@ export class Store {
       const excerpt = s.excerpts.find((e) => e.id === excerptId);
       const node = s.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === excerptId);
       if (!excerpt || !node) throw new DomainError('missing_excerpt', '找不到摘录', 404);
+      if (node.visibility === 'hidden')
+        throw new DomainError('deleted_node', '請先還原摘錄卡片，再建立分支。', 409);
       const branches = s.edges.filter(
         (e) => e.source_node_id === node.id && e.type === 'branch_from',
       ).length;

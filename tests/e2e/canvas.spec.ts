@@ -26,14 +26,19 @@ test('select text, branch, inspect and exclude context, then persist through rel
     el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
   });
   await page.getByRole('button', { name: '摘录并分支' }).click();
-  await expect(page.getByText('源自摘录')).toBeVisible();
+  await expect(
+    page.locator('.focus-panel[data-active="true"]').getByText('源自摘录'),
+  ).toBeVisible();
   await page.getByLabel('你的问题', { exact: true }).fill('怎样应用这个原则？');
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(page.locator('.context-item')).toHaveCount(1);
   await expect(page.locator('.context-item')).toContainText('让上下文可见');
   await page.getByRole('button', { name: '发送此上下文' }).click();
   await expect(page.getByTestId('turn-assistant').last()).toContainText('本轮已包含 1 项上下文');
-  await page.getByRole('button', { name: /源自摘录/ }).click();
+  await page
+    .locator('.focus-panel[data-active="true"]')
+    .getByRole('button', { name: /源自摘录/ })
+    .click();
   await expect(page.locator('mark')).toHaveText('让上下文可见');
   await page.getByRole('button', { name: '返回画布', exact: true }).click();
   await page.screenshot({ path: 'test-results/canvas-branch.png' });
@@ -55,10 +60,12 @@ test('select text, branch, inspect and exclude context, then persist through rel
     .click();
   await page.getByLabel('你的问题', { exact: true }).fill('排除后还有哪些原文？');
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();
-  await expect(page.locator('.excluded-item')).toContainText([
-    '你明确排除了此内容',
-    '这条回答依赖已排除的来源，也已排除',
-  ]);
+  await expect(
+    page.locator('.excluded-item').filter({ hasText: '你明确排除了此内容' }),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('.excluded-item').filter({ hasText: '这条回答依赖已排除的来源，也已排除' }),
+  ).toHaveCount(1);
   await expect(page.locator('.context-item').filter({ hasText: '分支来源' })).toHaveCount(0);
   await page.screenshot({ path: 'test-results/context-inspector.png' });
 });
@@ -72,23 +79,45 @@ test('renders over 100 nodes and persists a real drag and viewport', async ({ pa
     expect(response.ok()).toBe(true);
   }
   await page.goto('/');
-  await expect(page.locator('.react-flow__node')).toHaveCount(initial.nodes.length + 100);
+  const expectedNodeCount =
+    initial.nodes.filter((node: { visibility: string }) => node.visibility !== 'hidden').length +
+    100;
+  await expect(page.locator('.react-flow__node')).toHaveCount(expectedNodeCount);
   await page.locator('.react-flow__controls-fitview').click();
-  const visibleId = await page.locator('.canvas-stage').evaluate((stage) => {
-    const bounds = stage.getBoundingClientRect();
-    return [...stage.querySelectorAll<HTMLElement>('.react-flow__node')].find((node) => {
-      const box = node.getBoundingClientRect();
-      return (
-        box.x > bounds.x + 20 &&
-        box.y > bounds.y + 20 &&
-        box.right < bounds.right - 20 &&
-        box.bottom < bounds.bottom - 100
-      );
-    })?.dataset.id;
-  });
-  expect(visibleId).toBeTruthy();
+  const findVisible = () =>
+    page.locator('.canvas-stage').evaluate((stage) => {
+      const bounds = stage.getBoundingClientRect();
+      return [...stage.querySelectorAll<HTMLElement>('.react-flow__node')].find((node) => {
+        const box = node.getBoundingClientRect();
+        return (
+          node.querySelector('.card-title')?.textContent?.includes('规模验收') &&
+          box.x > bounds.x + 20 &&
+          box.y > bounds.y + 20 &&
+          box.right < bounds.right - 20 &&
+          box.bottom < bounds.bottom - 100
+        );
+      })?.dataset.id;
+    });
+  await expect.poll(findVisible).toBeTruthy();
+  const visibleId = (await findVisible())!;
   const before = await (await request.get('/api/state')).json();
   const nodeBefore = before.nodes.find((n: { id: string }) => n.id === visibleId);
+  await page
+    .getByRole('navigation', { name: '工作區分頁' })
+    .getByRole('button', { name: '對話', exact: true })
+    .click();
+  await page
+    .getByRole('navigation', { name: '对话列表' })
+    .getByRole('button', { name: nodeBefore.title, exact: true })
+    .click();
+  await expect
+    .poll(async () => (await page.locator(`[data-id="${visibleId}"]`).boundingBox())?.width)
+    .toBeGreaterThan(350);
+  await page.locator('.react-flow__controls-zoomout').click();
+  await page.locator('.react-flow__controls-zoomout').click();
+  await expect
+    .poll(async () => (await page.locator(`[data-id="${visibleId}"]`).boundingBox())?.width)
+    .toBeLessThan(300);
   const box = await page.locator(`[data-id="${visibleId}"] .card-eyebrow`).boundingBox();
   expect(box).not.toBeNull();
   const saved = page.waitForResponse(
@@ -112,7 +141,7 @@ test('renders over 100 nodes and persists a real drag and viewport', async ({ pa
     .toBeLessThan(1);
   const moved = await (await request.get('/api/state')).json();
   await page.reload();
-  await expect(page.locator('.react-flow__node')).toHaveCount(initial.nodes.length + 100);
+  await expect(page.locator('.react-flow__node')).toHaveCount(expectedNodeCount);
   const restored = await (await request.get('/api/state')).json();
   expect(restored.nodes.find((n: { id: string }) => n.id === visibleId)).toEqual(
     moved.nodes.find((n: { id: string }) => n.id === visibleId),

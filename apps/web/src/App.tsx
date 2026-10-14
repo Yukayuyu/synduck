@@ -13,6 +13,8 @@ import {
   LoaderCircle,
   MousePointer2,
   Hand,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
 import { api, streamAnswer, type ClientState } from './api';
@@ -25,6 +27,7 @@ import { LocalDialog } from './LocalDialog';
 import { LocalControl } from './LocalControl';
 import { UpdateControl } from './UpdateControl';
 import { TraceDialog } from './TaskTrace';
+import { TrashDialog } from './TrashDialog';
 import './styles.css';
 import './canvas-first.css';
 
@@ -55,9 +58,25 @@ export default function App() {
   const [panel, setPanel] = useState<'conversations' | 'context' | null>(null);
   const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [canvasEpoch, setCanvasEpoch] = useState(0);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashTarget, setTrashTarget] = useState<{
+    id: string;
+    highlight?: SourceHighlight;
+  } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<CanvasNode | null>(null);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<CanvasNode | null>(null);
+  const [cardActionBusy, setCardActionBusy] = useState(false);
+  const [lastDeleted, setLastDeleted] = useState<{
+    id: string;
+    title: string;
+    prompt: string;
+    selected: boolean;
+  } | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
   const generationLock = useRef(false);
+  const directSendLock = useRef(false);
   const refresh = useCallback(async () => {
     const s = await api<ClientState>('/state');
     setState(s);
@@ -138,6 +157,61 @@ export default function App() {
       fail(e);
     }
   };
+  const deleteCard = async (node: CanvasNode) => {
+    if (cardActionBusy || busy) return;
+    setCardActionBusy(true);
+    try {
+      await api('/nodes/' + encodeURIComponent(node.id), {}, 'DELETE');
+      setLastDeleted({
+        id: node.id,
+        title: node.title,
+        prompt: prompts[node.ref_id] || '',
+        selected: selected.includes(node.id),
+      });
+      setPrompts((previous) => ({ ...previous, [node.ref_id]: '' }));
+      setSelected((previous) => previous.filter((id) => id !== node.id));
+      setActiveId((previous) => (previous === node.id ? null : previous));
+      setPendingDelete(null);
+      invalidate();
+      await refresh();
+    } catch (error) {
+      fail(error);
+    } finally {
+      setCardActionBusy(false);
+    }
+  };
+  const requestDelete = (node: CanvasNode) => {
+    if (prompts[node.ref_id]?.length) setPendingDelete(node);
+    else void deleteCard(node);
+  };
+  const keepCard = () => {
+    if (cardActionBusy) return;
+    const input = pendingDelete ? document.getElementById('prompt-' + pendingDelete.id) : null;
+    setPendingDelete(null);
+    if (input instanceof HTMLTextAreaElement) input.focus({ preventScroll: true });
+  };
+  const restoreCard = async (id: string) => {
+    if (cardActionBusy || busy) return;
+    setCardActionBusy(true);
+    try {
+      const { node } = await api<{ node: CanvasNode }>(
+        '/nodes/' + encodeURIComponent(id) + '/restore',
+        {},
+      );
+      if (lastDeleted?.id === id) {
+        setPrompts((previous) => ({ ...previous, [node.ref_id]: lastDeleted.prompt }));
+        if (lastDeleted.selected) setSelected((previous) => [...new Set([...previous, id])]);
+        setLastDeleted(null);
+      }
+      await refresh();
+      openOnCanvas(node);
+      setTrashOpen(false);
+    } catch (error) {
+      fail(error);
+    } finally {
+      setCardActionBusy(false);
+    }
+  };
   const excerpt = async (selection: SelectedText, branch: boolean) => {
     try {
       const result = await api<{ node: CanvasNode; branch: { node: CanvasNode } | null }>(
@@ -176,6 +250,18 @@ export default function App() {
       (n) => n.ref_type === 'conversation' && n.ref_id === t?.conversation_id,
     );
     if (n) {
+      if (n.visibility === 'hidden') {
+        setTrashTarget({
+          id: n.id,
+          highlight: {
+            blockId: e.source_block_id,
+            start: e.selector.start_char,
+            end: e.selector.end_char,
+          },
+        });
+        setTrashOpen(true);
+        return;
+      }
       open(n);
       setHighlight({
         blockId: e.source_block_id,
@@ -185,7 +271,7 @@ export default function App() {
       moveTo(n.id);
     }
   };
-  const compile = async () => {
+  const compile = async (inspect = true) => {
     const version = ++compileVersion.current;
     try {
       const result = await api<{ package: ContextPackage }>('/compile', {
@@ -197,14 +283,16 @@ export default function App() {
       if (version === compileVersion.current) {
         setPreview(result.package);
         setInspected({ pkg: result.package, historical: false });
-        setPanel('context');
+        if (inspect) setPanel('context');
+        return result.package;
       }
     } catch (e) {
       fail(e);
     }
   };
-  const generate = async (retryId?: string) => {
-    if (!retryId && !preview) return;
+  const generate = async (retryId?: string, prepared?: ContextPackage) => {
+    const selectedPackage = prepared || preview;
+    if (!retryId && !selectedPackage) return;
     if (generationLock.current) return;
     generationLock.current = true;
     const pkg = retryId
@@ -212,7 +300,7 @@ export default function App() {
           (p) =>
             p.context_set_id === state.turns.find((t) => t.id === retryId)?.input_context_set_id,
         )
-      : preview;
+      : selectedPackage;
     const targetConversation = retryId
       ? state?.turns.find((t) => t.id === retryId)?.conversation_id || conversationId
       : conversationId;
@@ -223,7 +311,7 @@ export default function App() {
     try {
       await streamAnswer(
         retryId ? '/retry' : '/answer',
-        retryId ? { turn_id: retryId } : { context_set_id: preview!.context_set_id },
+        retryId ? { turn_id: retryId } : { context_set_id: selectedPackage!.context_set_id },
         (text) => setDraft({ conversationId: targetConversation, text }),
       );
       setPrompts((p) => ({ ...p, [targetConversation]: '' }));
@@ -241,6 +329,19 @@ export default function App() {
       } catch (e) {
         fail(e);
       }
+    }
+  };
+  const sendDirect = async () => {
+    if (generationLock.current || directSendLock.current || busy || !prompt.trim()) return;
+    directSendLock.current = true;
+    setBusy(true);
+    try {
+      const pkg = await compile(false);
+      if (pkg?.sendable) await generate(undefined, pkg);
+      else if (pkg) setPanel('context');
+    } finally {
+      directSendLock.current = false;
+      setBusy(false);
     }
   };
   if (!state)
@@ -340,6 +441,25 @@ export default function App() {
             traceEpoch={traceEpoch}
             onTraceCount={setTraceCount}
             onOpenTrace={setTraceId}
+            locked={busy || cardActionBusy}
+            onDelete={requestDelete}
+            onRename={(node) => {
+              setRenameTarget(node);
+              setRenameTitle(node.title);
+            }}
+            onBranch={(node) => {
+              const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
+              if (excerpt) void branch(excerpt);
+            }}
+            onSource={(node) => {
+              const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
+              if (excerpt) source(excerpt);
+            }}
+            onTrash={() => {
+              setTrashTarget(null);
+              setTrashOpen(true);
+            }}
+            onError={fail}
             onOpen={openOnCanvas}
             onSelect={select}
             onControl={control}
@@ -357,11 +477,12 @@ export default function App() {
                 void api('/workspace', { viewport: v }, 'PATCH').catch(fail);
               }, 350);
             }}
-            renderContent={(node) => (
+            renderContent={(node, ready) => (
               <Focus
                 state={state}
                 node={node}
                 active={node.id === activeId}
+                inputReady={ready}
                 locked={busy}
                 prompt={prompts[node.ref_id] || ''}
                 budget={budget}
@@ -387,6 +508,7 @@ export default function App() {
                 }}
                 onCompile={() => void compile()}
                 onSend={() => void generate()}
+                onSendDirect={() => void sendDirect()}
                 onExcerpt={(s, b) => void excerpt(s, b)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
@@ -399,7 +521,7 @@ export default function App() {
             )}
           />
         </ReactFlowProvider>
-        {!state.nodes.length && !traceCount && (
+        {!state.nodes.some((n) => n.visibility !== 'hidden') && !traceCount && (
           <div className="board-empty">
             <span className="empty-symbol">
               <Network size={30} strokeWidth={1.4} />
@@ -473,6 +595,16 @@ export default function App() {
           <ScanLine size={18} />
           <span>上下文{selected.length > 0 ? ` · ${selected.length}` : ''}</span>
         </button>
+        <button
+          aria-label="回收桶"
+          title="回收桶"
+          onClick={() => {
+            setTrashTarget(null);
+            setTrashOpen(true);
+          }}
+        >
+          <Trash2 size={18} />
+        </button>
       </nav>
       {panel && (
         <section
@@ -494,7 +626,10 @@ export default function App() {
               selected={selected}
               onLocate={(id) => {
                 setPanel(null);
-                moveTo(id);
+                if (state.nodes.some((node) => node.id === id && node.visibility === 'hidden')) {
+                  setTrashTarget({ id });
+                  setTrashOpen(true);
+                } else moveTo(id);
               }}
             />
           ) : (
@@ -502,35 +637,161 @@ export default function App() {
               <h2>對話</h2>
               <p className="drawer-caption">所有思路，都在同一張畫布上。</p>
               <nav className="conversation-list" aria-label="对话列表">
-                {state.conversations.map((c) => (
-                  <button
-                    key={c.id}
-                    className={c.id === conversationId ? 'current' : ''}
-                    onClick={() => {
-                      const n = state.nodes.find(
-                        (n) => n.ref_type === 'conversation' && n.ref_id === c.id,
-                      );
-                      if (n) {
-                        open(n);
-                        moveTo(n.id);
-                      }
-                    }}
-                  >
-                    {c.branch_origin_excerpt_id ? (
-                      <GitBranch size={14} />
-                    ) : (
-                      <MessageSquare size={14} />
-                    )}
-                    <span>{c.title}</span>
-                  </button>
-                ))}
+                {state.conversations
+                  .filter((c) =>
+                    state.nodes.some(
+                      (n) =>
+                        n.ref_type === 'conversation' &&
+                        n.ref_id === c.id &&
+                        n.visibility !== 'hidden',
+                    ),
+                  )
+                  .map((c) => (
+                    <button
+                      key={c.id}
+                      className={c.id === conversationId ? 'current' : ''}
+                      onClick={() => {
+                        const n = state.nodes.find(
+                          (n) => n.ref_type === 'conversation' && n.ref_id === c.id,
+                        );
+                        if (n) {
+                          open(n);
+                          moveTo(n.id);
+                        }
+                      }}
+                    >
+                      {c.branch_origin_excerpt_id ? (
+                        <GitBranch size={14} />
+                      ) : (
+                        <MessageSquare size={14} />
+                      )}
+                      <span>{c.title}</span>
+                    </button>
+                  ))}
               </nav>
-              {!state.conversations.length && (
-                <p className="drawer-caption">點擊下方「提問」，開始第一段對話。</p>
-              )}
+              {!state.nodes.some(
+                (n) => n.ref_type === 'conversation' && n.visibility !== 'hidden',
+              ) && <p className="drawer-caption">點擊下方「提問」，開始第一段對話。</p>}
             </>
           )}
         </section>
+      )}
+      {lastDeleted && (
+        <div className="canvas-undo" role="status">
+          <span>已刪除「{lastDeleted.title}」</span>
+          <button
+            disabled={busy || cardActionBusy}
+            onClick={() => {
+              void restoreCard(lastDeleted.id);
+            }}
+          >
+            <RotateCcw size={15} />
+            復原
+          </button>
+          <button
+            className="icon-button"
+            aria-label="關閉刪除提示"
+            onClick={() => setLastDeleted(null)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {trashOpen && (
+        <TrashDialog
+          state={state}
+          target={trashTarget}
+          busy={busy || cardActionBusy}
+          onRestore={restoreCard}
+          onClose={() => setTrashOpen(false)}
+        />
+      )}
+      {renameTarget && (
+        <div className="modal-backdrop" onClick={() => !cardActionBusy && setRenameTarget(null)}>
+          <form
+            className="modal nokey"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rename-title"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !cardActionBusy) setRenameTarget(null);
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (busy || cardActionBusy) return;
+              setCardActionBusy(true);
+              void api('/nodes/' + encodeURIComponent(renameTarget.id) + '/rename', {
+                title: renameTitle.trim(),
+              })
+                .then(async () => {
+                  await refresh();
+                  setRenameTarget(null);
+                  invalidate();
+                })
+                .catch(fail)
+                .finally(() => setCardActionBusy(false));
+            }}
+          >
+            <h2 id="rename-title">重新命名卡片</h2>
+            <label htmlFor="rename-card">卡片名稱</label>
+            <input
+              autoFocus
+              id="rename-card"
+              value={renameTitle}
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => setRenameTitle(event.target.value)}
+              maxLength={160}
+            />
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={cardActionBusy}
+                onClick={() => setRenameTarget(null)}
+              >
+                取消
+              </button>
+              <button className="primary" disabled={busy || cardActionBusy || !renameTitle.trim()}>
+                儲存名稱
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {pendingDelete && (
+        <div className="modal-backdrop" onClick={keepCard}>
+          <section
+            className="modal nokey"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-title"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') keepCard();
+            }}
+          >
+            <h2 id="delete-title">卡片還有未送出的文字</h2>
+            <p>
+              要刪除「{pendingDelete.title}
+              」嗎？卡片可從回收桶還原，尚未送出的草稿只會保留在這次「復原」提示中，關閉頁面後不會保存。
+            </p>
+            <div className="modal-actions">
+              <button autoFocus className="secondary" disabled={cardActionBusy} onClick={keepCard}>
+                保留卡片
+              </button>
+              <button
+                className="primary danger"
+                disabled={busy || cardActionBusy}
+                onClick={() => {
+                  void deleteCard(pendingDelete);
+                }}
+              >
+                刪除卡片
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       {modelDialog && (
         <ModelDialog

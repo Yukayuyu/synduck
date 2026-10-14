@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -26,6 +26,7 @@ export interface SourceHighlight {
 }
 interface Props {
   active: boolean;
+  inputReady: boolean;
   locked: boolean;
   onOpen: () => void;
   state: ClientState;
@@ -41,6 +42,7 @@ interface Props {
   onBudget: (value: number) => void;
   onCompile: () => void;
   onSend: () => void;
+  onSendDirect: () => void;
   onExcerpt: (selection: SelectedText, branch: boolean) => void;
   onBranch: (excerpt: Excerpt) => void;
   onSource: (excerpt: Excerpt) => void;
@@ -50,6 +52,12 @@ interface Props {
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    // Focus only on explicit activation, once the node is measured and visible.
+    // React Flow initially mounts fresh nodes hidden, so autofocus is too early.
+    if (active && props.inputReady) inputRef.current?.focus({ preventScroll: true });
+  }, [active, props.inputReady, node.id]);
   const [selectionPosition, setSelectionPosition] = useState({ left: 0, top: 0 });
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
@@ -345,6 +353,7 @@ export function Focus(props: Props) {
                 你的问题
               </label>
               <textarea
+                ref={inputRef}
                 id={`prompt-${node.id}`}
                 placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
                 value={props.prompt}
@@ -373,7 +382,11 @@ export function Focus(props: Props) {
                 </div>
               </details>
               <div className="composer-bottom">
-                <span>{preview ? `${preview.items.length} 项上下文已预览` : '先预览，再发送'}</span>
+                <span>
+                  {preview
+                    ? `${preview.items.length} 项上下文已预览`
+                    : '可直接傳送，也可先檢查上下文'}
+                </span>
                 {preview ? (
                   <button
                     type="button"
@@ -385,14 +398,25 @@ export function Focus(props: Props) {
                     发送此上下文
                   </button>
                 ) : (
-                  <button
-                    type="submit"
-                    className="primary"
-                    disabled={locked || !props.prompt.trim()}
-                  >
-                    <ScanLine size={14} />
-                    预览上下文
-                  </button>
+                  <div className="composer-send-actions">
+                    <button
+                      type="submit"
+                      className="secondary"
+                      disabled={locked || !props.prompt.trim()}
+                    >
+                      <ScanLine size={14} />
+                      预览上下文
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={locked || !props.prompt.trim()}
+                      onClick={props.onSendDirect}
+                    >
+                      <Send size={14} />
+                      傳送
+                    </button>
+                  </div>
                 )}
               </div>
             </form>

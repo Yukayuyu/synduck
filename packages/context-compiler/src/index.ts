@@ -16,62 +16,78 @@ import {
 export const estimateTokens = (text: string) => Buffer.byteLength(text, 'utf8');
 const hash = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 
+const blocksForNode = (snapshot: GraphSnapshot, node: CanvasNode) => {
+  if (node.ref_type === 'excerpt')
+    return [snapshot.excerpts.find((e) => e.id === node.ref_id)?.source_block_id].filter(
+      (value): value is string => Boolean(value),
+    );
+  const turns = new Set(
+    node.ref_type === 'turn'
+      ? [node.ref_id]
+      : snapshot.turns
+          .filter((t) => t.conversation_id === node.ref_id && t.status === 'complete')
+          .map((t) => t.id),
+  );
+  return snapshot.blocks
+    .filter((block) => block.turn_id !== null && turns.has(block.turn_id))
+    .map((block) => block.id);
+};
+export function excludedSources(snapshot: GraphSnapshot, excludedNodeIds: string[]) {
+  const deletedNodes = new Set(
+    snapshot.nodes.filter((node) => node.visibility === 'hidden').map((node) => node.id),
+  );
+  const nodes = new Set([...excludedNodeIds, ...deletedNodes]);
+  const blocks = new Set<string>();
+  const derivedBlocks = new Set<string>();
+  for (const node of snapshot.nodes)
+    if (nodes.has(node.id)) blocksForNode(snapshot, node).forEach((id) => blocks.add(id));
+  // Follow immutable inputs transitively; answers can paraphrase uncited inputs.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const turn of snapshot.turns) {
+      if (turn.actor !== 'assistant') continue;
+      const pkg = snapshot.packages?.find(
+        (pkg) => pkg.context_set_id === turn.input_context_set_id,
+      );
+      if (!pkg?.items.some((item) => blocks.has(item.source_block_id) || nodes.has(item.node_id)))
+        continue;
+      for (const block of snapshot.blocks.filter((block) => block.turn_id === turn.id)) {
+        if (!blocks.has(block.id)) {
+          blocks.add(block.id);
+          derivedBlocks.add(block.id);
+          changed = true;
+        }
+      }
+    }
+  }
+  return { nodes, blocks, derivedBlocks, deletedNodes };
+}
+
 export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): ContextPackage {
   const set = ContextSetSchema.parse(raw);
   const excluded: ContextPackage['excluded'] = [];
   const conflicts: ContextPackage['conflicts'] = [];
   const diagnostics: string[] = [];
   const candidates: ContextItem[] = [];
-  const explicitlyExcluded = new Set(set.excluded_node_ids);
-  const blockedBlocks = new Set<string>();
+  const {
+    deletedNodes,
+    nodes: explicitlyExcluded,
+    blocks: blockedBlocks,
+    derivedBlocks,
+  } = excludedSources(snapshot, set.excluded_node_ids);
   let blocked = false;
+  if (deletedNodes.has(set.current_node_id)) {
+    blocked = true;
+    diagnostics.push('目前的對話已刪除，請先還原再送出。');
+  }
   const nodeById = new Map(snapshot.nodes.map((n) => [n.id, n]));
   const blockById = new Map(snapshot.blocks.map((b) => [b.id, b]));
   const excerptById = new Map(snapshot.excerpts.map((e) => [e.id, e]));
-  const blocksForNode = (node: CanvasNode) => {
-    if (node.ref_type === 'excerpt')
-      return [excerptById.get(node.ref_id)?.source_block_id].filter((v): v is string => Boolean(v));
-    const turns =
-      node.ref_type === 'turn'
-        ? [node.ref_id]
-        : snapshot.turns
-            .filter((t) => t.conversation_id === node.ref_id && t.status === 'complete')
-            .map((t) => t.id);
-    return snapshot.blocks
-      .filter((b) => b.turn_id !== null && turns.includes(b.turn_id))
-      .map((b) => b.id);
-  };
   const omit = (nodeId: string, reason: string, sourceId: string | null = null) =>
     excluded.push({ node_id: nodeId, source_id: sourceId, reason });
   for (const nodeId of explicitlyExcluded) {
-    const node = nodeById.get(nodeId);
-    if (node) blocksForNode(node).forEach((b) => blockedBlocks.add(b));
-    omit(nodeId, 'explicitly excluded');
-  }
-  // A previous answer may quote or paraphrase an excluded source. Follow its
-  // recorded input package transitively; used_source_ids alone are not proof
-  // that the model ignored the other inputs. Prefer conservative exclusion.
-  const derivedBlocks = new Set<string>();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const turn of snapshot.turns) {
-      if (turn.actor !== 'assistant') continue;
-      const pkg = snapshot.packages?.find((p) => p.context_set_id === turn.input_context_set_id);
-      if (
-        !pkg?.items.some(
-          (i) => blockedBlocks.has(i.source_block_id) || explicitlyExcluded.has(i.node_id),
-        )
-      )
-        continue;
-      for (const block of snapshot.blocks.filter((b) => b.turn_id === turn.id)) {
-        if (!blockedBlocks.has(block.id)) {
-          blockedBlocks.add(block.id);
-          derivedBlocks.add(block.id);
-          changed = true;
-        }
-      }
-    }
+    omit(nodeId, deletedNodes.has(nodeId) ? 'deleted from canvas' : 'explicitly excluded');
   }
   const roles = new Map<string, ContextItem['role']>();
   const priorities: Record<ContextItem['role'], number> = {
@@ -159,7 +175,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       priorities[originalRole] +
       (node.context_state === 'confirmed' ? 0.02 : 0) -
       (node.context_state === 'deprecated' ? 0.2 : 0);
-    const blockIds = blocksForNode(node);
+    const blockIds = blocksForNode(snapshot, node);
     if (blockIds.length === 0 && node.ref_type !== 'conversation') {
       omit(nodeId, 'missing source');
       if (explicit) blocked = true;

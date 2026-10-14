@@ -11,6 +11,7 @@ const roles: Record<string, string> = {
   historical: '历史资料',
 };
 const reasons: Record<string, string> = {
+  'deleted from canvas': '卡片已刪除，可從回收桶還原',
   'explicitly excluded': '你明确排除了此内容',
   'source overlaps explicitly excluded content': '来源与已排除内容重叠，为避免再次引入而排除',
   'answer depends on an excluded source': '这条回答依赖已排除的来源，也已排除',

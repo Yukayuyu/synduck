@@ -18,7 +18,7 @@ export type ContextState = z.infer<typeof ContextStateSchema>;
 export const ViewportSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
-  zoom: z.number().min(0.1).max(4),
+  zoom: z.number().min(0.01).max(4),
 });
 export const WorkspaceSchema = z.object({
   id: Id,
