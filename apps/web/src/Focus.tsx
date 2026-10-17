@@ -9,10 +9,8 @@ import {
   Send,
   RotateCcw,
   LoaderCircle,
-  Bot,
-  UserRound,
 } from 'lucide-react';
-import type { CanvasNode, ContentBlock, ContextPackage, Excerpt } from '@acc/domain';
+import type { CanvasNode, ContentBlock, ContextPackage, Excerpt, Turn } from '@acc/domain';
 import type { ClientState } from './api';
 
 export interface SelectedText {
@@ -36,6 +34,7 @@ interface Props {
   preview: ContextPackage | null;
   busy: boolean;
   draft: string;
+  pendingInput: { prompt: string; retryTurnId: string | null; contextSetId: string | null } | null;
   highlight: SourceHighlight | null;
   onClose: () => void;
   onPrompt: (value: string) => void;
@@ -53,6 +52,7 @@ export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const wasGenerating = useRef(false);
   useLayoutEffect(() => {
     // Focus only on explicit activation, once the node is measured and visible.
     // React Flow initially mounts fresh nodes hidden, so autofocus is too early.
@@ -65,6 +65,26 @@ export function Focus(props: Props) {
   const turns = state.turns
     .filter((t) => t.conversation_id === conversation?.id)
     .sort((a, b) => a.sequence - b.sequence);
+  // A question and all its answers/retries share one reading group. The turns
+  // and content blocks retain their canonical identities and exact source text.
+  const exchanges: Turn[][] = [];
+  for (const turn of turns) {
+    if (turn.actor === 'human' || !exchanges.length) exchanges.push([]);
+    exchanges.at(-1)!.push(turn);
+  }
+  const pending = props.pendingInput;
+  const liveOutput = (
+    <article className="turn assistant live-draft" aria-label="正在生成的輸出">
+      <div className="turn-heading">
+        <strong>輸出</strong>
+        <span className="output-status">
+          <LoaderCircle className="spin" size={12} />
+          生成中 · 尚未保存
+        </span>
+      </div>
+      <div className="message-text">{draft || '正在整理這個問題…'}</div>
+    </article>
+  );
   const origin = state.excerpts.find((e) => e.id === conversation?.branch_origin_excerpt_id);
   useEffect(() => {
     setSelection(null);
@@ -73,12 +93,25 @@ export function Focus(props: Props) {
     if (!highlight) return;
     const block = document.getElementById(`block-${highlight.blockId}`);
     const scroll = scrollRef.current;
-    if (block && scroll) scroll.scrollTop = block.offsetTop - scroll.offsetTop;
+    if (block && scroll) {
+      // Each input/output block has its own positioned container. Use viewport
+      // coordinates corrected for canvas zoom, rather than offsetParent offsets.
+      const bounds = scroll.getBoundingClientRect();
+      const scale = bounds.height / scroll.offsetHeight;
+      const target = block.querySelector('mark') || block;
+      if (scale > 0)
+        scroll.scrollTop += (target.getBoundingClientRect().top - bounds.top) / scale - 8;
+    }
   }, [highlight]);
   useEffect(() => {
     const scroll = scrollRef.current;
-    if (busy && scroll && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120)
+    if (
+      busy &&
+      scroll &&
+      (!wasGenerating.current || scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120)
+    )
       scroll.scrollTop = scroll.scrollHeight;
+    wasGenerating.current = busy;
   }, [busy, draft]);
   useEffect(() => {
     const clear = () => setSelection(null);
@@ -143,7 +176,7 @@ export function Focus(props: Props) {
       data-active={active}
       aria-label={excerpt ? '摘录详情' : '对话详情'}
     >
-      {active && (
+      {active && excerpt && (
         <div className="focus-heading">
           <span>{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
           <button onClick={props.onClose} aria-label="返回画布" title="收起輸入框">
@@ -163,22 +196,33 @@ export function Focus(props: Props) {
       </div>
       {excerpt ? (
         <div className="focus-content excerpt-detail">
-          <Quote size={26} />
           <blockquote>{excerpt.snapshot_text}</blockquote>
-          <p className="muted">
-            来源范围 {excerpt.selector.start_char}–{excerpt.selector.end_char} · 原文快照已保存
-          </p>
-          <button className="secondary" onClick={() => props.onSource(excerpt)}>
-            <CornerUpRight size={15} />
-            回到来源并高亮
-          </button>
-          <button className="primary" onClick={() => props.onBranch(excerpt)} disabled={locked}>
-            <GitBranch size={15} />
-            从摘录开始分支
-          </button>
+          <div className="excerpt-actions">
+            <button
+              className="secondary"
+              aria-label="回到来源并高亮"
+              onClick={() => props.onSource(excerpt)}
+            >
+              <CornerUpRight size={14} />
+              回到原文
+            </button>
+            <button
+              className="primary"
+              aria-label="从摘录开始分支"
+              onClick={() => props.onBranch(excerpt)}
+              disabled={locked}
+            >
+              <GitBranch size={14} />
+              延伸提問
+            </button>
+          </div>
           <details>
             <summary>来源记录</summary>
             <dl>
+              <dt>原文範圍</dt>
+              <dd>
+                {excerpt.selector.start_char}–{excerpt.selector.end_char} · 原文快照已保存
+              </dd>
               <dt>Source block</dt>
               <dd>{excerpt.source_block_id}</dd>
               <dt>SHA-256</dt>
@@ -198,7 +242,7 @@ export function Focus(props: Props) {
             </button>
           )}
           <div ref={scrollRef} className="focus-content conversation-scroll">
-            {turns.length === 0 && (
+            {turns.length === 0 && !busy && (
               <div className="conversation-empty">
                 <div className="small-orbit">
                   <MessageIcon />
@@ -211,97 +255,145 @@ export function Focus(props: Props) {
                 </p>
               </div>
             )}
-            {turns.map((turn) => (
-              <article
-                key={turn.id}
-                className={`turn ${turn.actor}`}
-                data-testid={`turn-${turn.actor}`}
+            {exchanges.map((exchange, index) => (
+              <section
+                className="exchange"
+                key={exchange[0].id}
+                role="group"
+                aria-label={`第 ${index + 1} 組問答`}
               >
-                <div className="turn-heading">
-                  <span className="actor-icon">
-                    {turn.actor === 'human' ? <UserRound size={13} /> : <Bot size={13} />}
-                  </span>
-                  <strong>
-                    {turn.actor === 'human'
-                      ? '你'
-                      : turn.model_provider === 'demo'
-                        ? '演示助手'
-                        : 'AI 助手'}
-                  </strong>
-                  <time>
-                    {new Date(turn.created_at).toLocaleTimeString('zh-CN', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </time>
-                </div>
-                {state.blocks
-                  .filter((b) => b.turn_id === turn.id)
-                  .sort((a, b) => a.ordinal - b.ordinal)
-                  .map((block) => {
-                    const text = block.text_content || '';
-                    const marked = highlight?.blockId === block.id;
-                    return (
-                      <div
-                        id={`block-${block.id}`}
-                        data-testid="content-block"
-                        key={block.id}
-                        className="message-text"
-                        onMouseUp={(event) => capture(event.currentTarget, block)}
-                      >
-                        {marked ? (
-                          <>
-                            {text.slice(0, highlight.start)}
-                            <mark>{text.slice(highlight.start, highlight.end)}</mark>
-                            {text.slice(highlight.end)}
-                          </>
-                        ) : (
-                          text
-                        )}
-                      </div>
-                    );
-                  })}
-                {turn.status === 'error' && (
-                  <div className="generation-error">
-                    <p>{turn.error}</p>
-                    <button
-                      className="text-button"
-                      disabled={locked}
-                      onClick={() => props.onRetry(turn.id)}
+                {exchange.map((turn) => {
+                  const generating =
+                    busy && (turn.id === pending?.retryTurnId || turn.status === 'streaming');
+                  return (
+                    <article
+                      key={turn.id}
+                      className={`turn ${turn.actor}`}
+                      data-testid={`turn-${turn.actor}`}
                     >
-                      <RotateCcw size={13} />
-                      使用原上下文重试
-                    </button>
-                  </div>
-                )}
-                {turn.status === 'streaming' && !busy && (
-                  <p className="muted">回答仍在生成，请稍后刷新。</p>
-                )}
-                {turn.actor === 'assistant' && (
-                  <button
-                    className="turn-context text-button"
-                    onClick={() => {
-                      const pkg = state.packages.find(
-                        (p) => p.context_set_id === turn.input_context_set_id,
-                      );
-                      if (pkg) props.onInspect(pkg);
-                    }}
-                  >
-                    <ScanLine size={12} />
-                    查看本轮上下文
-                  </button>
-                )}
-              </article>
+                      <div className="turn-heading">
+                        {turn.actor === 'human' && (
+                          <span className="exchange-index">
+                            {String(index + 1).padStart(2, '0')}
+                          </span>
+                        )}
+                        <strong>
+                          {turn.actor === 'human'
+                            ? '輸入'
+                            : turn.actor === 'assistant'
+                              ? '輸出'
+                              : turn.actor === 'tool'
+                                ? '工具'
+                                : '指示'}
+                        </strong>
+                        {generating ? (
+                          <span className="output-status">
+                            <LoaderCircle className="spin" size={12} />
+                            生成中 · 尚未保存
+                          </span>
+                        ) : (
+                          turn.model_provider === 'demo' && (
+                            <span className="output-status">本地演示</span>
+                          )
+                        )}
+                        <time>
+                          {new Date(turn.created_at).toLocaleTimeString('zh-CN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                      </div>
+                      {!generating &&
+                        state.blocks
+                          .filter((b) => b.turn_id === turn.id)
+                          .sort((a, b) => a.ordinal - b.ordinal)
+                          .map((block) => {
+                            const text = block.text_content || '';
+                            const marked = highlight?.blockId === block.id;
+                            return (
+                              <div
+                                id={`block-${block.id}`}
+                                data-testid="content-block"
+                                key={block.id}
+                                className="message-text"
+                                onMouseUp={(event) => capture(event.currentTarget, block)}
+                              >
+                                {marked ? (
+                                  <>
+                                    {text.slice(0, highlight.start)}
+                                    <mark>{text.slice(highlight.start, highlight.end)}</mark>
+                                    {text.slice(highlight.end)}
+                                  </>
+                                ) : (
+                                  text
+                                )}
+                              </div>
+                            );
+                          })}
+                      {turn.status === 'error' && !generating && (
+                        <div className="generation-error">
+                          <p>{turn.error}</p>
+                          <button
+                            className="text-button"
+                            disabled={locked}
+                            onClick={() => props.onRetry(turn.id)}
+                          >
+                            <RotateCcw size={13} />
+                            使用原上下文重试
+                          </button>
+                        </div>
+                      )}
+                      {turn.status === 'streaming' && !busy && (
+                        <p className="muted">回答仍在生成，请稍后刷新。</p>
+                      )}
+                      {generating && (
+                        <div className="message-text live-draft">
+                          {draft || '正在整理這個問題…'}
+                        </div>
+                      )}
+                      {turn.actor === 'assistant' && !generating && (
+                        <button
+                          className="turn-context text-button"
+                          onClick={() => {
+                            const pkg = state.packages.find(
+                              (p) => p.context_set_id === turn.input_context_set_id,
+                            );
+                            if (pkg) props.onInspect(pkg);
+                          }}
+                        >
+                          <ScanLine size={12} />
+                          查看本轮上下文
+                        </button>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
             ))}
-            {busy && (
-              <article className="turn assistant live-draft">
-                <div className="turn-heading">
-                  <LoaderCircle className="spin" size={14} />
-                  <strong>正在生成 · 尚未保存</strong>
-                </div>
-                <div className="message-text">{draft || '正在使用你预览的上下文…'}</div>
-              </article>
-            )}
+            {busy &&
+              pending &&
+              !pending.retryTurnId &&
+              !turns.some(
+                (turn) =>
+                  turn.actor === 'assistant' && turn.input_context_set_id === pending.contextSetId,
+              ) && (
+                <section
+                  className="exchange pending-exchange"
+                  role="group"
+                  aria-label={`第 ${exchanges.length + 1} 組問答`}
+                >
+                  <article className="turn human">
+                    <div className="turn-heading">
+                      <span className="exchange-index">
+                        {String(exchanges.length + 1).padStart(2, '0')}
+                      </span>
+                      <strong>輸入</strong>
+                    </div>
+                    <div className="message-text">{pending.prompt}</div>
+                  </article>
+                  {liveOutput}
+                </section>
+              )}
           </div>
           {selection &&
             createPortal(
@@ -349,6 +441,17 @@ export function Focus(props: Props) {
                 props.onCompile();
               }}
             >
+              <div className="composer-heading">
+                <span>接續輸入</span>
+                <button
+                  type="button"
+                  onClick={props.onClose}
+                  aria-label="返回画布"
+                  title="收起輸入框"
+                >
+                  <X size={14} />
+                </button>
+              </div>
               <label className="sr-only" htmlFor={`prompt-${node.id}`}>
                 你的问题
               </label>

@@ -341,22 +341,33 @@ export function Canvas({
   const visibleIds = new Set(mapped.map((n) => n.id));
   const edges = state.edges
     .filter((e) => visibleIds.has(e.source_node_id) && visibleIds.has(e.target_node_id))
-    .map((e) => ({
-      id: e.id,
-      source: e.source_node_id,
-      target: e.target_node_id,
-      label: e.type === 'branch_from' ? '从此分支' : e.type === 'excerpt_from' ? '摘录' : e.type,
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#a8b4ae', width: 16, height: 16 },
-      style: {
-        stroke: '#a8b4ae',
-        strokeWidth: 1.3,
-        strokeDasharray: e.edge_class === 'semantic' && !e.confirmed ? '5 5' : undefined,
-      },
-      labelStyle: { fill: '#78847e', fontSize: 10 },
-      labelBgStyle: { fill: '#f6f5f1' },
-      labelBgPadding: [6, 4] as [number, number],
-    }));
+    .map((e) => {
+      const color =
+        e.type === 'excerpt_from' ? '#bf9d68' : e.type === 'branch_from' ? '#9583c3' : '#a8b4ae';
+      return {
+        id: e.id,
+        source: e.source_node_id,
+        target: e.target_node_id,
+        label:
+          e.type === 'branch_from' ? '延伸提問' : e.type === 'excerpt_from' ? '摘錄原文' : e.type,
+        className: `relation-${e.type}`,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+        style: {
+          stroke: color,
+          strokeWidth: 1.3,
+          strokeDasharray:
+            e.edge_class === 'semantic' && !e.confirmed
+              ? '5 5'
+              : e.type === 'excerpt_from'
+                ? '3 4'
+                : undefined,
+        },
+        labelStyle: { fill: e.type === 'excerpt_from' ? '#917347' : '#807194', fontSize: 10 },
+        labelBgStyle: { fill: '#f6f5f9' },
+        labelBgPadding: [6, 4] as [number, number],
+      };
+    });
   const traceEdges = traces.flatMap((trace) => {
     const pkg = state.packages.find((pkg) => pkg.package_id === trace.context_package_id);
     const context = state.context_sets.find((context) => context.id === pkg?.context_set_id);

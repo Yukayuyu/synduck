@@ -43,7 +43,13 @@ export default function App() {
     null,
   );
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({ conversationId: '', text: '' });
+  const [draft, setDraft] = useState({
+    conversationId: '',
+    text: '',
+    prompt: '',
+    retryTurnId: null as string | null,
+    contextSetId: null as string | null,
+  });
   const [locate, setLocate] = useState<{ id: string; tick: number } | null>(null);
   const [highlight, setHighlight] = useState<SourceHighlight | null>(null);
   const [newDialog, setNewDialog] = useState(false);
@@ -306,13 +312,19 @@ export default function App() {
       : conversationId;
     setBusy(true);
     setPanel(null);
-    setDraft({ conversationId: targetConversation, text: '' });
+    const pendingInput = {
+      conversationId: targetConversation,
+      prompt: pkg?.current_prompt || '',
+      retryTurnId: retryId ?? null,
+      contextSetId: pkg?.context_set_id ?? null,
+    };
+    setDraft({ ...pendingInput, text: '' });
     setError('');
     try {
       await streamAnswer(
         retryId ? '/retry' : '/answer',
         retryId ? { turn_id: retryId } : { context_set_id: selectedPackage!.context_set_id },
-        (text) => setDraft({ conversationId: targetConversation, text }),
+        (text) => setDraft({ ...pendingInput, text }),
       );
       setPrompts((p) => ({ ...p, [targetConversation]: '' }));
       setSelected([]);
@@ -320,14 +332,22 @@ export default function App() {
     } catch (e) {
       fail(e);
     } finally {
-      generationLock.current = false;
-      setBusy(false);
-      setDraft({ conversationId: '', text: '' });
-      setPreview(null);
       try {
         await refresh();
       } catch (e) {
         fail(e);
+      } finally {
+        // Keep the visible exchange until its persisted replacement is ready.
+        generationLock.current = false;
+        setBusy(false);
+        setDraft({
+          conversationId: '',
+          text: '',
+          prompt: '',
+          retryTurnId: null,
+          contextSetId: null,
+        });
+        setPreview(null);
       }
     }
   };
@@ -489,6 +509,7 @@ export default function App() {
                 preview={node.id === activeId ? preview : null}
                 busy={busy && draft.conversationId === node.ref_id}
                 draft={draft.conversationId === node.ref_id ? draft.text : ''}
+                pendingInput={busy && draft.conversationId === node.ref_id ? draft : null}
                 highlight={node.id === activeId ? highlight : null}
                 onOpen={() => {
                   open(node);

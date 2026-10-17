@@ -27,6 +27,10 @@ The original specification is in `docs/source-spec.md`. Focused specifications a
 
 This repository starts from the cleared `main`. The previous application remains on `backup/main-before-clear-20261004`.
 
+## Connected conversation blocks (0.5.0)
+
+Each question and its answer share a close, aligned pair of **輸入 / 輸出** blocks. Numbered exchanges have a wider gap between them; paragraphs stay together inside their original output. Excerpts use warm paper, a quote rail and a dashed source link, while branches have a matching source tab and a solid continuation link. Closing the composer gives the text more reading space. Exact selections, source highlighting and historical context inspection remain available. See [reading and extracting from blocks](docs/conversation-blocks.md) for the layout and local update steps.
+
 ## MCP and visual desktop tasks (0.3.0)
 
 Open **本地任務 → 整合設定** to connect a local stdio or remote Streamable HTTP MCP service, or choose a Windows application window. Every tool call, screenshot and desktop input is approved individually. Canvas task cards show screenshots, operation paths and confirmation status; the review dialog compares before/after frames, annotates click locations and exports records with image hashes. Read [MCP, desktop control and provenance](docs/mcp-desktop-traces.md) for setup and validation limits. Desktop control targets the backend Windows computer; physical Windows and live ChatGPT image-tool execution remain unverified.
@@ -76,7 +80,7 @@ The adapter calls the Responses API with `store: false`, a strict JSON schema an
 - Chromium is picked from `/usr/bin/chromium` when present. Otherwise run `pnpm exec playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
 - The service is intended for a single owner. Loopback is the default; optional HTTPS reverse-proxy access requires PUBLIC_ORIGIN and APP_PASSWORD. It is not a multi-user service.
 
-Graph deletion/undo, generated summaries, lexical retrieval, the JSON Canvas adapter and the other full-backlog features are not part of this slice. See `docs/progress.md` for exact scope and remaining work.
+Recoverable card deletion, undo and trash are available through the [canvas action menu](docs/canvas-actions.md). Permanent deletion of individual messages, generated summaries, lexical retrieval, the JSON Canvas adapter and other full-backlog features remain outside this slice. See `docs/progress.md` for exact scope and remaining work.
 
 ## Native project backups
 
