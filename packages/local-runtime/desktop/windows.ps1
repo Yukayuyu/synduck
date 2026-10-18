@@ -1,7 +1,15 @@
 $ErrorActionPreference = 'Stop'
 [Console]::Error.WriteLine('context-canvas-desktop:initialize')
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+function Write-Response([string] $json) {
+    # Use explicit UTF-8 streams; mutating Console.InputEncoding can block on
+    # Windows PowerShell's redirected console reader during initialization.
+    $bytes = $utf8.GetBytes($json)
+    $outputStream = [Console]::OpenStandardOutput()
+    $outputStream.Write($bytes, 0, $bytes.Length)
+    $outputStream.Flush()
+}
+[Console]::Error.WriteLine('context-canvas-desktop:assemblies')
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 [Console]::Error.WriteLine('context-canvas-desktop:compile')
@@ -96,10 +104,11 @@ function Window-Info([IntPtr] $handle) {
 try {
     [Console]::Error.WriteLine('context-canvas-desktop:read')
     # One newline-delimited JSON request: don't wait for pipe EOF on Windows.
-    $request = [Console]::In.ReadLine() | ConvertFrom-Json
+    $reader = [System.IO.StreamReader]::new([Console]::OpenStandardInput(), $utf8, $false)
+    $request = $reader.ReadLine() | ConvertFrom-Json
     if ($request.operation -eq 'windows') {
         [Console]::Error.WriteLine('context-canvas-desktop:enumerate')
-        [Console]::Write((ConvertTo-Json -InputObject @([CanvasDesktop]::Windows()) -Compress -Depth 8))
+        Write-Response (ConvertTo-Json -InputObject @([CanvasDesktop]::Windows()) -Compress -Depth 8)
         [Console]::Error.WriteLine('context-canvas-desktop:complete')
         exit 0
     }
@@ -133,7 +142,7 @@ try {
         $stream = New-Object System.IO.MemoryStream
         try { $scaled.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png); $png=[Convert]::ToBase64String($stream.ToArray()) }
         finally { $stream.Dispose(); $scaled.Dispose() }
-        [Console]::Write((@{png=$png;bounds=$bounds;window=(Window-Info $handle)} | ConvertTo-Json -Compress -Depth 8))
+        Write-Response (@{png=$png;bounds=$bounds;window=(Window-Info $handle)} | ConvertTo-Json -Compress -Depth 8)
         [Console]::Error.WriteLine('context-canvas-desktop:complete')
         exit 0
     }
@@ -172,10 +181,10 @@ try {
         }
         default { throw 'Unsupported desktop operation' }
     }
-    [Console]::Write('{"ok":true}')
+    Write-Response '{"ok":true}'
     [Console]::Error.WriteLine('context-canvas-desktop:complete')
 } catch {
     # Fixed error text: no raw C# stack, host data or script input is printed.
-    [Console]::Write('{"error":"Window unavailable, focus/geometry changed, or input blocked"}')
+    Write-Response '{"error":"Window unavailable, focus/geometry changed, or input blocked"}'
     exit 1
 }

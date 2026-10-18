@@ -65,7 +65,8 @@ export interface DesktopDriver {
 const fail = (message: string) => new DomainError('desktop_unavailable', message, 409);
 const bridgeStages = {
   process: '啟動 PowerShell',
-  initialize: '載入 Windows 組件',
+  initialize: '初始化通訊',
+  assemblies: '載入 Windows 組件',
   compile: '編譯桌面橋接',
   read: '讀取請求',
   enumerate: '列舉視窗',
