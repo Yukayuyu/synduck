@@ -67,6 +67,9 @@ const bridgeStages = {
   process: '啟動 PowerShell',
   initialize: '初始化通訊',
   assemblies: '載入 Windows 組件',
+  utility: '載入 PowerShell 內建模組',
+  drawing: '載入繪圖組件',
+  forms: '載入視窗組件',
   compile: '編譯桌面橋接',
   read: '讀取請求',
   enumerate: '列舉視窗',
@@ -131,7 +134,7 @@ export class WindowsDesktopDriver implements DesktopDriver {
         for (const match of diagnostics.matchAll(/context-canvas-desktop:([a-z]+)(?:\r?\n)/g))
           if (Object.hasOwn(bridgeStages, match[1])) {
             stage = match[1] as keyof typeof bridgeStages;
-            if (stage === 'read' && !operationStarted) {
+            if ((stage === 'enumerate' || stage === 'target') && !operationStarted) {
               operationStarted = true;
               clearTimeout(timer);
               timer = setTimeout(expire, 20000);

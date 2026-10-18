@@ -9,9 +9,9 @@ function Write-Response([string] $json) {
     $outputStream.Write($bytes, 0, $bytes.Length)
     $outputStream.Flush()
 }
-[Console]::Error.WriteLine('context-canvas-desktop:assemblies')
-Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Windows.Forms
+[Console]::Error.WriteLine('context-canvas-desktop:utility')
+# Import the system cmdlets without searching unrelated user/Azure modules.
+Import-Module "$PSHOME\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1"
 [Console]::Error.WriteLine('context-canvas-desktop:compile')
 Add-Type @'
 using System;
@@ -112,6 +112,11 @@ try {
         [Console]::Error.WriteLine('context-canvas-desktop:complete')
         exit 0
     }
+    # Listing windows only needs Win32; load the GUI assemblies for capture/input.
+    [Console]::Error.WriteLine('context-canvas-desktop:drawing')
+    Add-Type -AssemblyName System.Drawing
+    [Console]::Error.WriteLine('context-canvas-desktop:forms')
+    Add-Type -AssemblyName System.Windows.Forms
     [Console]::Error.WriteLine('context-canvas-desktop:target')
     $handle = [IntPtr]::new([long]$request.window)
     if (-not [CanvasDesktop]::IsWindow($handle)) { throw 'Target window no longer exists' }
