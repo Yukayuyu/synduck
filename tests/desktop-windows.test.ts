@@ -18,5 +18,5 @@ it.skipIf(process.platform !== 'win32')(
       windows.every((window) => /^\d+$/.test(window.id) && Number.isInteger(window.process_id)),
     ).toBe(true);
   },
-  30000,
+  90000,
 );

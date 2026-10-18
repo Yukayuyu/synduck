@@ -123,21 +123,32 @@ export class WindowsDesktopDriver implements DesktopDriver {
         timedOut = false;
       let stage: keyof typeof bridgeStages = 'process';
       let diagnostics = '';
+      let operationStarted = false;
       child.stderr.on('data', (part: Buffer) => {
         // Only fixed stage markers may enter diagnostics, never raw PowerShell
         // errors, window titles, requested text or host environment values.
         diagnostics = (diagnostics + part.toString('utf8')).slice(-1024);
         for (const match of diagnostics.matchAll(/context-canvas-desktop:([a-z]+)(?:\r?\n)/g))
-          if (Object.hasOwn(bridgeStages, match[1])) stage = match[1] as keyof typeof bridgeStages;
+          if (Object.hasOwn(bridgeStages, match[1])) {
+            stage = match[1] as keyof typeof bridgeStages;
+            if (stage === 'read' && !operationStarted) {
+              operationStarted = true;
+              clearTimeout(timer);
+              timer = setTimeout(expire, 20000);
+            }
+          }
       });
       const cancel = () => {
         stopped = true;
         child.kill();
       };
-      const timer = setTimeout(() => {
+      const expire = () => {
         timedOut = true;
         cancel();
-      }, 20000);
+      };
+      // Keep cold PowerShell/module initialization separate from the actual
+      // request: desktop operations retain their original 20-second deadline.
+      let timer = setTimeout(expire, 60000);
       signal?.addEventListener('abort', cancel, { once: true });
       child.stdout.on('data', (part: Buffer) => {
         if (output.length + part.length > 12 * 1024 * 1024) cancel();
