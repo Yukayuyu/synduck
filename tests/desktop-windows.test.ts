@@ -5,7 +5,14 @@ it.skipIf(process.platform !== 'win32')(
   async () => {
     const driver = new WindowsDesktopDriver();
     expect(driver.available).toBe(true);
-    const windows = await driver.windows();
+    const started = Date.now();
+    const windows = await driver.windows().catch((cause: unknown) => {
+      // CI annotations remain useful even if hosted log downloads are blocked.
+      // Only elapsed time and the driver's fixed diagnostic are exposed.
+      throw new Error(`Windows bridge enumeration failed after ${Date.now() - started} ms`, {
+        cause,
+      });
+    });
     expect(Array.isArray(windows)).toBe(true);
     expect(
       windows.every((window) => /^\d+$/.test(window.id) && Number.isInteger(window.process_id)),

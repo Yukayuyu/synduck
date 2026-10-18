@@ -69,7 +69,7 @@ pnpm package:windows
 
 原始碼啟動器可以檢查與準備版本，但不會覆蓋 Git checkout 安裝。Windows portable 啟動器才能一鍵切換版本。打包需要 Git checkout；輸出位於 `release-output/`（或 `RELEASE_OUTPUT` 指定目錄），不包含 `.env`、`data/`、`node_modules/` 或登入資料。依賴在本機按 lockfile 安裝，沒有混入 Linux 原生二進位。
 
-發佈時先更新 package.json 的 SemVer，執行檢查與打包，再推送對應 `canvas-v<version>` tag。GitHub Actions 的 release workflow 會在 Windows 執行驗證，成功後發布 ZIP、SHA-256 與 `context-canvas-update.json`；帶 SemVer suffix 的版本會標為 prerelease，供測試頻道接收。**寫入 workflow 與產生 ZIP 不代表已發佈 Release**；本次沒有自動發布 tag 或改動 cleared main。
+後續開發與交付使用 `main`；推送 `main` 會執行驗證。發佈時先更新 package.json 的 SemVer，執行檢查與打包，再從 `main` 推送對應 `canvas-v<version>` tag。GitHub Actions 的 release workflow 會在 Windows 執行驗證，成功後發布 ZIP、SHA-256 與 `context-canvas-update.json`；帶 SemVer suffix 的版本會標為 prerelease，供測試頻道接收。**寫入 workflow、推送 main 或產生 ZIP 不代表已發佈 Release**。具體 GitHub 設定、私有倉庫唯讀 token 與發佈指令見 [GitHub 自動更新設定](github-updates.md)。
 
 ## 驗證範圍
 

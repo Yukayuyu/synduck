@@ -1,7 +1,7 @@
 name: Context Canvas
 on:
   push:
-    branches: [main, 'feat/ai-context-canvas']
+    branches: [main]
   pull_request:
 permissions:
   contents: read

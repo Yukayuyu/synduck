@@ -25,7 +25,7 @@ pnpm test:e2e
 
 The original specification is in `docs/source-spec.md`. Focused specifications are in `docs/`; the unchanged proposed backlog is in `issues.json`. Implementation progress and deliberate scope limits are tracked separately in `docs/progress.md`.
 
-This repository starts from the cleared `main`. The previous application remains on `backup/main-before-clear-20261004`.
+Development and completed changes now go to `main`. The previous application remains on `backup/main-before-clear-20261004`; the earlier canvas development branch is retained as history.
 
 ## Connected conversation blocks (0.5.0)
 
@@ -38,6 +38,8 @@ Open **本地任務 → 整合設定** to connect a local stdio or remote Stream
 ## Local tasks and updates (since 0.2.0)
 
 Open **本地任務** to select a backend project directory. Manual file/command tests work without AI; Codex tasks use the selected model and reasoning level, with explicit approval for each command or write. Tool outcomes and task history stay in `data/local-runtime/`; they do not mutate sealed canvas inputs. Open **版本與更新** for automatic release checks, optional browser notifications, verified downloads and ZIP import. The Windows launcher installs into separate version folders and keeps the previous version and data for recovery. See [local runtime and updates](docs/local-runtime-updates.md) for first-time Windows migration, capability limits and release instructions. `pnpm start:local` runs the source launcher; `pnpm package:windows` creates a portable source-and-built-client package.
+
+For GitHub Actions/Release setup, the private-repository read token used by installed clients, and publishing from `main`, follow [GitHub automatic update setup](docs/github-updates.md). A push to `main` validates code; a matching version tag publishes an update.
 
 ## First working slice
 
