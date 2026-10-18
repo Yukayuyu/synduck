@@ -140,7 +140,9 @@ export class WindowsDesktopDriver implements DesktopDriver {
       });
       child.stdin.on('error', () => {});
       if (signal?.aborted) cancel();
-      child.stdin.end(JSON.stringify(body));
+      // Frame the single request explicitly; PowerShell can read it before
+      // Windows signals that the parent has closed its redirected stdin.
+      child.stdin.end(JSON.stringify(body) + '\n');
     });
   }
   async windows(signal?: AbortSignal) {
