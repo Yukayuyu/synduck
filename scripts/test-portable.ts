@@ -18,6 +18,18 @@ const testStore = process.env.CANVAS_PNPM_STORE || join(home, '.runtime', 'pnpm-
 const application = join(home, 'app');
 let launcher: ChildProcess | null = null;
 let logs = '';
+let phase = 'extract package';
+// Preserve the normal uncaught-error exit while making the existing smoke-test
+// failure readable through GitHub annotations when hosted log downloads fail.
+process.once('uncaughtExceptionMonitor', (error) => {
+  if (process.env.GITHUB_ACTIONS !== 'true') return;
+  const detail = `${error.stack || error.message}\n${logs.slice(-4000)}`
+    .slice(-7000)
+    .replaceAll('%', '%25')
+    .replaceAll('\r', '%0D')
+    .replaceAll('\n', '%0A');
+  console.error(`::error title=Portable lifecycle - ${phase}::${detail}`);
+});
 const freePort = await new Promise<number>((done, reject) => {
   const server = createServer();
   server.once('error', reject);
@@ -176,6 +188,7 @@ try {
   // All dependencies come from the pinned lockfile, not a copied Linux node_modules tree.
   const windows = process.platform === 'win32';
   const npxCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+  phase = 'install initial dependencies';
   execFileSync(
     windows ? process.execPath : 'pnpm',
     windows
@@ -192,6 +205,7 @@ try {
       : ['install', '--frozen-lockfile', '--store-dir', testStore],
     { cwd: application, stdio: 'pipe', timeout: 150000 },
   );
+  phase = 'start initial version';
   await start();
   assert.equal((await request('/health')).version, version);
   const project = join(home, 'project');
@@ -224,6 +238,7 @@ try {
   assert.equal(await fs.readFile(join(home, 'data/model-settings.json'), 'utf8'), savedSettings);
   assert.deepEqual(await request(`/local/tasks/${read.id}`), originalTask);
   const nextVersion = newVersion(1);
+  phase = 'install update and retain data';
   await request('/updates/import', {
     archive: Buffer.from(newerArchive(nextVersion)).toString('base64'),
   });
@@ -248,6 +263,7 @@ try {
     'Keep app-owned login directory',
   );
   console.log('PASS: actual portable install, health check, data/login/provenance retention.');
+  phase = 'failed-update rollback';
   await request('/updates/import', {
     archive: Buffer.from(newerArchive(newVersion(2), true)).toString('base64'),
   });
@@ -267,6 +283,7 @@ try {
     'Keep app-owned login directory',
   );
   console.log('PASS: actual failed new server rolls back to previous version and data.');
+  phase = 'stop before journal recovery';
   await stop();
   const previous = JSON.parse(await fs.readFile(join(home, '.runtime/install.json'), 'utf8'));
   const backup = `update-backup-${randomUUID()}`;
@@ -276,6 +293,7 @@ try {
     join(home, '.runtime/pending-install.json'),
     JSON.stringify({ previous, backup, backup_ready: true }),
   );
+  phase = 'recover interrupted journal';
   await start();
   assert.equal((await request('/health')).version, nextVersion);
   assert.equal(
@@ -284,6 +302,7 @@ try {
   );
   assert.deepEqual((await request('/state')).packages, originalState.packages);
   console.log('PASS: pending-journal recovery after a simulated interrupted update.');
+  phase = 'abrupt exit and stale-lock recovery';
   const crashConversation = await request('/conversations', {
     title: 'Cancel owned generation when launcher disappears',
   });
@@ -329,6 +348,7 @@ try {
   );
   console.log('PASS: abrupt launcher exit stops its API and generation; stale lock recovers.');
 } finally {
+  phase = 'cleanup';
   await stop();
   await fs.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
