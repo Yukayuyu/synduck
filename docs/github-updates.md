@@ -42,7 +42,7 @@ UPDATE_GITHUB_TOKEN=<在你自己的本機填入唯讀 token>
 
 5. 關閉整個啟動器，再以 `Start-ContextCanvas.cmd` 重新啟動，讓更新器讀取設定。
 
-這個 token 與 ChatGPT 登入、模型 API key 分開，只放後端；不要貼在聊天、前端設定、Git 或更新包中。日後若自行把倉庫改為公開，未驗證的公開 Release 讀取可不填 token；本次不會變更倉庫公開範圍。
+這個 token 與 ChatGPT 登入、模型 API key 分開，只放後端；不要貼在聊天、前端設定、Git 或更新包中。日後若自行把倉庫改為公開，公開 Release 可匿名讀取，不需填 token；本次不會變更倉庫公開範圍。
 
 ## 3. 從 main 發布一個版本
 

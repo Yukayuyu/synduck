@@ -6,6 +6,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type @'
 using System;
 using System.Text;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 public static class CanvasDesktop {
   public delegate bool EnumProc(IntPtr h, IntPtr p);
@@ -35,6 +36,29 @@ public static class CanvasDesktop {
   }
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int X,Y; public uint MouseData,Flags,Time; public IntPtr Extra; }
   [StructLayout(LayoutKind.Sequential)] public struct Keyboard { public ushort Key,Scan; public uint Flags,Time; public IntPtr Extra; }
+  public sealed class WindowInfo {
+    public string id;
+    public string title;
+    public uint process_id;
+  }
+  public static WindowInfo[] Windows() {
+    var windows=new List<WindowInfo>();
+    // Keep the native callback in C#: re-entering a PowerShell runspace from
+    // EnumWindows can stall the bridge until its parent process times out.
+    EnumWindows(delegate(IntPtr handle,IntPtr unused) {
+      if(IsWindowVisible(handle)) {
+        var title=new StringBuilder(1000);
+        GetWindowText(handle,title,1000);
+        if(title.Length>0) {
+          uint process;
+          GetWindowThreadProcessId(handle,out process);
+          windows.Add(new WindowInfo {id=handle.ToInt64().ToString(),title=title.ToString(),process_id=process});
+        }
+      }
+      return windows.Count<200;
+    },IntPtr.Zero);
+    return windows.ToArray();
+  }
   public static void SendMouse(uint flag, int data) {
     var i=new Input(); i.Type=0; i.Data.Mouse.Flags=flag; i.Data.Mouse.MouseData=unchecked((uint)data);
     if(SendInput(1,new[]{i},Marshal.SizeOf(typeof(Input)))!=1) throw new Exception("Input was blocked");
@@ -72,17 +96,7 @@ function Window-Info([IntPtr] $handle) {
 try {
     $request = [Console]::In.ReadToEnd() | ConvertFrom-Json
     if ($request.operation -eq 'windows') {
-        $script:windows = New-Object System.Collections.Generic.List[Object]
-        $callback = [CanvasDesktop+EnumProc] {
-            param([IntPtr] $handle, [IntPtr] $unused)
-            if ([CanvasDesktop]::IsWindowVisible($handle)) {
-                $info = Window-Info $handle
-                if ($info.title -and $script:windows.Count -lt 200) { $script:windows.Add($info) }
-            }
-            return $true
-        }
-        [CanvasDesktop]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
-        [Console]::Write((ConvertTo-Json -InputObject @($script:windows.ToArray()) -Compress -Depth 8))
+        [Console]::Write((ConvertTo-Json -InputObject @([CanvasDesktop]::Windows()) -Compress -Depth 8))
         exit 0
     }
     $handle = [IntPtr]::new([long]$request.window)
