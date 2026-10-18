@@ -21,7 +21,7 @@ let logs = '';
 let phase = 'extract package';
 // Preserve the normal uncaught-error exit while making the existing smoke-test
 // failure readable through GitHub annotations when hosted log downloads fail.
-process.once('uncaughtExceptionMonitor', (error) => {
+const reportFailure = (error: Error) => {
   if (process.env.GITHUB_ACTIONS !== 'true') return;
   const detail = `${error.stack || error.message}\n${logs.slice(-4000)}`
     .slice(-7000)
@@ -29,7 +29,8 @@ process.once('uncaughtExceptionMonitor', (error) => {
     .replaceAll('\r', '%0D')
     .replaceAll('\n', '%0A');
   console.error(`::error title=Portable lifecycle - ${phase}::${detail}`);
-});
+};
+process.once('uncaughtExceptionMonitor', reportFailure);
 const freePort = await new Promise<number>((done, reject) => {
   const server = createServer();
   server.once('error', reject);
@@ -347,6 +348,12 @@ try {
     ),
   );
   console.log('PASS: abrupt launcher exit stops its API and generation; stale lock recovers.');
+} catch (error) {
+  if (error instanceof Error) {
+    reportFailure(error);
+    process.off('uncaughtExceptionMonitor', reportFailure);
+  }
+  throw error;
 } finally {
   phase = 'cleanup';
   await stop();

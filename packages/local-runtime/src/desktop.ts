@@ -63,6 +63,17 @@ export interface DesktopDriver {
   act(window: string, args: DesktopOperation, frame: Frame, signal: AbortSignal): Promise<void>;
 }
 const fail = (message: string) => new DomainError('desktop_unavailable', message, 409);
+const bridgeStages = {
+  process: '啟動 PowerShell',
+  initialize: '載入 Windows 組件',
+  compile: '編譯桌面橋接',
+  read: '讀取請求',
+  enumerate: '列舉視窗',
+  target: '確認目標視窗',
+  capture: '擷取視窗',
+  input: '執行輸入',
+  complete: '結束程序',
+};
 const WindowSchema = z.object({
   id: z.string().regex(/^\d+$/),
   title: z.string().max(1000),
@@ -104,15 +115,28 @@ export class WindowsDesktopDriver implements DesktopDriver {
           '-File',
           fileURLToPath(new URL('../desktop/windows.ps1', import.meta.url)),
         ],
-        { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, env },
+        { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env },
       );
       let output = Buffer.alloc(0),
-        stopped = false;
+        stopped = false,
+        timedOut = false;
+      let stage: keyof typeof bridgeStages = 'process';
+      let diagnostics = '';
+      child.stderr.on('data', (part: Buffer) => {
+        // Only fixed stage markers may enter diagnostics, never raw PowerShell
+        // errors, window titles, requested text or host environment values.
+        diagnostics = (diagnostics + part.toString('utf8')).slice(-1024);
+        for (const match of diagnostics.matchAll(/context-canvas-desktop:([a-z]+)(?:\r?\n)/g))
+          if (Object.hasOwn(bridgeStages, match[1])) stage = match[1] as keyof typeof bridgeStages;
+      });
       const cancel = () => {
         stopped = true;
         child.kill();
       };
-      const timer = setTimeout(cancel, 20000);
+      const timer = setTimeout(() => {
+        timedOut = true;
+        cancel();
+      }, 20000);
       signal?.addEventListener('abort', cancel, { once: true });
       child.stdout.on('data', (part: Buffer) => {
         if (output.length + part.length > 12 * 1024 * 1024) cancel();
@@ -123,7 +147,13 @@ export class WindowsDesktopDriver implements DesktopDriver {
         clearTimeout(timer);
         signal?.removeEventListener('abort', cancel);
         if (code || stopped || signal?.aborted)
-          return reject(fail('桌面操作中斷；請檢查目標視窗與實際狀態。'));
+          return reject(
+            fail(
+              timedOut
+                ? `Windows 桌面工具逾時（${bridgeStages[stage]}）。`
+                : `桌面操作中斷（${bridgeStages[stage]}）；請檢查目標視窗與實際狀態。`,
+            ),
+          );
         try {
           const response = JSON.parse(
             output

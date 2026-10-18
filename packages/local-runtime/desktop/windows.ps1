@@ -1,11 +1,14 @@
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('context-canvas-desktop:initialize')
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
+[Console]::Error.WriteLine('context-canvas-desktop:compile')
 Add-Type @'
 using System;
 using System.Text;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 public static class CanvasDesktop {
   public delegate bool EnumProc(IntPtr h, IntPtr p);
@@ -35,6 +38,27 @@ public static class CanvasDesktop {
   }
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int X,Y; public uint MouseData,Flags,Time; public IntPtr Extra; }
   [StructLayout(LayoutKind.Sequential)] public struct Keyboard { public ushort Key,Scan; public uint Flags,Time; public IntPtr Extra; }
+  public sealed class WindowInfo {
+    public string id;
+    public string title;
+    public uint process_id;
+  }
+  public static WindowInfo[] Windows() {
+    var windows=new List<WindowInfo>();
+    EnumWindows(delegate(IntPtr handle,IntPtr unused) {
+      if(IsWindowVisible(handle)) {
+        var title=new StringBuilder(1000);
+        GetWindowText(handle,title,1000);
+        if(title.Length>0) {
+          uint process;
+          GetWindowThreadProcessId(handle,out process);
+          windows.Add(new WindowInfo {id=handle.ToInt64().ToString(),title=title.ToString(),process_id=process});
+        }
+      }
+      return windows.Count<200;
+    },IntPtr.Zero);
+    return windows.ToArray();
+  }
   public static void SendMouse(uint flag, int data) {
     var i=new Input(); i.Type=0; i.Data.Mouse.Flags=flag; i.Data.Mouse.MouseData=unchecked((uint)data);
     if(SendInput(1,new[]{i},Marshal.SizeOf(typeof(Input)))!=1) throw new Exception("Input was blocked");
@@ -70,22 +94,16 @@ function Window-Info([IntPtr] $handle) {
     return @{ id = $handle.ToInt64().ToString(); title = $title.ToString(); process_id = $windowProcess }
 }
 try {
+    [Console]::Error.WriteLine('context-canvas-desktop:read')
     # One newline-delimited JSON request: don't wait for pipe EOF on Windows.
     $request = [Console]::In.ReadLine() | ConvertFrom-Json
     if ($request.operation -eq 'windows') {
-        $script:windows = New-Object System.Collections.Generic.List[Object]
-        $callback = [CanvasDesktop+EnumProc] {
-            param([IntPtr] $handle, [IntPtr] $unused)
-            if ([CanvasDesktop]::IsWindowVisible($handle)) {
-                $info = Window-Info $handle
-                if ($info.title -and $script:windows.Count -lt 200) { $script:windows.Add($info) }
-            }
-            return $true
-        }
-        [CanvasDesktop]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
-        [Console]::Write((ConvertTo-Json -InputObject @($script:windows.ToArray()) -Compress -Depth 8))
+        [Console]::Error.WriteLine('context-canvas-desktop:enumerate')
+        [Console]::Write((ConvertTo-Json -InputObject @([CanvasDesktop]::Windows()) -Compress -Depth 8))
+        [Console]::Error.WriteLine('context-canvas-desktop:complete')
         exit 0
     }
+    [Console]::Error.WriteLine('context-canvas-desktop:target')
     $handle = [IntPtr]::new([long]$request.window)
     if (-not [CanvasDesktop]::IsWindow($handle)) { throw 'Target window no longer exists' }
     $info = Window-Info $handle
@@ -104,6 +122,7 @@ try {
     $bounds = @{left=$left;top=$top;width=($right-$left);height=($bottom-$top)}
     if ($bounds.width -lt 1 -or $bounds.height -lt 1 -or $bounds.width*$bounds.height -gt 40000000) { throw 'Invalid visible window size' }
     if ($request.operation -eq 'capture') {
+        [Console]::Error.WriteLine('context-canvas-desktop:capture')
         $bitmap = New-Object System.Drawing.Bitmap $bounds.width, $bounds.height
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         try { $graphics.CopyFromScreen($left, $top, 0, 0, $bitmap.Size) } finally { $graphics.Dispose() }
@@ -115,6 +134,7 @@ try {
         try { $scaled.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png); $png=[Convert]::ToBase64String($stream.ToArray()) }
         finally { $stream.Dispose(); $scaled.Dispose() }
         [Console]::Write((@{png=$png;bounds=$bounds;window=(Window-Info $handle)} | ConvertTo-Json -Compress -Depth 8))
+        [Console]::Error.WriteLine('context-canvas-desktop:complete')
         exit 0
     }
     foreach ($field in @('left','top','width','height')) {
@@ -130,6 +150,7 @@ try {
         if ([CanvasDesktop]::GetAncestor([CanvasDesktop]::WindowFromPoint($point), 2) -ne $handle) { throw 'Target point belongs to another window' }
         [CanvasDesktop]::SetCursorPos($x,$y) | Out-Null
     }
+    [Console]::Error.WriteLine('context-canvas-desktop:input')
     switch ($request.operation) {
         'click' { [CanvasDesktop]::SendMouse(2,0); [CanvasDesktop]::SendMouse(4,0) }
         'double_click' {
@@ -152,6 +173,7 @@ try {
         default { throw 'Unsupported desktop operation' }
     }
     [Console]::Write('{"ok":true}')
+    [Console]::Error.WriteLine('context-canvas-desktop:complete')
 } catch {
     # Fixed error text: no raw C# stack, host data or script input is printed.
     [Console]::Write('{"error":"Window unavailable, focus/geometry changed, or input blocked"}')
