@@ -318,6 +318,18 @@ try {
     body: JSON.stringify({ context_set_id: crashInput.context_set.id }),
   });
   assert.equal(streamed.status, 200);
+  // Read immediately, with an attached rejection handler: force-killing a
+  // Windows parent can reset the response before an error frame is delivered.
+  const streamResult = streamed.text().then(
+    (text) => ({ kind: 'text' as const, text }),
+    (error: unknown) => ({ kind: 'interrupted' as const, error }),
+  );
+  const runningState = await request('/state');
+  const runningTurn = runningState.turns.find(
+    (turn: { conversation_id: string; actor: string }) =>
+      turn.conversation_id === crashConversation.conversation.id && turn.actor === 'assistant',
+  );
+  assert.equal(runningTurn?.status, 'streaming');
   const crashed = launcher!;
   await new Promise<void>((done) => {
     crashed.once('exit', () => done());
@@ -332,21 +344,26 @@ try {
       return true;
     }
   }, 10000);
-  const events = (await streamed.text())
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line));
-  assert.equal(events.at(-1)?.type, 'error');
+  const received = await streamResult;
+  if (received.kind === 'text') {
+    const events = received.text
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    assert.equal(events.at(-1)?.type, 'error');
+  } else {
+    assert.ok(
+      received.error instanceof TypeError && received.error.message === 'terminated',
+      'Only the forced process termination may interrupt this response',
+    );
+  }
   await start();
   const interrupted = await request('/state');
-  assert.ok(
-    interrupted.turns.some(
-      (turn: { conversation_id: string; actor: string; status: string }) =>
-        turn.conversation_id === crashConversation.conversation.id &&
-        turn.actor === 'assistant' &&
-        turn.status === 'error',
-    ),
+  const recoveredTurn = interrupted.turns.find(
+    (turn: { id: string }) => turn.id === runningTurn.id,
   );
+  assert.equal(recoveredTurn?.status, 'error');
+  assert.equal(recoveredTurn.input_context_set_id, crashInput.context_set.id);
   console.log('PASS: abrupt launcher exit stops its API and generation; stale lock recovers.');
 } catch (error) {
   if (error instanceof Error) {
