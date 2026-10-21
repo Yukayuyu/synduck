@@ -41,8 +41,8 @@ async function fixture(factory?: (handler: HostToolHandler) => CodexConnection) 
   cleanup.push(() => executor.close());
   return { home, project, history, executor };
 }
-async function finished(executor: LocalExecutor, task: LocalTask) {
-  await wait(() => !executor.busy);
+async function finished(executor: LocalExecutor, task: LocalTask, timeout = 5000) {
+  await wait(() => !executor.busy, timeout);
   return executor.task(task.id);
 }
 async function waiting(executor: LocalExecutor, task: LocalTask) {
@@ -139,10 +139,12 @@ describe('local project executor', () => {
     const action = await waiting(executor, task);
     expect(action.output).toBe('');
     await executor.approve(task.id, action.id, true);
-    const result = await finished(executor, task);
+    // The command itself is bounded at 10 seconds; let that result arrive
+    // before the test harness deadline on a cold Windows PowerShell process.
+    const result = await finished(executor, task, 12_000);
     expect(JSON.parse(result.actions[0].output)).toMatchObject({ exit_code: 0, timed_out: false });
     expect(JSON.parse(result.actions[0].output).stdout).toMatch(/^v24\./);
-  });
+  }, 15_000);
   it('rejection and cancellation perform no pending write', async () => {
     const { executor, project } = await fixture();
     for (const approve of [false, null]) {
@@ -179,10 +181,14 @@ describe('local project executor', () => {
     });
     const action = await waiting(executor, task);
     await executor.approve(task.id, action.id, true);
-    const result = await finished(executor, task);
-    expect(JSON.parse(result.actions[0].output).exit_code).not.toBe(0);
+    // The command itself is bounded at 10 seconds; let that result arrive
+    // before the test harness deadline on a cold Windows PowerShell process.
+    const result = await finished(executor, task, 12_000);
+    const outcome = JSON.parse(result.actions[0].output);
+    expect(outcome).toMatchObject({ timed_out: false, cancelled: false });
+    expect(outcome.exit_code).not.toBe(0);
     expect(result.status).toBe('failed');
-  });
+  }, 15_000);
   it('cancels an already running child and finishes its audit record before shutdown', async () => {
     const { executor } = await fixture();
     const task = await executor.manual('canvas_run_command', {
