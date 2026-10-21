@@ -59,7 +59,7 @@ function newerArchive(next: string, broken = false) {
   pkg.version = next;
   updated[pkgPath] = new TextEncoder().encode(JSON.stringify(pkg));
   if (broken)
-    updated['ContextCanvas-Windows/app/apps/api/src/server.ts'] = new TextEncoder().encode(
+    updated['ContextCanvas-Windows/app/apps/api/server.mjs'] = new TextEncoder().encode(
       'throw new Error("Expected startup failure in portable smoke");\nexport {};',
     );
   const manifestPath = 'ContextCanvas-Windows/package-files.json';
@@ -91,7 +91,7 @@ async function request(path: string, body?: unknown) {
   assert.equal(response.status, 200, JSON.stringify(data));
   return data;
 }
-async function start() {
+async function start(entry: 'launcher' | 'legacy-server' = 'launcher') {
   const require = createRequire(join(application, 'package.json'));
   const env = {
     ...process.env,
@@ -124,9 +124,11 @@ async function start() {
   launcher = spawn(
     process.execPath,
     [
-      '--import',
-      pathToFileURL(require.resolve('tsx')).href,
-      'scripts/local-launcher.ts',
+      ...(entry === 'legacy-server'
+        ? ['--import', pathToFileURL(require.resolve('tsx')).href, 'apps/api/src/server.ts']
+        : process.env.CANVAS_TEST_LEGACY_BOOTSTRAP === '1'
+          ? ['--import', pathToFileURL(require.resolve('tsx')).href, 'scripts/local-launcher.ts']
+          : ['scripts/local-launcher.mjs']),
       '--no-browser',
     ],
     { cwd: application, env, stdio: ['ignore', 'pipe', 'pipe'] },
@@ -166,6 +168,19 @@ async function stop() {
 }
 try {
   const original = unpackRelease(new Uint8Array(await fs.readFile(archivePath)));
+  assert.ok(original.application.has('scripts/local-launcher.mjs'));
+  assert.ok(original.application.has('apps/api/server.mjs'));
+  assert.ok(original.application.has('apps/api/desktop/windows.ps1'));
+  const adapters = new Set(['scripts/local-launcher.ts', 'apps/api/src/server.ts']);
+  for (const [path, bytes] of original.application) {
+    assert.ok(!path.endsWith('.map'), `Source map leaked: ${path}`);
+    assert.ok(!path.endsWith('.ts') || adapters.has(path), `Source leaked: ${path}`);
+    if (adapters.has(path)) assert.ok(bytes.byteLength < 100, 'Legacy adapter contains source');
+    assert.ok(
+      !path.startsWith('packages/') && !path.startsWith('.github/'),
+      `Private tree leaked: ${path}`,
+    );
+  }
   for (const [path, content] of original.application) {
     const target = join(application, path);
     await fs.mkdir(dirname(target), { recursive: true });
@@ -206,9 +221,20 @@ try {
       : ['install', '--frozen-lockfile', '--store-dir', testStore],
     { cwd: application, stdio: 'pipe', timeout: 150000 },
   );
+  phase = 'start compiled server through the previous server entry';
+  await start('legacy-server');
+  assert.equal((await request('/health')).version, version);
+  await stop();
   phase = 'start initial version';
   await start();
   assert.equal((await request('/health')).version, version);
+  phase = 'initialize packaged signed-out Codex without a model request';
+  assert.equal((await request('/models/codex')).connected, false);
+  if (windows) {
+    phase = 'enumerate Windows through the compiled API and packaged desktop bridge';
+    assert.ok(Array.isArray(await request('/local/desktop/windows')));
+  }
+  phase = 'retain user records';
   const project = join(home, 'project');
   await fs.mkdir(project);
   await fs.writeFile(join(project, 'spec.txt'), 'Preserve tool evidence');

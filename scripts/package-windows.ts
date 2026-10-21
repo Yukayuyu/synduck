@@ -1,10 +1,12 @@
 import { promises as fs } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { zipSync } from 'fflate';
+import { build } from 'esbuild';
 import { PackageManifest } from '../packages/local-runtime/src/updates';
+import releaseConfig from '../release.config.json';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(process.env.RELEASE_OUTPUT || join(root, 'release-output'));
@@ -12,39 +14,121 @@ const pkg = JSON.parse(await fs.readFile(join(root, 'package.json'), 'utf8'));
 const version = process.env.RELEASE_VERSION || pkg.version;
 if (version !== pkg.version) throw new Error('Release version must match package.json.');
 const sha = (content: Uint8Array) => createHash('sha256').update(content).digest('hex');
-const paths = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
-  .split('\0')
-  .filter(Boolean);
-// Include newly added, reviewed source files before the first commit as well.
-paths.push(
-  ...execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
-    cwd: root,
-    encoding: 'utf8',
-  })
-    .split('\0')
-    .filter(Boolean),
-);
+// Build from an explicit runtime allowlist. Never enumerate the checkout: private
+// source, untracked files, credentials and developer notes cannot become assets.
 const files: Record<string, Uint8Array> = {};
-for (const path of [...new Set(paths)]) {
-  if (
-    path.startsWith('.github/') ||
-    path.startsWith('tests/') ||
-    path === '.env' ||
-    path.startsWith('data/') ||
-    path.startsWith('scripts/windows/')
-  )
-    continue;
-  files[`app/${path}`] = new Uint8Array(await fs.readFile(join(root, path)));
+const runtime = JSON.parse(await fs.readFile(join(root, 'packaging/windows/package.json'), 'utf8'));
+files['app/package.json'] = new TextEncoder().encode(
+  JSON.stringify({ ...runtime, version }, null, 2),
+);
+for (const name of ['pnpm-lock.yaml', 'pnpm-workspace.yaml'])
+  files[`app/${name}`] = new Uint8Array(await fs.readFile(join(root, 'packaging/windows', name)));
+for (const [entry, outputPath] of [
+  ['scripts/local-launcher.ts', 'scripts/local-launcher.mjs'],
+  ['apps/api/src/server.ts', 'apps/api/server.mjs'],
+] as const) {
+  const outfile = join(root, outputPath);
+  const result = await build({
+    absWorkingDir: root,
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    packages: 'external',
+    alias: Object.fromEntries(
+      ['domain', 'db', 'context-compiler', 'model-gateway'].map((name) => [
+        `@acc/${name}`,
+        join(root, 'packages', name, 'src/index.ts'),
+      ]),
+    ),
+    platform: 'node',
+    format: 'esm',
+    target: 'node24',
+    minify: true,
+    sourcemap: false,
+    legalComments: 'eof',
+    define: { 'process.env.CANVAS_COMPILED': '"1"' },
+    write: false,
+    plugins: [
+      {
+        name: 'runtime-package-version',
+        setup(builder) {
+          builder.onResolve({ filter: /package\.json$/ }, (args) => {
+            if (resolve(args.resolveDir, args.path) === join(root, 'package.json'))
+              return { path: 'version', namespace: 'runtime-version' };
+          });
+          builder.onLoad({ filter: /.*/, namespace: 'runtime-version' }, () => ({
+            contents: `import { readFileSync } from 'node:fs';
+            export default JSON.parse(readFileSync(new URL(${JSON.stringify(
+              relative(dirname(outfile), join(root, 'package.json')).replaceAll('\\', '/'),
+            )}, import.meta.url), 'utf8'));`,
+            loader: 'js',
+          }));
+        },
+      },
+    ],
+  });
+  files[`app/${outputPath}`] = result.outputFiles[0].contents;
 }
+// These two public, one-line adapters let an existing 0.5.1 launcher install the
+// compiled release. They contain no implementation from the development tree.
+files['app/scripts/local-launcher.ts'] = new TextEncoder().encode(
+  "import './local-launcher.mjs';\n",
+);
+files['app/apps/api/src/server.ts'] = new TextEncoder().encode("import '../server.mjs';\n");
+files['app/apps/api/desktop/windows.ps1'] = new Uint8Array(
+  await fs.readFile(join(root, 'packages/local-runtime/desktop/windows.ps1')),
+);
+files['app/.env.example'] = new Uint8Array(await fs.readFile(join(root, '.env.example')));
+files['app/release-info.json'] = new TextEncoder().encode(
+  JSON.stringify({
+    version,
+    update_repository: releaseConfig.repository,
+    source_revision: execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim(),
+  }),
+);
+for (const name of ['local-runtime-updates.md', 'mcp-desktop-traces.md'])
+  files[`app/docs/${name}`] = new Uint8Array(await fs.readFile(join(root, 'docs', name)));
+files['app/NOTICE.txt'] = new TextEncoder().encode(
+  'Context Canvas. This distribution contains compiled application files and a Windows desktop bridge.\n' +
+    'Third-party runtime dependencies are installed from the pinned lockfile; their respective licenses apply.\n' +
+    'Compiled JavaScript and distributed runtime files can be inspected; compilation does not provide secrecy.\n',
+);
 const walk = async (directory: string, relative: string) => {
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
     const child = join(directory, entry.name),
       name = `${relative}/${entry.name}`;
+    if (entry.isSymbolicLink()) throw new Error('Public client assets must not use symlinks.');
     if (entry.isDirectory()) await walk(child, name);
-    else if (entry.isFile()) files[name] = new Uint8Array(await fs.readFile(child));
+    else if (entry.isFile()) {
+      if (
+        ![
+          'index.html',
+          'icon.svg',
+          'icon-180.png',
+          'icon-192.png',
+          'icon-512.png',
+          'manifest.webmanifest',
+        ].some((asset) => name === `app/apps/web/dist/${asset}`) &&
+        !/^app\/apps\/web\/dist\/assets\/[A-Za-z0-9_.-]+\.(?:js|css|svg|png|jpe?g|webp|ico|woff2?)$/.test(
+          name,
+        )
+      )
+        throw new Error(`Unexpected public client asset: ${name}`);
+      files[name] = new Uint8Array(await fs.readFile(child));
+    }
   }
 };
 await walk(join(root, 'apps/web/dist'), 'app/apps/web/dist');
+for (const path of Object.keys(files))
+  if (
+    path.endsWith('.map') ||
+    (path.endsWith('.ts') &&
+      !['app/scripts/local-launcher.ts', 'app/apps/api/src/server.ts'].includes(path))
+  )
+    throw new Error(`Development source or source map in public package: ${path}`);
 const manifest = PackageManifest.parse({
   format: 'context-canvas-package',
   format_version: 1,

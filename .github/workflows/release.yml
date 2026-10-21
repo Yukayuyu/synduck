@@ -4,8 +4,31 @@ on:
     tags: ['canvas-v*']
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check public publishing access
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo '::error::Set RELEASE_PUBLISH_TOKEN in the private source repository Actions secrets. Grant Contents: write only on the public releases repository.'
+            exit 1
+          fi
+          repo=$(node -p "require('./release.config.json').repository")
+          metadata=$(gh api "repos/$repo")
+          REPO_METADATA="$metadata" node --input-type=module -e '
+            const repo = JSON.parse(process.env.REPO_METADATA);
+            if (repo.private !== false || repo.archived || !repo.default_branch) throw new Error("Release target must be an active public repository.");'
   package:
+    needs: preflight
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +49,10 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne "canvas-v$version") { throw 'Tag does not match package version.' }
       - run: pnpm package:windows
       - run: pnpm test:portable
+      - name: Check compatibility with the previous bootstrap
+        run: pnpm test:portable
+        env:
+          CANVAS_TEST_LEGACY_BOOTSTRAP: '1'
       - uses: actions/upload-artifact@v4
         with:
           name: context-canvas-release
@@ -33,20 +60,38 @@ jobs:
   publish:
     needs: package
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: context-canvas-release
           path: release-output
-      - name: Publish versioned package and update feed
+      - name: Publish compiled package and anonymous update feed
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          prerelease=()
+          export GH_REPO=$(node -p "require('./release.config.json').repository")
+          metadata=$(gh api "repos/$GH_REPO")
+          public_branch=$(REPO_METADATA="$metadata" node --input-type=module -e '
+            const repo = JSON.parse(process.env.REPO_METADATA);
+            if (repo.private !== false || repo.archived) throw new Error("Release target must be public.");
+            console.log(repo.default_branch);')
           release_version="${RELEASE_TAG#canvas-v}"
+          RELEASE_VERSION="$release_version" node --input-type=module -e '
+            import { readFileSync, writeFileSync } from "node:fs";
+            const feed = JSON.parse(readFileSync("release-output/context-canvas-update.json", "utf8"));
+            if (feed.version !== process.env.RELEASE_VERSION) throw new Error("Release version mismatch.");
+            writeFileSync("release-output/notes.txt", feed.notes + "\n\nDownload and extract the Windows ZIP, then run Start-ContextCanvas.cmd. No GitHub token is required.\n");'
+          prerelease=()
           if [[ "$release_version" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "$RELEASE_TAG" release-output/* --verify-tag --title "Context Canvas ${RELEASE_TAG#canvas-v}" --generate-notes "${prerelease[@]}"
+          # The tag belongs to the public repository's README history. Never push
+          # private source commits or generate release notes from private history.
+          gh release create "$RELEASE_TAG" \
+            "release-output/ContextCanvas-Windows-$release_version.zip" \
+            "release-output/ContextCanvas-Windows-$release_version.zip.sha256" \
+            release-output/context-canvas-update.json \
+            --target "$public_branch" --title "Context Canvas $release_version" \
+            --notes-file release-output/notes.txt "${prerelease[@]}"

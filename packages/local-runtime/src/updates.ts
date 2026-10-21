@@ -4,6 +4,11 @@ import { dirname, join, resolve } from 'node:path';
 import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { DomainError } from '@acc/domain';
+import releaseConfig from '../../../release.config.json';
+
+export const UPDATE_REPOSITORY = releaseConfig.repository;
+if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(UPDATE_REPOSITORY))
+  throw new Error('Invalid release repository.');
 
 const Version = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 const checksum = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -177,7 +182,6 @@ export class UpdateManager {
     currentVersion: string,
     managed: boolean,
     private readonly transport: typeof fetch = fetch,
-    private readonly token = process.env.UPDATE_GITHUB_TOKEN || '',
   ) {
     this.state = {
       current_version: currentVersion,
@@ -291,9 +295,6 @@ export class UpdateManager {
         headers: {
           'User-Agent': 'ContextCanvas-Updater',
           Accept: json ? 'application/vnd.github+json' : 'application/octet-stream',
-          ...(current.hostname === 'api.github.com' && this.token
-            ? { Authorization: `Bearer ${this.token}` }
-            : {}),
         },
         redirect: 'manual',
         signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(120000)]),
@@ -309,7 +310,7 @@ export class UpdateManager {
     if (!response?.ok || !response.body)
       throw new DomainError(
         'update_unavailable',
-        `更新來源無法存取（HTTP ${response?.status ?? '未知'}）。請確認網路、發佈版本或私人倉庫的後端授權。`,
+        `更新來源無法存取（HTTP ${response?.status ?? '未知'}）。請確認網路與公開發佈版本；使用者不需要 GitHub token。`,
         502,
       );
     const reader = response.body.getReader();
@@ -328,14 +329,15 @@ export class UpdateManager {
     return Buffer.concat(chunks);
   }
   private assetUrl(asset: { url: string; browser_download_url: string }) {
-    const url = this.token ? asset.url : asset.browser_download_url;
+    const url = asset.browser_download_url;
     const parsed = new URL(url);
     if (
-      this.token
-        ? parsed.origin !== 'https://api.github.com' ||
-          !parsed.pathname.startsWith('/repos/Yukayuyu/synduck/releases/assets/')
-        : parsed.origin !== 'https://github.com' ||
-          !parsed.pathname.startsWith('/Yukayuyu/synduck/releases/download/')
+      parsed.origin !== 'https://github.com' ||
+      !parsed.pathname.startsWith(`/${UPDATE_REPOSITORY}/releases/download/`) ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
     )
       throw invalid('版本資產不屬於指定倉庫。');
     return url;
@@ -363,7 +365,7 @@ export class UpdateManager {
           JSON.parse(
             (
               await this.bytes(
-                'https://api.github.com/repos/Yukayuyu/synduck/releases?per_page=20',
+                `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases?per_page=20`,
                 2 * 1024 * 1024,
                 true,
               )

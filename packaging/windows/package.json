@@ -1,0 +1,19 @@
+{
+  "name": "ai-context-canvas",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "dependencies": {
+    "@fastify/static": "8.3.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@openai/codex": "0.160.0",
+    "dotenv": "17.4.2",
+    "fastify": "5.12.5",
+    "fflate": "0.8.2",
+    "tsx": "4.23.15",
+    "zod": "4.6.5"
+  }
+}

@@ -1,7 +1,7 @@
 {
   "name": "ai-context-canvas",
   "private": true,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "engines": {
@@ -30,6 +30,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.2.0",
+    "esbuild": "0.28.2",
     "eslint": "^9.39.0",
     "fflate": "0.8.2",
     "prettier": "3.6.2",

@@ -26,6 +26,10 @@ jobs:
       - run: pnpm build
       - run: pnpm package:windows
       - run: pnpm test:portable
+      - name: Check compatibility with the previous bootstrap
+        run: pnpm test:portable
+        env:
+          CANVAS_TEST_LEGACY_BOOTSTRAP: '1'
       - run: pnpm exec playwright install --with-deps chromium webkit
         if: runner.os == 'Linux'
       - run: pnpm test:e2e

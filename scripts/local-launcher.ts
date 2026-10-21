@@ -199,9 +199,11 @@ let child: ChildProcess | null = null,
 
 const startServer = async (directory: string, expectedVersion: string) => {
   const require = createRequire(join(directory, 'package.json'));
-  const tsx = pathToFileURL(require.resolve('tsx')).href;
+  const serverArgs = existsSync(join(directory, 'apps/api/server.mjs'))
+    ? ['apps/api/server.mjs']
+    : ['--import', pathToFileURL(require.resolve('tsx')).href, 'apps/api/src/server.ts'];
   const instanceId = randomUUID();
-  const processChild = spawn(process.execPath, ['--import', tsx, 'apps/api/src/server.ts'], {
+  const processChild = spawn(process.execPath, serverArgs, {
     cwd: directory,
     env: { ...env, CANVAS_INSTANCE_ID: instanceId },
     stdio: ['inherit', 'inherit', 'inherit', 'ipc'],

@@ -8,10 +8,12 @@ import {
   UpdateManager,
   unpackRelease,
   compareVersions,
+  UPDATE_REPOSITORY,
 } from '../packages/local-runtime/src/updates';
 
 const directories: string[] = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   for (const directory of directories.splice(0))
     await rm(directory, { recursive: true, force: true });
 });
@@ -130,8 +132,8 @@ describe('version updates', () => {
     const assets = ['context-canvas-update.json', 'ContextCanvas-Windows-0.2.1.zip'].map(
       (name, index) => ({
         name,
-        url: `https://api.github.com/repos/Yukayuyu/synduck/releases/assets/${index}`,
-        browser_download_url: `https://github.com/Yukayuyu/synduck/releases/download/canvas-v0.2.1/${name}`,
+        url: `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/assets/${index}`,
+        browser_download_url: `https://github.com/${UPDATE_REPOSITORY}/releases/download/canvas-v0.2.1/${name}`,
       }),
     );
     const transport = vi.fn(async (url: string | URL | Request) => {
@@ -153,7 +155,7 @@ describe('version updates', () => {
       phase: 'idle',
     });
   });
-  it('keeps the current version on network failure and never forwards auth to release redirects', async () => {
+  it('ignores old updater credentials and remains anonymous across release redirects', async () => {
     const calls: { url: string; authorization: string | null }[] = [];
     const transport = vi.fn(async (url: string | URL | Request, options?: RequestInit) => {
       const headers = new Headers(options?.headers);
@@ -166,10 +168,15 @@ describe('version updates', () => {
       return new Response('unavailable', { status: 503 });
     }) as unknown as typeof fetch;
     const { root } = await manager();
-    const updates = new UpdateManager(root, '0.2.0', true, transport, 'a-private-test-token');
+    vi.stubEnv('UPDATE_GITHUB_TOKEN', 'a-private-test-token');
+    vi.stubEnv('GH_TOKEN', 'publisher-token-must-not-leave');
+    const updates = new UpdateManager(root, '0.2.0', true, transport);
     await updates.initialize();
     await updates.check();
-    expect(calls[0].authorization).toBe('Bearer a-private-test-token');
+    expect(calls[0].url).toBe(
+      `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases?per_page=20`,
+    );
+    expect(calls[0].authorization).toBeNull();
     expect(calls[1].authorization).toBeNull();
     expect(updates.snapshot()).toMatchObject({
       current_version: '0.2.0',
@@ -177,5 +184,39 @@ describe('version updates', () => {
       staged_version: null,
     });
     expect(JSON.stringify(updates.snapshot())).not.toContain('a-private-test-token');
+  });
+  it.each([
+    'https://github.com/Yukayuyu/synduck/releases/download/canvas-v0.2.1/feed.json',
+    `https://github.com/${UPDATE_REPOSITORY}-other/releases/download/canvas-v0.2.1/feed.json`,
+    `https://github.com/${UPDATE_REPOSITORY}/releases/download/canvas-v0.2.1/feed.json?token=secret`,
+    'https://untrusted.example/feed.json',
+  ])('rejects an asset outside the exact public release repository: %s', async (url) => {
+    const transport = vi.fn(async () =>
+      Response.json([
+        {
+          draft: false,
+          prerelease: false,
+          tag_name: 'canvas-v0.2.1',
+          assets: [{ name: 'context-canvas-update.json', url, browser_download_url: url }],
+        },
+      ]),
+    ) as unknown as typeof fetch;
+    const { updates } = await manager(transport);
+    await updates.check();
+    expect(updates.snapshot()).toMatchObject({ phase: 'error', staged_version: null });
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a download redirect to an untrusted host before making the request', async () => {
+    const transport = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://untrusted.example/private' },
+        }),
+    ) as unknown as typeof fetch;
+    const { updates } = await manager(transport);
+    await updates.check();
+    expect(updates.snapshot()).toMatchObject({ phase: 'error', current_version: '0.2.0' });
+    expect(transport).toHaveBeenCalledTimes(1);
   });
 });

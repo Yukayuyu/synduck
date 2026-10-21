@@ -117,7 +117,14 @@ export class WindowsDesktopDriver implements DesktopDriver {
           '-ExecutionPolicy',
           'Bypass',
           '-File',
-          fileURLToPath(new URL('../desktop/windows.ps1', import.meta.url)),
+          fileURLToPath(
+            new URL(
+              process.env.CANVAS_COMPILED === '1'
+                ? './desktop/windows.ps1'
+                : '../desktop/windows.ps1',
+              import.meta.url,
+            ),
+          ),
         ],
         { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env },
       );

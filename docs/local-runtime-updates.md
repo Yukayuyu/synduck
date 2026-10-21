@@ -38,7 +38,7 @@
 
 ## 更新與通知
 
-右上方下載圖示開啟「版本與更新」。預設每 15 分鐘檢查 `Yukayuyu/synduck` 的 GitHub Releases，接收測試版與正式版，自動下載並校驗，但**不自動中斷工作安裝**。可改只接收正式版、關閉自動下載，或立即檢查。
+右上方下載圖示開啟「版本與更新」。預設每 15 分鐘檢查 `Yukayuyu/context-canvas-releases` 的公開 GitHub Releases，接收測試版與正式版，自動下載並校驗，但**不自動中斷工作安裝**。可改只接收正式版、關閉自動下載，或立即檢查。
 
 有新版會顯示圖示圓點；可主動開啟瀏覽器通知。通知不重載頁面、不重掛載畫布，也不移動焦點。這是程式運行期間的檢查與通知，不是關閉後端後仍運作的 Web Push；iOS 系統通知能力依 Safari／主畫面安裝及權限而定。
 
@@ -56,7 +56,7 @@
 
 新舊程式版本、下載包與更新備份暫不自動刪除。更新失敗可查看啟動器視窗；不要刪除 `.runtime/pending-install.json` 來繞過恢復流程。SHA-256 是完整性驗證；線上更新依賴可信 GitHub 倉庫、TLS 與發佈權限，不是額外的離線簽章。
 
-私人倉庫可在後端 `.env` 配置 `UPDATE_GITHUB_TOKEN`（僅需該倉庫的 contents 讀取權限）。它與 ChatGPT 登入分開，不傳入瀏覽器，不寫入更新包，不隨命令環境轉交；對下載主機重新導向時移除授權標頭。不要把 token 貼在聊天或提交 Git。
+自 0.5.2 起，更新改從獨立的公開發布倉庫匿名下載。使用者不需要 GitHub token；更新器忽略先前 `.env` 的 `UPDATE_GITHUB_TOKEN`，也不會發送 Authorization header。發布憑證只由維護者保存於私有來源倉庫的 Actions Secrets。舊版需先手動匯入新版 ZIP，安裝後關閉並重新啟動啟動器，才能切換更新來源。
 
 ## 開發與發佈
 
@@ -67,9 +67,9 @@ pnpm start:local
 pnpm package:windows
 ```
 
-原始碼啟動器可以檢查與準備版本，但不會覆蓋 Git checkout 安裝。Windows portable 啟動器才能一鍵切換版本。打包需要 Git checkout；輸出位於 `release-output/`（或 `RELEASE_OUTPUT` 指定目錄），不包含 `.env`、`data/`、`node_modules/` 或登入資料。依賴在本機按 lockfile 安裝，沒有混入 Linux 原生二進位。
+原始碼啟動器可以檢查與準備版本，但不會覆蓋 Git checkout 安裝。Windows portable 啟動器才能一鍵切換版本。打包從明確清單編譯後端與啟動器，包含前端產物、獨立執行依賴與 Windows 桌面橋接，不附開發原始碼樹或 source maps。分發的 JavaScript 仍可分析；編譯不提供保密保證。打包需要 Git checkout；輸出位於 `release-output/`（或 `RELEASE_OUTPUT` 指定目錄），不包含 `.env`、`data/`、`node_modules/` 或登入資料。依賴在本機按 lockfile 安裝，沒有混入 Linux 原生二進位。
 
-後續開發與交付使用 `main`；推送 `main` 會執行驗證。發佈時先更新 package.json 的 SemVer，執行檢查與打包，再從 `main` 推送對應 `canvas-v<version>` tag。GitHub Actions 的 release workflow 會在 Windows 執行驗證，成功後發布 ZIP、SHA-256 與 `context-canvas-update.json`；帶 SemVer suffix 的版本會標為 prerelease，供測試頻道接收。**寫入 workflow、推送 main 或產生 ZIP 不代表已發佈 Release**。具體 GitHub 設定、私有倉庫唯讀 token 與發佈指令見 [GitHub 自動更新設定](github-updates.md)。
+後續開發與交付使用 `main`；推送 `main` 會執行驗證。發佈時先更新 package.json 的 SemVer，執行檢查與打包，再從 `main` 推送對應 `canvas-v<version>` tag。GitHub Actions 的 release workflow 會在 Windows 執行驗證，成功後向獨立公開倉庫發布 ZIP、SHA-256 與 `context-canvas-update.json`；帶 SemVer suffix 的版本會標為 prerelease，供測試頻道接收。**寫入 workflow、推送 main 或產生 ZIP 不代表已發佈 Release**。具體 GitHub 設定、維護者發布憑證與發佈指令見 [GitHub 自動更新設定](github-updates.md)。
 
 ## 驗證範圍
 

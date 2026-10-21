@@ -20,9 +20,9 @@ const require = createRequire(join(app, 'package.json'));
 const child = spawn(
   process.execPath,
   [
-    '--import',
-    pathToFileURL(require.resolve('tsx')).href,
-    'scripts/local-launcher.ts',
+    ...(existsSync(join(app, 'scripts/local-launcher.mjs'))
+      ? ['scripts/local-launcher.mjs']
+      : ['--import', pathToFileURL(require.resolve('tsx')).href, 'scripts/local-launcher.ts']),
     ...(process.env.CANVAS_NO_BROWSER === '1' ? ['--no-browser'] : []),
   ],
   {
