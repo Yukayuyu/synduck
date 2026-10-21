@@ -81,13 +81,14 @@ async function request(path: string, body?: unknown) {
           body: JSON.stringify(body),
         },
   );
-  const data = response.headers.get('content-type')?.includes('ndjson')
+  const streamed = response.headers.get('content-type')?.includes('ndjson');
+  const data = streamed
     ? (await response.text())
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line))
     : await response.json();
-  if (Array.isArray(data)) assert.equal(data.at(-1)?.type, 'complete');
+  if (streamed) assert.equal(data.at(-1)?.type, 'complete');
   assert.equal(response.status, 200, JSON.stringify(data));
   return data;
 }
