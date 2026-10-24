@@ -25,7 +25,7 @@ pnpm test:e2e
 
 The original specification is in `docs/source-spec.md`. Focused specifications are in `docs/`; the unchanged proposed backlog is in `issues.json`. Implementation progress and deliberate scope limits are tracked separately in `docs/progress.md`.
 
-Development and completed changes now go to `main`. The previous application remains on `backup/main-before-clear-20261004`; the earlier canvas development branch is retained as history.
+Development and completed changes go to `main`. Obsolete branches were retired after the 2026-10-24 public-readiness review; commit history is retained and the removed branch tips were backed up outside this repository. See the [public-readiness review](docs/public-readiness.md) for scan scope, findings and remaining publication steps.
 
 ## Connected conversation blocks (0.5.0)
 
@@ -97,3 +97,7 @@ Replacement is transactional and automatically stores the previous workspace in 
 - Backups include original conversation text and model-input snapshots. Keep the downloaded file private as appropriate.
 - The SHA-256 checksum detects corruption; it is not an authenticity signature. Browser content remains escaped text.
 - Export/import waits until active generation finishes. Native project files and Obsidian `.canvas` files are different formats; a JSON Canvas adapter remains on the backlog.
+
+## License
+
+Project code is available under the [MIT License](LICENSE). Third-party dependencies and assets retain their respective licenses.

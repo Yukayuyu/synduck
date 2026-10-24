@@ -53,6 +53,6 @@ A task is complete only if:
 # Working environment
 
 Use the existing isolated checkout; do not create a Git worktree unless requested.
-Continue development and deliver completed changes on `main` by default, as requested by the owner. Use another branch only when explicitly requested; preserve existing backup and historical feature branches.
+Continue development and deliver completed changes on `main` by default, as requested by the owner. Use another branch only when explicitly requested. The owner retired all previous backup, feature and debug branches on 2026-10-24; do not recreate them. Historical commits remain in Git history or verified private backup bundles outside this checkout.
 Pushing `main` runs validation. Publishing an update is a separate versioned action using a matching `canvas-v<package.json version>` tag; do not publish a release merely to deliver ordinary code changes.
 Keep secrets server-side and never log model payloads or credentials.

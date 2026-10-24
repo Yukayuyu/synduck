@@ -79,6 +79,7 @@ files['app/apps/api/desktop/windows.ps1'] = new Uint8Array(
   await fs.readFile(join(root, 'packages/local-runtime/desktop/windows.ps1')),
 );
 files['app/.env.example'] = new Uint8Array(await fs.readFile(join(root, '.env.example')));
+files['app/LICENSE'] = new Uint8Array(await fs.readFile(join(root, 'LICENSE')));
 files['app/release-info.json'] = new TextEncoder().encode(
   JSON.stringify({
     version,
@@ -92,7 +93,8 @@ files['app/release-info.json'] = new TextEncoder().encode(
 for (const name of ['local-runtime-updates.md', 'mcp-desktop-traces.md'])
   files[`app/docs/${name}`] = new Uint8Array(await fs.readFile(join(root, 'docs', name)));
 files['app/NOTICE.txt'] = new TextEncoder().encode(
-  'Context Canvas. This distribution contains compiled application files and a Windows desktop bridge.\n' +
+  'Context Canvas is distributed under the MIT License; see LICENSE.\n' +
+    'This distribution contains compiled application files and a Windows desktop bridge.\n' +
     'Third-party runtime dependencies are installed from the pinned lockfile; their respective licenses apply.\n' +
     'Compiled JavaScript and distributed runtime files can be inspected; compilation does not provide secrecy.\n',
 );
