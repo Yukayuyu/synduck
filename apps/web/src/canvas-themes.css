@@ -720,3 +720,12 @@
 .canvas-first .inspector .token-meter small {
   color: var(--muted-ink);
 }
+.canvas-first .canvas-context-menu button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.canvas-first[data-canvas-style='ink'] .canvas-context-menu button.danger {
+  color: #ff9eb1;
+}
