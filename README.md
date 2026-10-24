@@ -1,19 +1,47 @@
 # AI Context Canvas
 
-A local-first spatial conversation workspace. Canvas is the view; domain entities and provenance are the source of truth. The Context Compiler makes each model input inspectable.
+在一张大画布上组织对话、摘取文字、延伸提问，并检查每次 AI 回答实际使用了哪些上下文。支持 ChatGPT / Codex 登录、模型与思考深度选择、本地项目工具、MCP 和可追溯的 Windows 窗口操作。
 
-## Development
+## 从这里开始
 
-Use Node **24.19.0** (`.nvmrc`) and pnpm **11.19.0** (`packageManager`).
+| 你的目标                             | 阅读说明                                              |
+| ------------------------------------ | ----------------------------------------------------- |
+| 在 Windows 上安装，或从源码启动      | [安装与配置指南](docs/setup.md)                       |
+| 登录 ChatGPT、选择模型或配置 API key | [模型与登录配置](docs/setup.md#连接-ai)               |
+| 用 iPhone／iPad 访问电脑上的画布     | [Windows 与 iOS 访问](docs/windows-ios.md)            |
+| 连接 MCP、使用桌面控制、回看操作     | [MCP 与桌面控制](docs/mcp-desktop-traces.md)          |
+| 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md) |
+| 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)             |
 
-```sh
+**当前状态（0.5.2，2026-10-24）：** 仓库仍为私有，已加入 MIT 许可证，尚未发布正式 Release。更新器与发布工作流仍采用独立发布仓库；计划中的“公开主仓库 + 同仓库 Releases”尚未切换。当前可从源码运行，或使用维护者提供的完整 Windows 测试 ZIP。安装和更新状态请以[发布配置说明](docs/github-updates.md#当前状态)为准。
+
+## 从源码快速启动
+
+需要 Git、Node.js **24.19.0** 和 pnpm **11.19.0**。目前克隆私有仓库需要 GitHub 访问权限；公开后可以匿名克隆。首次在 Windows PowerShell 中执行：
+
+```powershell
+git clone --branch main https://github.com/Yukayuyu/synduck.git
+cd synduck
 pnpm install --frozen-lockfile
-cp .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 pnpm db:migrate
-pnpm dev
+pnpm build
+pnpm start:local
 ```
 
-The web app uses port 3000 and the API uses port 3001, both bound to loopback. `pnpm build` builds the client; `pnpm start` serves the built app and API together on the API port. Run commands from the repository root. Keys belong only in the server environment, never in `VITE_*` variables.
+macOS／Linux 只需把创建配置文件的那一行换成：
+
+```sh
+if [ ! -f .env ]; then cp .env.example .env; fi
+```
+
+保持启动器终端开启，在**运行后端的电脑**上打开浏览器，访问本机 `3001` 端口。首次默认是 **Demo 模式**，不需要任何密钥，也不会调用真实 AI。已有 `.env` 和 `data/` 会保留。
+
+使用真实 AI：打开「模型與登入」→「使用 ChatGPT 帳號登入」→完成官方授权→选择「ChatGPT / Codex」、有效模型和思考深度→「使用此模式」。这条路径不需要另外填写 OpenAI API key。直接 API 模式、常见错误及完整命令见[配置指南](docs/setup.md)。
+
+## 开发与验证
+
+后续开发和交付都进入 `main`。开发时用 `pnpm dev`，前端端口为 `3000`，API 为 `3001`；与上面的日常启动方式择一运行，避免端口冲突。
 
 ```sh
 pnpm typecheck
@@ -23,81 +51,44 @@ pnpm build
 pnpm test:e2e
 ```
 
-The original specification is in `docs/source-spec.md`. Focused specifications are in `docs/`; the unchanged proposed backlog is in `issues.json`. Implementation progress and deliberate scope limits are tracked separately in `docs/progress.md`.
+浏览器测试前先运行 `build`。没有 Chromium 时，先执行 `pnpm exec playwright install chromium`；WebKit 手机布局测试另用 `pnpm exec playwright install webkit` 和 `pnpm exec playwright test --config playwright.webkit.config.ts`。Linux 还需 Playwright 对应的系统依赖。测试使用隔离数据库和受控模型，不会调用付费模型。
 
-Development and completed changes go to `main`. Obsolete branches were retired after the 2026-10-24 public-readiness review; commit history is retained and the removed branch tips were backed up outside this repository. See the [public-readiness review](docs/public-readiness.md) for scan scope, findings and remaining publication steps.
+生成 Windows 包：
 
-## Connected conversation blocks (0.5.0)
-
-Each question and its answer share a close, aligned pair of **輸入 / 輸出** blocks. Numbered exchanges have a wider gap between them; paragraphs stay together inside their original output. Excerpts use warm paper, a quote rail and a dashed source link, while branches have a matching source tab and a solid continuation link. Closing the composer gives the text more reading space. Exact selections, source highlighting and historical context inspection remain available. See [reading and extracting from blocks](docs/conversation-blocks.md) for the layout and local update steps.
-
-## MCP and visual desktop tasks (0.3.0)
-
-Open **本地任務 → 整合設定** to connect a local stdio or remote Streamable HTTP MCP service, or choose a Windows application window. Every tool call, screenshot and desktop input is approved individually. Canvas task cards show screenshots, operation paths and confirmation status; the review dialog compares before/after frames, annotates click locations and exports records with image hashes. Read [MCP, desktop control and provenance](docs/mcp-desktop-traces.md) for setup and validation limits. Desktop control targets the backend Windows computer; physical Windows and live ChatGPT image-tool execution remain unverified.
-
-## Local tasks and updates (since 0.2.0)
-
-Open **本地任務** to select a backend project directory. Manual file/command tests work without AI; Codex tasks use the selected model and reasoning level, with explicit approval for each command or write. Tool outcomes and task history stay in `data/local-runtime/`; they do not mutate sealed canvas inputs. Open **版本與更新** for automatic release checks, optional browser notifications, verified downloads and ZIP import. The Windows launcher installs into separate version folders and keeps the previous version and data for recovery. See [local runtime and updates](docs/local-runtime-updates.md) for first-time Windows migration, capability limits and release instructions. `pnpm start:local` runs the source launcher; `pnpm package:windows` creates a portable package with compiled application files, a Windows desktop bridge and a separate pinned runtime lockfile. Development source trees, source maps and credentials are excluded. Distributed JavaScript remains inspectable.
-
-Installed clients download updates anonymously from `Yukayuyu/context-canvas-releases`; they do not need a GitHub token. Development stays private in this repository. For the maintainer-only publishing credential, GitHub Actions/Release setup and publishing from `main`, follow [GitHub automatic update setup](docs/github-updates.md). A push to `main` validates code; a matching version tag publishes an update.
-
-## First working slice
-
-1. Double-click empty canvas space to create a conversation there, or use **提問** in the floating toolbar. Enter your question directly in the card.
-2. Click **预览上下文**. The inspector shows included / excluded sources, explanations, conflicts and a conservative budget estimate.
-3. Click **发送此上下文** to send that exact immutable package. The answer streams into its card on the canvas; other conversations remain readable alongside it.
-4. Select text in any saved message on any card, then choose **摘录** or **延伸提問** from the nearby floating toolbar. A linked excerpt and branch appear beside the source.
-5. An excerpt preserves its source block, half-open UTF-16 range, exact text and SHA-256 source hash. **回到来源并高亮** navigates back to that range.
-6. Use the card's **+**, pin and exclude controls to choose the next input. A branch starts with its excerpt, not the whole parent conversation. Exclusion also follows previous answers that depended on an excluded source.
-7. Drag card headers to move cards; drag message text to select it. Use the hand tool to pan, or pinch / scroll to navigate. Positions and viewport persist in SQLite. Click a card title or **繼續提問** to open its composer. Earlier assistant turns retain their own input packages. Conversation navigation and context inspection are collapsible floating panels, opened from the bottom toolbar.
-8. Open **备份与恢复** in the top bar to download a native project file, validate an imported backup, or preview an automatic recovery point.
-
-The default is explicitly labelled **local demo**. It generates deterministic demonstration text, makes no model request, and is suitable for exercising the UI. It is not an AI answer or an answer-quality evaluation.
-
-## ChatGPT account, Windows and iOS
-
-Open **模型與登入** in the header to sign in with your ChatGPT account through the bundled official Codex App Server (device authorization), select **ChatGPT / Codex**, choose a **Codex 模型** from the official catalog and click **使用此模式**. **思考深度** offers the model's advertised reasoning levels and **模型預設**; changing the model resets depth to its default until you choose again. Use **刷新模型列表** to reload the catalog. No API key is required for that provider. The mode, selected Codex model and reasoning depth persist across restarts. Previously configured models or depths absent from the catalog require a new explicit choice. Official Codex credentials stay in the application-owned `data/codex/`, separate from your other Codex installations. Real account authorization and model generation remain unverified in this cloud environment.
-
-See [Windows, iOS and ChatGPT setup](docs/windows-ios.md) for PowerShell commands, HTTPS access, workspace authentication, phone navigation and the exact validation limits. iOS uses Safari and an optional home-screen shortcut; it requires a running backend. This is not an offline or native iOS application.
-
-## Real model configuration
-
-For direct OpenAI API access, configure the server's `.env` or secure environment settings:
-
-```dotenv
-LLM_PROVIDER=openai
-LLM_MODEL=<a Responses API model with structured outputs available to your account>
-LLM_API_KEY=<enter securely; never commit>
+```sh
+pnpm package:windows
+pnpm test:portable
 ```
 
-Restart the API after configuration and select **OpenAI API** in the model dialog if a previous mode was saved. `OPENAI_API_KEY` is accepted as a local fallback, but use `LLM_API_KEY` for cloud proxy bindings. The only model destination is `api.openai.com`. On a proxy-managed cloud machine, start with `NODE_USE_ENV_PROXY=1 pnpm dev` so Node's fetch uses the provided HTTPS proxy. Keep TLS verification enabled.
+输出在忽略跟踪的 `release-output/`。编译包包含前端、后端、启动器、Windows 桌面桥接、MIT 许可证和固定版本的运行依赖清单；依赖在目标电脑首次启动时安装。真实 `.env`、画布、登录数据和开发用 `node_modules` 不进入安装包。JavaScript 编译文件仍可被分析。
 
-The adapter calls the Responses API with `store: false`, a strict JSON schema and server-side validation. Streamed drafts are temporary; only a complete schema-valid answer with valid source IDs is persisted. Provider errors leave a retryable assistant turn and preserve its original input. If exclusion rules have changed, re-preview instead of retrying an obsolete package. Live OpenAI access has **not** been verified; current automated coverage uses an injected SSE transport, not an external account.
+## 日常使用
 
-## Storage and tests
+1. 双击画布空白处，或点「提問」创建对话；输入和输出以相邻分块呈现。
+2. 输入问题，可先预览上下文，检查包含／排除项、来源和预算，再发送。
+3. 选中已保存的文字，选择「摘录」或「延伸提問」，创建保留来源的分支。
+4. 拖动卡片标题移动位置；在正文中拖动用于选择文字。右键／卡片菜单提供复制、删除、恢复等操作。
+5. 「本地任務」用于项目文件、命令、MCP 和桌面工具；命令、写入及外部工具按具体操作确认。
+6. 「备份与恢复」可导出画布项目；完整数据与登录备份请见[配置指南](docs/setup.md#保存数据与升级)。
 
-- `data/context-canvas.sqlite` and its WAL hold the local workspace; `data/assets/` is reserved for later asset support. Do not commit `data/`. Back up the SQLite database only after closing the app, or use SQLite's backup facilities.
-- `DATABASE_PATH`, `ASSET_PATH`, `APP_PORT`, `API_PORT` are configurable. `.env` is loaded by the API, migrations and Vite configuration; shell variables take precedence.
-- Browser tests use a fresh temporary database, explicit demo mode and a separate port. They never write to the development workspace or invoke paid model APIs.
-- Chromium is picked from `/usr/bin/chromium` when present. Otherwise run `pnpm exec playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE`.
-- The service is intended for a single owner. Loopback is the default; optional HTTPS reverse-proxy access requires PUBLIC_ORIGIN and APP_PASSWORD. It is not a multi-user service.
+画布是视图，领域数据和来源记录是事实依据。每个 AI 回答保留对应的不可变输入上下文包；摘录保留原文、范围和内容 hash。普通画布回答与本地工具任务各有明确入口，工具结果不会悄悄写入已封存的上下文。
 
-Recoverable card deletion, undo and trash are available through the [canvas action menu](docs/canvas-actions.md). Permanent deletion of individual messages, generated summaries, lexical retrieval, the JSON Canvas adapter and other full-backlog features remain outside this slice. See `docs/progress.md` for exact scope and remaining work.
+## 平台与数据
 
-## Native project backups
+- Windows 可运行完整后端和目标窗口控制；Linux／macOS 可从源码运行画布、模型和本地工具，当前桌面驱动仅支持 Windows。
+- iOS 通过 Safari 访问持续运行的后端，需要配置可信 HTTPS 和工作区密码。它不能独立运行后端或控制手机其他 App。
+- 数据保存在后端的 `data/`，包括 SQLite、模型设置、ChatGPT 登录和本地任务记录。密钥只放后端 `.env` 或安全环境设置，不能放到前端 `VITE_*` 变量。
+- 这是单一拥有者的工作区；同一后端连接的设备共享画布和模型账号。
 
-The top-bar **备份与恢复** dialog exports a versioned `.json` project containing the complete text workspace: conversations, turns, blocks, excerpts, nodes, edges, positions, selection settings, context sets and immutable context packages. It preserves canonical IDs and source provenance. Provider keys, server configuration and unrelated local files are never exported.
+已通过的自动化覆盖包括 Windows／Linux 的编译包安装、升级与回退、窗口枚举，以及 Linux 上的 Chromium／WebKit 浏览器测试。实体 Windows 的截图／输入、真实账号生成和实体 iOS 的操作体验仍需实机验证。
 
-Import has two steps: **validate / preview**, then explicitly check **我确认用此备份替换当前工作区** and confirm. Validation checks the format, checksum, IDs, referential integrity, turn ordering, source hashes, exact excerpt ranges and recorded model-input references. A fingerprint detects intervening edits, including geometry changes, so stale previews cannot silently overwrite new work.
+## 项目说明
 
-Replacement is transactional and automatically stores the previous workspace in `recovery_snapshots` in the same SQLite database. **导入前的恢复点 → 预览恢复** follows the same confirmation process. These recovery points protect against a mistaken import, not loss of the database file; download a separate backup for that. The UI lists the latest 20 recovery points; older records remain in the database and are not automatically deleted.
+- [产品与设计规范](docs/product-spec.md)、[原始需求](docs/source-spec.md)、[开发进度](docs/progress.md)
+- [上下文编译](docs/context-compiler.md)、[数据模型](docs/data-model.md)、[数据迁移](docs/migrations.md)
+- [对话分块](docs/conversation-blocks.md)、[画布菜单](docs/canvas-actions.md)、[文本输入](docs/editor-input.md)
+- [公开前检查与分支清理](docs/public-readiness.md)：旧分支已清理，历史提交仍保留；公开状态和发布流程没有因此自动改变。
 
-- Import replaces the current single workspace; it does not merge graphs. IDs stay the same, while the live workspace revision advances to invalidate old send previews.
-- The current native format is version 1 with a 12 MiB limit. It supports the application's text-based data. Asset-bearing / unknown future fields are rejected explicitly, not silently discarded.
-- Backups include original conversation text and model-input snapshots. Keep the downloaded file private as appropriate.
-- The SHA-256 checksum detects corruption; it is not an authenticity signature. Browser content remains escaped text.
-- Export/import waits until active generation finishes. Native project files and Obsidian `.canvas` files are different formats; a JSON Canvas adapter remains on the backlog.
+## 许可证
 
-## License
-
-Project code is available under the [MIT License](LICENSE). Third-party dependencies and assets retain their respective licenses.
+项目代码采用 [MIT License](LICENSE)。第三方依赖和资产保留各自的许可证。`package.json` 的 `private: true` 只防止误发 npm 包，不控制 GitHub 的公开状态。

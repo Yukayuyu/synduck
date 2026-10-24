@@ -90,7 +90,14 @@ files['app/release-info.json'] = new TextEncoder().encode(
     }).trim(),
   }),
 );
-for (const name of ['local-runtime-updates.md', 'mcp-desktop-traces.md'])
+for (const name of [
+  'setup.md',
+  'windows-ios.md',
+  'local-runtime-updates.md',
+  'mcp-desktop-traces.md',
+  'github-updates.md',
+  'public-readiness.md',
+])
   files[`app/docs/${name}`] = new Uint8Array(await fs.readFile(join(root, 'docs', name)));
 files['app/NOTICE.txt'] = new TextEncoder().encode(
   'Context Canvas is distributed under the MIT License; see LICENSE.\n' +
