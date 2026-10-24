@@ -1,18 +1,18 @@
 # 安装与配置指南
 
-适用版本：0.5.2。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
+适用版本：0.5.3。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
 
 ## 需要准备什么
 
 | 使用方式        | 需要准备                                                              |
 | --------------- | --------------------------------------------------------------------- |
 | Windows 安装包  | 维护者发布或提供的完整 Windows ZIP；首次启动需要网络，支持 x64／ARM64 |
-| 从源码运行      | Git、Node.js 24.19.0、pnpm 11.19.0，以及当前私有仓库的访问权限        |
+| 从源码运行      | Git、Node.js 24.19.0、pnpm 11.19.0，公开仓库地址；无需 GitHub token   |
 | ChatGPT / Codex | 具有相应 Codex 使用资格的 ChatGPT 账号；不需要另外填写 API key        |
 | OpenAI API      | 可使用 Responses API 的 API key、账号可用的结构化输出模型             |
 | iPhone／iPad    | 持续运行的后端、可访问它的可信 HTTPS 地址、独立工作区密码             |
 
-截至 2026-10-24，本仓库仍为私有，尚无正式 Release，配置中的独立发布仓库也尚未提供可用的公开下载入口。当前可以使用维护者提供的测试 ZIP，或按下面的源码步骤运行。最新发布条件见 [GitHub 发布配置](github-updates.md)。
+Windows 安装包与源码统一位于 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`；如果首次发布尚未完成、暂时没有附件，可先从源码运行或使用维护者提供的完整测试 ZIP。更新器从同一个公开仓库匿名下载，不需要用户填写 GitHub token。
 
 ## 启动程序
 
@@ -48,7 +48,7 @@ pnpm build
 pnpm start:local
 ```
 
-首次克隆目前需要源仓库访问权限。已有 checkout 时，在没有未提交修改的情况下使用 `git switch main` 和 `git pull --ff-only origin main`，再执行安装、迁移、构建与启动；不必重新克隆或覆盖 `.env`。
+仓库公开后可匿名克隆；公开前需要源仓库访问权限。已有 checkout 时，在没有未提交修改的情况下使用 `git switch main` 和 `git pull --ff-only origin main`，再执行安装、迁移、构建与启动；不必重新克隆或覆盖 `.env`。
 
 ### macOS／Linux：从源码运行
 
@@ -155,16 +155,16 @@ Windows 管理式安装需要把画布、模型设置、认证和本地任务保
 
 ## 常见问题
 
-| 现象                                 | 检查方式                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| 页面出现 Demo 回复                   | 在「模型與登入」连接账号并选择真实模式，点「使用此模式」                                                  |
-| 已连接 ChatGPT，但模型回答失败       | 刷新模型清单；查看最近一次 Codex 失败诊断，按具体错误检查账号、额度、模型或网络                           |
-| 改了 `.env`，界面仍是旧模式          | 重新启动后端，并在模型界面重新选择；已保存的模式优先                                                      |
-| 提示端口被占用                       | 先关闭旧启动器／开发服务器，或更改 `API_PORT` 后重启                                                      |
-| 手机打不开电脑上的页面               | 按 [iOS 指南](windows-ios.md)配置 HTTPS 和工作区密码；手机的 localhost 指向手机自己                       |
-| 设置 HTTPS 后，本机 API 操作返回 403 | 电脑和手机都使用 `PUBLIC_ORIGIN` 指定的 HTTPS 地址，确认代理保留 Host                                     |
-| 检查更新返回 404                     | 当前发布目标或 Release 尚未就绪；见 [发布状态](github-updates.md#当前状态)，不需要向用户索取 GitHub token |
-| 无法在源码安装中点安装新版           | 源码安装使用 Git 更新；一键切换版本由 Windows 管理式安装提供                                              |
-| Windows 首次准备依赖失败             | 保留终端错误，确认能连接 Node.js／npm；不要跳过校验或省略 optional dependencies                           |
+| 现象                                 | 检查方式                                                                                                                          |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| 页面出现 Demo 回复                   | 在「模型與登入」连接账号并选择真实模式，点「使用此模式」                                                                          |
+| 已连接 ChatGPT，但模型回答失败       | 刷新模型清单；查看最近一次 Codex 失败诊断，按具体错误检查账号、额度、模型或网络                                                   |
+| 改了 `.env`，界面仍是旧模式          | 重新启动后端，并在模型界面重新选择；已保存的模式优先                                                                              |
+| 提示端口被占用                       | 先关闭旧启动器／开发服务器，或更改 `API_PORT` 后重启                                                                              |
+| 手机打不开电脑上的页面               | 按 [iOS 指南](windows-ios.md)配置 HTTPS 和工作区密码；手机的 localhost 指向手机自己                                               |
+| 设置 HTTPS 后，本机 API 操作返回 403 | 电脑和手机都使用 `PUBLIC_ORIGIN` 指定的 HTTPS 地址，确认代理保留 Host                                                             |
+| 检查更新返回 404                     | 确认 [Releases](https://github.com/Yukayuyu/synduck/releases) 已公开且有必要附件；旧客户端先手动升级到 0.5.3，不需要 GitHub token |
+| 无法在源码安装中点安装新版           | 源码安装使用 Git 更新；一键切换版本由 Windows 管理式安装提供                                                                      |
+| Windows 首次准备依赖失败             | 保留终端错误，确认能连接 Node.js／npm；不要跳过校验或省略 optional dependencies                                                   |
 
 ChatGPT 详细诊断与跨设备登录说明见 [Windows 与 iOS 访问](windows-ios.md)。

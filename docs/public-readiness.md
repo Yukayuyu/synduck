@@ -4,7 +4,7 @@
 
 ## 结论
 
-本次检查未发现需要先撤销／清除的凭证泄露。当前源码可进入公开发布准备阶段。仓库可见性仍为 private，本次没有执行转为 public，也没有创建版本标签或 Release。
+本次检查未发现需要先撤销／清除的凭证泄露。审查时源码可进入公开发布准备阶段，仓库仍为 private；审查操作本身没有转为 public 或创建 Release。后续发布状态与统一仓库流程见[发布说明](github-updates.md#当前状态)。
 
 所有者已明确选择 MIT，仓库根目录已加入标准 `LICENSE`，README 已链接该许可证。允许商用、修改和再发布，须保留版权和许可声明；第三方依赖与资产保留各自的许可证。根包和独立 Windows 运行包均标记 `license: MIT`，Windows ZIP 的应用目录也包含 LICENSE。
 
@@ -54,9 +54,7 @@ git fetch <私有备份.bundle> refs/remotes/origin/<旧分支名>:refs/heads/<�
 
 ## 与单公开仓库发布的衔接
 
-当前更新配置与发布 workflow 仍使用上一阶段的双仓库方案：从 `Yukayuyu/context-canvas-releases` 匿名下载，由私有来源仓库的 `RELEASE_PUBLISH_TOKEN` 跨仓库发布。本次没有改变该发布架构或索取新 token。
-
-如果决定将 `Yukayuyu/synduck` 本身公开并使用同仓库 Releases，需同步把 `release.config.json` 的来源、发布 workflow、相关测试和说明统一到该公开主仓库。届时发布工作可使用 Actions 内置 `GITHUB_TOKEN` 并在发布 job 授予 `contents: write`，无需跨仓库发布 Secret。改为 public 本身不会自动修改上述配置，也不会自动生成安装包或触发 Release。
+审查时采用的双仓库方案已在后续 0.5.3 中迁移为单仓库：`release.config.json` 指向 `Yukayuyu/synduck`，发布 job 使用 Actions 内置 `GITHUB_TOKEN` 和 `contents: write`，不依赖跨仓库 `RELEASE_PUBLISH_TOKEN`。发布前自动要求仓库为 Public、标签位于 main 历史且与 package.json 一致，并等待该提交的 main CI 成功；随后在 Windows 构建及测试，再校验版本／校验和后建立同仓库 Release。公开状态和安装包是否已就绪，以 [GitHub 发布说明](github-updates.md#当前状态)和实际 Releases 为准。
 
 ## 本次验证
 

@@ -10,23 +10,58 @@ concurrency:
 jobs:
   preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Check public publishing access
+      - name: Verify same-repository public release and tag
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ -z "$GH_TOKEN" ]]; then
-            echo '::error::Set RELEASE_PUBLISH_TOKEN in the private source repository Actions secrets. Grant Contents: write only on the public releases repository.'
-            exit 1
-          fi
-          repo=$(node -p "require('./release.config.json').repository")
-          metadata=$(gh api "repos/$repo")
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const config = JSON.parse(readFileSync("release.config.json", "utf8"));
+            const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+            if (config.repository !== process.env.GH_REPO) throw new Error("Release source must be this repository.");
+            if (process.env.RELEASE_TAG !== `canvas-v${pkg.version}`) throw new Error("Tag does not match package version.");'
+          metadata=$(gh api "repos/$GH_REPO")
           REPO_METADATA="$metadata" node --input-type=module -e '
             const repo = JSON.parse(process.env.REPO_METADATA);
-            if (repo.private !== false || repo.archived || !repo.default_branch) throw new Error("Release target must be an active public repository.");'
+            if (repo.private !== false || repo.archived || repo.default_branch !== "main") throw new Error("Publish requires an active public repository with main as default branch.");'
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          tag_sha=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+            echo '::error::The release tag changed after this run started.'
+            exit 1
+          fi
+      - name: Require successful main CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in {1..60}; do
+            runs=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&branch=main&event=push&per_page=10")
+            state=$(CI_RUNS="$runs" node --input-type=module -e '
+              const runs = JSON.parse(process.env.CI_RUNS).workflow_runs;
+              const run = runs.find(r => r.head_sha === process.env.GITHUB_SHA && r.head_branch === "main");
+              if (!run || run.status !== "completed") console.log("pending");
+              else console.log(run.conclusion === "success" ? "success" : "failed");')
+            if [[ "$state" == success ]]; then exit 0; fi
+            if [[ "$state" == failed ]]; then
+              echo '::error::Main CI failed for the tagged commit. Fix main and publish a new version.'
+              exit 1
+            fi
+            sleep 15
+          done
+          echo '::error::Successful main CI was not available for the tagged commit.'
+          exit 1
   package:
     needs: preflight
     runs-on: windows-latest
@@ -42,11 +77,6 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - name: Match release tag and package version
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:GITHUB_REF_NAME -ne "canvas-v$version") { throw 'Tag does not match package version.' }
       - run: pnpm package:windows
       - run: pnpm test:portable
       - name: Check compatibility with the previous bootstrap
@@ -56,10 +86,15 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: context-canvas-release
-          path: release-output/
+          path: |
+            release-output/ContextCanvas-Windows-*.zip
+            release-output/ContextCanvas-Windows-*.zip.sha256
+            release-output/context-canvas-update.json
   publish:
     needs: package
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,30 +103,40 @@ jobs:
         with:
           name: context-canvas-release
           path: release-output
-      - name: Publish compiled package and anonymous update feed
+      - name: Verify and publish this repository's release
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PUBLISH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          export GH_REPO=$(node -p "require('./release.config.json').repository")
           metadata=$(gh api "repos/$GH_REPO")
-          public_branch=$(REPO_METADATA="$metadata" node --input-type=module -e '
-            const repo = JSON.parse(process.env.REPO_METADATA);
-            if (repo.private !== false || repo.archived) throw new Error("Release target must be public.");
-            console.log(repo.default_branch);')
-          release_version="${RELEASE_TAG#canvas-v}"
-          RELEASE_VERSION="$release_version" node --input-type=module -e '
+          REPO_METADATA="$metadata" node --input-type=module -e '
             import { readFileSync, writeFileSync } from "node:fs";
+            import { createHash } from "node:crypto";
+            const repo = JSON.parse(process.env.REPO_METADATA);
+            const config = JSON.parse(readFileSync("release.config.json", "utf8"));
+            const pkg = JSON.parse(readFileSync("package.json", "utf8"));
             const feed = JSON.parse(readFileSync("release-output/context-canvas-update.json", "utf8"));
-            if (feed.version !== process.env.RELEASE_VERSION) throw new Error("Release version mismatch.");
+            if (repo.private !== false || repo.archived || config.repository !== process.env.GH_REPO) throw new Error("Release target must be this public repository.");
+            if (feed.version !== pkg.version || process.env.RELEASE_TAG !== `canvas-v${feed.version}`) throw new Error("Release version mismatch.");
+            const name = `ContextCanvas-Windows-${feed.version}.zip`;
+            if (feed.archive.name !== name) throw new Error("Unexpected archive name.");
+            const archive = readFileSync(`release-output/${name}`);
+            const digest = createHash("sha256").update(archive).digest("hex");
+            const sidecar = readFileSync(`release-output/${name}.sha256`, "utf8");
+            if (archive.length !== feed.archive.bytes || digest !== feed.archive.sha256 || sidecar !== `${digest}  ${name}\n`) throw new Error("Release archive checksum/size mismatch.");
             writeFileSync("release-output/notes.txt", feed.notes + "\n\nDownload and extract the Windows ZIP, then run Start-ContextCanvas.cmd. No GitHub token is required.\n");'
+          tag_sha=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+            echo '::error::The release tag changed after verification.'
+            exit 1
+          fi
+          release_version="${RELEASE_TAG#canvas-v}"
           prerelease=()
           if [[ "$release_version" == *-* ]]; then prerelease=(--prerelease); fi
-          # The tag belongs to the public repository's README history. Never push
-          # private source commits or generate release notes from private history.
           gh release create "$RELEASE_TAG" \
             "release-output/ContextCanvas-Windows-$release_version.zip" \
             "release-output/ContextCanvas-Windows-$release_version.zip.sha256" \
             release-output/context-canvas-update.json \
-            --target "$public_branch" --title "Context Canvas $release_version" \
+            --verify-tag --title "Context Canvas $release_version" \
             --notes-file release-output/notes.txt "${prerelease[@]}"

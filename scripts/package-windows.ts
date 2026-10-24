@@ -160,7 +160,7 @@ for (const name of [
 }
 files['package-files.json'] = new TextEncoder().encode(JSON.stringify(manifest, null, 2));
 files['開始使用.txt'] = new TextEncoder().encode(
-  '先解壓縮完整 ZIP，再雙擊 Start-ContextCanvas.cmd。\r\n從舊版升級：先停止舊版，執行這個新資料夾的 Update-Existing.cmd，選擇原安裝資料夾。\r\n啟動器會保留畫布、登入及模型設定；完成首次升級後，可在介面「版本與更新」匯入更新包。\r\n本地執行器在「本地任務」設定專案路徑；命令和寫檔需確認。\r\n詳細說明請見 app/docs/local-runtime-updates.md。\r\n',
+  '先解壓縮完整 ZIP，再雙擊 Start-ContextCanvas.cmd。\r\n從舊版升級：先停止舊版，執行這個新資料夾的 Update-Existing.cmd，選擇原安裝資料夾。\r\n啟動器會保留畫布、登入及模型設定；完成首次升級後，可在介面「版本與更新」匯入更新包。\r\n本地執行器在「本地任務」設定專案路徑；命令和寫檔需確認。\r\n安裝與模型設定請見 app/docs/setup.md；升級與復原請見 app/docs/local-runtime-updates.md。\r\n',
 );
 const archive = zipSync(
   Object.fromEntries(
@@ -172,8 +172,17 @@ const archiveName = `ContextCanvas-Windows-${version}.zip`;
 await fs.mkdir(output, { recursive: true });
 await fs.writeFile(join(output, archiveName), archive);
 await fs.writeFile(join(output, `${archiveName}.sha256`), `${sha(archive)}  ${archiveName}\n`);
+let versionNotes = '';
+try {
+  versionNotes = await fs.readFile(join(root, 'docs/releases', `${version}.md`), 'utf8');
+} catch (error) {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+}
 const notes =
-  process.env.RELEASE_NOTES || `Context Canvas ${version}：本地任務、更新通知與可復原安裝。`;
+  process.env.RELEASE_NOTES ||
+  versionNotes ||
+  `Context Canvas ${version}：本地任務、更新通知與可復原安裝。`;
+if (notes.length > 16000) throw new Error('Release notes exceed the update feed limit.');
 await fs.writeFile(
   join(output, 'context-canvas-update.json'),
   JSON.stringify(

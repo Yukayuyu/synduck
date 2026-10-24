@@ -186,7 +186,7 @@ describe('version updates', () => {
     expect(JSON.stringify(updates.snapshot())).not.toContain('a-private-test-token');
   });
   it.each([
-    'https://github.com/Yukayuyu/synduck/releases/download/canvas-v0.2.1/feed.json',
+    'https://github.com/Yukayuyu/context-canvas-releases/releases/download/canvas-v0.2.1/feed.json',
     `https://github.com/${UPDATE_REPOSITORY}-other/releases/download/canvas-v0.2.1/feed.json`,
     `https://github.com/${UPDATE_REPOSITORY}/releases/download/canvas-v0.2.1/feed.json?token=secret`,
     'https://untrusted.example/feed.json',

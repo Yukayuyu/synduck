@@ -13,11 +13,11 @@
 | 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md) |
 | 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)             |
 
-**当前状态（0.5.2，2026-10-24）：** 仓库仍为私有，已加入 MIT 许可证，尚未发布正式 Release。更新器与发布工作流仍采用独立发布仓库；计划中的“公开主仓库 + 同仓库 Releases”尚未切换。当前可从源码运行，或使用维护者提供的完整 Windows 测试 ZIP。安装和更新状态请以[发布配置说明](docs/github-updates.md#当前状态)为准。
+**发布方案（0.5.3）：** 源码、Windows 安装包和更新清单统一放在 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。普通用户从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`，完整解压后运行 `Start-ContextCanvas.cmd`；安装和更新不需要 GitHub 账号或 token。首次 Release 附件就绪前可按下面的源码步骤运行。发布流程自动检查仓库公开状态、主分支 CI、版本和校验和，详见[发布说明](docs/github-updates.md#当前状态)。
 
 ## 从源码快速启动
 
-需要 Git、Node.js **24.19.0** 和 pnpm **11.19.0**。目前克隆私有仓库需要 GitHub 访问权限；公开后可以匿名克隆。首次在 Windows PowerShell 中执行：
+需要 Git、Node.js **24.19.0** 和 pnpm **11.19.0**。公开仓库可匿名克隆；尚未公开时需要仓库访问权限。首次在 Windows PowerShell 中执行：
 
 ```powershell
 git clone --branch main https://github.com/Yukayuyu/synduck.git
