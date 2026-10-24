@@ -10,7 +10,10 @@ test('keeps appearance and advanced input options reachable on a phone', async (
       data: { title: '更轻的移动画布', position: { x: -73000, y: -73000 } },
     })
   ).json();
-  await request.patch('/api/workspace', { data: { viewport: { x: 73020, y: 73100, zoom: 0.85 } } });
+  const zoom = 0.85;
+  await request.patch('/api/workspace', {
+    data: { viewport: { x: 20 - root.node.x * zoom, y: 100 - root.node.y * zoom, zoom } },
+  });
   await page.goto('/');
   await page.getByRole('button', { name: '工作区菜单', exact: true }).click();
   await page.getByRole('menuitem', { name: '画布外观', exact: true }).click();
