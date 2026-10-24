@@ -12,6 +12,7 @@ test('phone layout supports conversation, context inspection, touch selection, p
   await page.getByLabel('给这段对话起个名字').fill(title);
   await page.getByRole('button', { name: '创建对话' }).tap();
   await page.getByLabel('你的问题', { exact: true }).fill('手機上的上下文');
+  await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).tap();
   await expect(page.getByText('上下文已编译 · 等待发送')).toBeVisible();
   await tabs.getByRole('button', { name: '畫布', exact: true }).tap();

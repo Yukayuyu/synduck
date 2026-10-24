@@ -98,6 +98,10 @@ for (const name of [
   'github-updates.md',
   'public-readiness.md',
   'concurrent-conversations.md',
+  'ui-styles.md',
+  'ui-previews/arc.png',
+  'ui-previews/paper.png',
+  'ui-previews/ink.png',
 ])
   files[`app/docs/${name}`] = new Uint8Array(await fs.readFile(join(root, 'docs', name)));
 files['app/NOTICE.txt'] = new TextEncoder().encode(

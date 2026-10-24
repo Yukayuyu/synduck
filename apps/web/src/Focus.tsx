@@ -9,6 +9,7 @@ import {
   Send,
   RotateCcw,
   LoaderCircle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import type { CanvasNode, ContentBlock, ContextPackage, Excerpt, Turn } from '@acc/domain';
 import type { ClientState } from './api';
@@ -176,7 +177,7 @@ export function Focus(props: Props) {
   }, [state.blocks, node.id]);
   return (
     <section
-      className={`focus-panel ${active ? 'editing' : 'reading'}`}
+      className={`focus-panel ${active ? 'editing' : 'reading'} ${turns.length || busy ? 'has-turns' : 'empty-conversation'}`}
       data-node-id={node.id}
       data-active={active}
       aria-label={excerpt ? '摘录详情' : '对话详情'}
@@ -248,15 +249,7 @@ export function Focus(props: Props) {
           <div ref={scrollRef} className="focus-content conversation-scroll">
             {turns.length === 0 && !busy && (
               <div className="conversation-empty">
-                <div className="small-orbit">
-                  <MessageIcon />
-                </div>
-                <h3>{origin ? '沿着这个想法，继续探索。' : '从一个好问题开始。'}</h3>
-                <p>
-                  {origin
-                    ? '此分支只带入摘录原文，不会自动加入整个旧对话。'
-                    : '回答中的任何一段，都可以成为新的思考起点。'}
-                </p>
+                <p>{origin ? '沿着这段文字，继续提问。' : '写下一个问题。'}</p>
               </div>
             )}
             {exchanges.map((exchange, index) => (
@@ -452,6 +445,7 @@ export function Focus(props: Props) {
               className="composer"
               onSubmit={(e) => {
                 e.preventDefault();
+                e.currentTarget.querySelector('details')?.removeAttribute('open');
                 props.onCompile();
               }}
             >
@@ -479,31 +473,36 @@ export function Focus(props: Props) {
                 rows={2}
                 maxLength={32000}
               />
-              <details className="composer-settings">
-                <summary>上下文預算</summary>
-                <div className="composer-options">
-                  <label>
-                    上下文预算{' '}
-                    <select
-                      aria-label="上下文预算"
-                      value={props.budget}
-                      onChange={(e) => props.onBudget(Number(e.target.value))}
-                      disabled={locked}
-                    >
-                      <option value={2000}>2,000</option>
-                      <option value={6000}>6,000</option>
-                      <option value={10000}>10,000</option>
-                    </select>
-                  </label>
-                  <span>保守估算</span>
-                </div>
-              </details>
               <div className="composer-bottom">
-                <span>
-                  {preview
-                    ? `${preview.items.length} 项上下文已预览`
-                    : '可直接傳送，也可先檢查上下文'}
-                </span>
+                <details className="composer-settings">
+                  <summary aria-label="提问选项" title="预览上下文与预算">
+                    <SlidersHorizontal size={16} />
+                    <span>选项</span>
+                  </summary>
+                  <div className="composer-options">
+                    <label>
+                      上下文预算
+                      <select
+                        aria-label="上下文预算"
+                        value={props.budget}
+                        onChange={(e) => props.onBudget(Number(e.target.value))}
+                        disabled={locked}
+                      >
+                        <option value={2000}>2,000</option>
+                        <option value={6000}>6,000</option>
+                        <option value={10000}>10,000</option>
+                      </select>
+                    </label>
+                    <button
+                      type="submit"
+                      className="secondary"
+                      disabled={locked || !props.prompt.trim()}
+                    >
+                      <ScanLine size={14} />
+                      预览上下文
+                    </button>
+                  </div>
+                </details>
                 {preview ? (
                   <button
                     type="button"
@@ -516,14 +515,6 @@ export function Focus(props: Props) {
                   </button>
                 ) : (
                   <div className="composer-send-actions">
-                    <button
-                      type="submit"
-                      className="secondary"
-                      disabled={locked || !props.prompt.trim()}
-                    >
-                      <ScanLine size={14} />
-                      预览上下文
-                    </button>
                     <button
                       type="button"
                       className="primary"
@@ -547,7 +538,4 @@ export function Focus(props: Props) {
       )}
     </section>
   );
-}
-function MessageIcon() {
-  return <Quote size={22} strokeWidth={1.4} />;
 }

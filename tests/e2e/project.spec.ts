@@ -47,7 +47,8 @@ test('downloads a native backup, previews replacement, restores IDs and exposes 
     ).ok(),
   ).toBe(true);
   await page.goto('/');
-  await page.getByRole('button', { name: '备份与恢复', exact: true }).click();
+  await page.getByRole('button', { name: '工作区菜单', exact: true }).click();
+  await page.getByRole('menuitem', { name: '备份与恢复', exact: true }).click();
   const downloading = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出项目备份 下载原生 JSON 文件' }).click();
   const download = await downloading;
@@ -61,7 +62,8 @@ test('downloads a native backup, previews replacement, restores IDs and exposes 
   const added = await request.post('/api/conversations', { data: { title: '备份之后的新对话' } });
   expect(added.ok()).toBe(true);
   await page.reload();
-  await page.getByRole('button', { name: '备份与恢复', exact: true }).click();
+  await page.getByRole('button', { name: '工作区菜单', exact: true }).click();
+  await page.getByRole('menuitem', { name: '备份与恢复', exact: true }).click();
   await page.getByLabel('选择项目备份文件').setInputFiles(filePath);
   await expect(page.getByText('格式、完整性及来源引用校验通过')).toBeVisible();
   const confirm = page.getByRole('button', { name: '确认导入并替换' });
@@ -87,7 +89,8 @@ test('downloads a native backup, previews replacement, restores IDs and exposes 
       .getByRole('button', { name: '备份之后的新对话' }),
   ).toHaveCount(0);
 
-  await page.getByRole('button', { name: '备份与恢复', exact: true }).click();
+  await page.getByRole('button', { name: '工作区菜单', exact: true }).click();
+  await page.getByRole('menuitem', { name: '备份与恢复', exact: true }).click();
   await page.getByRole('button', { name: '预览恢复' }).first().click();
   await expect(page.getByText('格式、完整性及来源引用校验通过')).toBeVisible();
   await expect(page.getByRole('button', { name: '确认导入并替换' })).toBeDisabled();
@@ -103,7 +106,8 @@ test('downloads a native backup, previews replacement, restores IDs and exposes 
 
 test('rejects malformed files without offering replacement', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '备份与恢复', exact: true }).click();
+  await page.getByRole('button', { name: '工作区菜单', exact: true }).click();
+  await page.getByRole('menuitem', { name: '备份与恢复', exact: true }).click();
   await page.getByLabel('选择项目备份文件').setInputFiles({
     name: 'invalid.json',
     mimeType: 'application/json',

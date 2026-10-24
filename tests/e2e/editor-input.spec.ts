@@ -118,6 +118,7 @@ test('types punctuation, modified keys and IME composition without moving focus 
   const compiled = page.waitForResponse(
     (response) => response.url().endsWith('/api/compile') && response.request().method() === 'POST',
   );
+  await card.getByLabel('提问选项', { exact: true }).click();
   await card.getByRole('button', { name: '预览上下文', exact: true }).click();
   expect((await (await compiled).json()).package.current_prompt).toBe(finalText);
   await page.getByRole('button', { name: '關閉面板', exact: true }).click();

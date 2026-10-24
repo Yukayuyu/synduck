@@ -8,6 +8,7 @@ test('select text, branch, inspect and exclude context, then persist through rel
   await page.getByLabel('给这段对话起个名字').fill(`浏览器验收 ${Date.now()}`);
   await page.getByRole('button', { name: '创建对话' }).click();
   await page.getByLabel('你的问题', { exact: true }).fill('如何让上下文更清晰？');
+  await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(page.getByText('上下文已编译 · 等待发送')).toBeVisible();
   await page.getByRole('button', { name: '发送此上下文' }).click();
@@ -30,6 +31,7 @@ test('select text, branch, inspect and exclude context, then persist through rel
     page.locator('.focus-panel[data-active="true"]').getByText('源自摘录'),
   ).toBeVisible();
   await page.getByLabel('你的问题', { exact: true }).fill('怎样应用这个原则？');
+  await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(page.locator('.context-item')).toHaveCount(1);
   await expect(page.locator('.context-item')).toContainText('让上下文可见');
@@ -43,9 +45,11 @@ test('select text, branch, inspect and exclude context, then persist through rel
   await page.getByRole('button', { name: '返回画布', exact: true }).click();
   await page.screenshot({ path: 'test-results/canvas-branch.png' });
   const excerpt = page.locator('.canvas-card.excerpt').last();
-  await excerpt.getByRole('button', { name: '固定上下文', exact: true }).click();
-  await expect(excerpt.getByRole('button', { name: '取消固定', exact: true })).toBeVisible();
-  await excerpt.getByRole('button', { name: '排除上下文', exact: true }).click();
+  await excerpt.getByRole('button', { name: /^卡片操作：/ }).click();
+  await page.getByRole('menuitem', { name: '固定上下文', exact: true }).click();
+  await expect(excerpt.getByLabel('已固定', { exact: true })).toBeVisible();
+  await excerpt.getByRole('button', { name: /^卡片操作：/ }).click();
+  await page.getByRole('menuitem', { name: '排除上下文', exact: true }).click();
   await expect(excerpt).toHaveClass(/excluded/);
   await page.reload();
   await expect(page.locator('.canvas-card.excerpt').last()).toHaveClass(/excluded/);
@@ -59,6 +63,7 @@ test('select text, branch, inspect and exclude context, then persist through rel
     .last()
     .click();
   await page.getByLabel('你的问题', { exact: true }).fill('排除后还有哪些原文？');
+  await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(
     page.locator('.excluded-item').filter({ hasText: '你明确排除了此内容' }),

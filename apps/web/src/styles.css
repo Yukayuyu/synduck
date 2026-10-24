@@ -489,14 +489,14 @@ small {
   overflow: hidden;
 }
 .react-flow__controls-button {
-  background: #fffefa !important;
-  border-bottom-color: #e7e9e0 !important;
-  fill: #819077 !important;
+  background: #fffefa;
+  border-bottom-color: #e7e9e0;
+  fill: #819077;
   width: 27px !important;
   height: 27px !important;
 }
 .react-flow__minimap {
-  background: #fafaf4 !important;
+  background: #fafaf4;
   border: 1px solid #e0e4d8;
   border-radius: 6px;
   width: 104px !important;

@@ -172,6 +172,7 @@ test('opens a deleted branch source read-only without restoring or sending it as
   );
   await trash.getByRole('button', { name: '關閉回收桶', exact: true }).click();
   await branch.getByLabel('你的问题', { exact: true }).fill('New independent question');
+  await branch.getByLabel('提问选项', { exact: true }).click();
   await branch.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(page.getByText('卡片已刪除，可從回收桶還原', { exact: true })).toBeVisible();
   await expect(page.locator('.context-item')).toHaveCount(0);
@@ -208,7 +209,7 @@ test('direct send keeps a blocked draft and opens the context explanation withou
   await card.locator('.card-title').click();
   const editor = card.getByLabel('你的问题', { exact: true });
   await editor.fill('Keep this draft');
-  await card.getByText('上下文預算', { exact: true }).click();
+  await card.getByLabel('提问选项', { exact: true }).click();
   await card.getByLabel('上下文预算', { exact: true }).selectOption('2000');
   const rejected = page.waitForResponse(
     (response) => response.url().endsWith('/api/send') && response.request().method() === 'POST',

@@ -50,6 +50,8 @@ type CardData = {
   title: string;
   preview: string;
   type: CanvasNode['type'];
+  branch: boolean;
+  displayTitle: string;
   count: number;
   active: boolean;
   context: boolean;
@@ -57,9 +59,6 @@ type CardData = {
   excluded: boolean;
   node: CanvasNode;
   onOpen: () => void;
-  onSelect: () => void;
-  onPin: () => void;
-  onExclude: () => void;
   onMenu: (event: MouseEvent) => void;
   [key: string]: unknown;
 };
@@ -75,14 +74,25 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
   const renderContent = useContext(CardContentContext);
   return (
     <article
-      className={`canvas-card ${data.type} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
+      className={`canvas-card ${data.branch ? 'branch' : ''} ${data.type} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
     >
       <Handle type="target" position={Position.Left} />
       <div className="card-eyebrow">
-        <span>
-          {data.type === 'excerpt' ? <Quote size={13} /> : <MessageSquare size={13} />}
-          {data.type === 'excerpt' ? '摘录' : '对话'}
+        <span
+          className="node-kind"
+          aria-label={data.type === 'excerpt' ? '摘录' : data.branch ? '分支对话' : '对话'}
+        >
+          {data.type === 'excerpt' ? (
+            <Quote size={15} />
+          ) : data.branch ? (
+            <GitBranch size={15} />
+          ) : (
+            <MessageSquare size={15} />
+          )}
         </span>
+        <button className="card-title nodrag" aria-label={data.title} onClick={data.onOpen}>
+          {data.displayTitle}
+        </button>
         {data.pinned && <Pin size={13} aria-label="已固定" />}
         {data.excluded && <Ban size={13} aria-label="已排除" />}
         <button
@@ -94,10 +104,6 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
           <MoreHorizontal size={17} />
         </button>
       </div>
-      <button className="card-title nodrag" onClick={data.onOpen}>
-        {data.title}
-        <ArrowUpRight size={16} />
-      </button>
       {data.active || zoom > 0.45 ? (
         <div className="card-content nodrag nopan nowheel nokey">
           {renderContent(data.node, Boolean(width && height))}
@@ -105,34 +111,9 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
       ) : (
         <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
       )}
-      {zoom > 0.55 && (
+      {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
         <div className="card-footer">
-          <span>{data.type === 'excerpt' ? '来源已保留' : `${data.count} 条消息`}</span>
-          <div className="card-actions nodrag">
-            <button
-              title={data.context ? '取消本轮选择' : '选为本轮上下文'}
-              aria-label={data.context ? '取消本轮选择' : '选为本轮上下文'}
-              className={data.context ? 'toggled' : ''}
-              onClick={data.onSelect}
-            >
-              {data.context ? <Check size={14} /> : <Plus size={14} />}
-            </button>
-            <button
-              title={data.pinned ? '取消固定' : '固定上下文'}
-              aria-label={data.pinned ? '取消固定' : '固定上下文'}
-              className={data.pinned ? 'toggled' : ''}
-              onClick={data.onPin}
-            >
-              <Pin size={14} />
-            </button>
-            <button
-              title={data.excluded ? '恢复上下文' : '排除上下文'}
-              aria-label={data.excluded ? '恢复上下文' : '排除上下文'}
-              onClick={data.onExclude}
-            >
-              <Ban size={14} />
-            </button>
-          </div>
+          <span>{data.count} 条消息</span>
         </div>
       )}
       <Handle type="source" position={Position.Right} />
@@ -258,13 +239,20 @@ export function Canvas({
         .map((n) => ({
           id: n.id,
           type: 'card',
+          className: `node-${n.ref_type}`,
           dragHandle: '.card-eyebrow',
           zIndex: activeNode === n.id ? 10 : 0,
           position: { x: n.x, y: n.y },
           data: {
             node: n,
             title: n.title,
+            displayTitle:
+              n.ref_type === 'excerpt' &&
+              n.title === state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text.slice(0, 60)
+                ? '摘录'
+                : n.title,
             type: n.type,
+            branch: !!state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id,
             preview:
               n.ref_type === 'excerpt'
                 ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
@@ -275,21 +263,10 @@ export function Canvas({
             pinned: state.workspace.settings.pinned_node_ids.includes(n.id),
             excluded: state.workspace.settings.excluded_node_ids.includes(n.id),
             onOpen: () => onOpen(n),
-            onSelect: () => onSelect(n.id),
-            onPin: () =>
-              onControl(
-                n.id,
-                state.workspace.settings.pinned_node_ids.includes(n.id) ? 'unpin' : 'pin',
-              ),
-            onExclude: () =>
-              onControl(
-                n.id,
-                state.workspace.settings.excluded_node_ids.includes(n.id) ? 'restore' : 'exclude',
-              ),
             onMenu: (event: MouseEvent) => openCardMenu(n.id, event),
           },
         })),
-    [state, activeNode, selected, onOpen, onSelect, onControl, openCardMenu],
+    [state, activeNode, selected, onOpen, openCardMenu],
   );
   const traceNodes = useMemo<TraceNode[]>(
     () =>
@@ -320,8 +297,18 @@ export function Canvas({
       lastLocated.current = key;
       const width = window.innerWidth;
       const height = window.innerHeight;
-      const zoom = Math.min(1, (width - 36) / 360, (height - 175) / 670);
-      void flow.setCenter(node.x + 180, node.y + (node.ref_type === 'excerpt' ? 190 : 325), {
+      const measured = flow.getNode(node.id)?.measured;
+      const nodeWidth = measured?.width || (node.ref_type === 'excerpt' ? 280 : 360);
+      const nodeHeight =
+        node.ref_type === 'excerpt'
+          ? measured?.height || 280
+          : Math.max(420, measured?.height || 560);
+      const zoom = Math.min(
+        1,
+        (width - 36) / nodeWidth,
+        (height - 175) / Math.max(560, nodeHeight),
+      );
+      void flow.setCenter(node.x + nodeWidth / 2, node.y + nodeHeight / 2, {
         zoom: Math.max(0.5, zoom),
         duration: 250,
       });
@@ -353,7 +340,7 @@ export function Canvas({
         label:
           e.type === 'branch_from' ? '延伸提問' : e.type === 'excerpt_from' ? '摘錄原文' : e.type,
         className: `relation-${e.type}`,
-        type: 'smoothstep',
+        type: 'default',
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         style: {
           stroke: color,
@@ -365,8 +352,8 @@ export function Canvas({
                 ? '3 4'
                 : undefined,
         },
-        labelStyle: { fill: e.type === 'excerpt_from' ? '#917347' : '#807194', fontSize: 10 },
-        labelBgStyle: { fill: '#f6f5f9' },
+        labelStyle: { fill: 'var(--muted-ink)', fontSize: 10 },
+        labelBgStyle: { fill: 'var(--canvas)' },
         labelBgPadding: [6, 4] as [number, number],
       };
     });
@@ -380,10 +367,10 @@ export function Canvas({
         source: context.current_node_id,
         target: 'trace:' + trace.task_id,
         label: '輸入上下文',
-        type: 'smoothstep',
+        type: 'default',
         style: { stroke: '#798be2', strokeWidth: 1.5 },
         labelStyle: { fill: '#6472aa', fontSize: 10 },
-        labelBgStyle: { fill: '#f6f5f1' },
+        labelBgStyle: { fill: 'var(--canvas)' },
       },
     ];
   });

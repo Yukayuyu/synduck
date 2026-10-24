@@ -15,9 +15,12 @@ import {
   Hand,
   Trash2,
   RotateCcw,
+  Palette,
+  MoreHorizontal,
 } from 'lucide-react';
 import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
 import { api, ApiError, streamAnswer, type ClientState } from './api';
+import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
 import { Focus, type SelectedText, type SourceHighlight } from './Focus';
@@ -30,6 +33,8 @@ import { TraceDialog } from './TaskTrace';
 import { TrashDialog } from './TrashDialog';
 import './styles.css';
 import './canvas-first.css';
+import './canvas-themes.css';
+import { AppearanceDialog, appearanceKey, readAppearance } from './AppearanceDialog';
 
 interface GenerationJob {
   prompt: string;
@@ -44,6 +49,17 @@ interface RequestError {
   contextSetId: string | null;
 }
 export default function App() {
+  const [appearance, setAppearance] = useState(readAppearance);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeWorkspaceMenu = useCallback(() => setWorkspaceMenu(null), []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(appearanceKey, appearance);
+    } catch {
+      /* Appearance still works for this tab. */
+    }
+  }, [appearance]);
   const [state, setState] = useState<ClientState | null>(null);
   const [error, setError] = useState('');
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -476,6 +492,7 @@ export default function App() {
   return (
     <div
       className="app-shell canvas-first"
+      data-canvas-style={appearance}
       onKeyDown={(event) => {
         // The browser owns text editing, shortcuts and IME candidate keys.
         // Let keyup bubble so a modifier pressed before entering the editor can
@@ -522,20 +539,18 @@ export default function App() {
           </button>
           <button
             className="icon-button"
-            aria-label="备份与恢复"
-            title="备份与恢复"
-            disabled={busy}
-            onClick={() => setProjectDialog(true)}
+            aria-label="工作区菜单"
+            title="工作区菜单"
+            aria-haspopup="menu"
+            aria-expanded={!!workspaceMenu}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setWorkspaceMenu((previous) =>
+                previous ? null : { x: rect.right - 210, y: rect.bottom + 8 },
+              );
+            }}
           >
-            <FolderArchive size={18} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="使用帮助"
-            title="使用帮助"
-            onClick={() => setHelp(true)}
-          >
-            <CircleHelp size={18} />
+            <MoreHorizontal size={20} />
           </button>
         </div>
       </header>
@@ -1021,6 +1036,30 @@ export default function App() {
             </button>
           </section>
         </div>
+      )}
+      {workspaceMenu && (
+        <ContextMenu
+          x={workspaceMenu.x}
+          y={workspaceMenu.y}
+          onClose={closeWorkspaceMenu}
+          actions={[
+            { label: '画布外观', icon: <Palette size={16} />, run: () => setAppearanceOpen(true) },
+            {
+              label: '备份与恢复',
+              icon: <FolderArchive size={16} />,
+              disabled: busy,
+              run: () => setProjectDialog(true),
+            },
+            { label: '使用帮助', icon: <CircleHelp size={16} />, run: () => setHelp(true) },
+          ]}
+        />
+      )}
+      {appearanceOpen && (
+        <AppearanceDialog
+          value={appearance}
+          onChange={setAppearance}
+          onClose={() => setAppearanceOpen(false)}
+        />
       )}
       {projectDialog && (
         <ProjectDialog

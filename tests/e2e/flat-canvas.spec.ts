@@ -60,6 +60,7 @@ test('preserves the focused editor during generation and a failed answer without
   await card.locator('.card-title').click();
   const editor = card.getByLabel('你的问题', { exact: true });
   await editor.fill('失敗後繼續編輯這個問題');
+  await card.getByLabel('提问选项', { exact: true }).click();
   await card.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(card.getByRole('button', { name: '发送此上下文', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '關閉面板', exact: true }).click();
@@ -166,6 +167,7 @@ test('reads multiple conversations on the board and branches from an inactive ca
   const editor = page.locator('.focus-panel[data-active="true"]');
   await expect(editor.getByText('源自摘录')).toBeVisible();
   await editor.getByLabel('你的问题', { exact: true }).fill('這段文字還能如何延伸？');
+  await editor.getByLabel('提问选项', { exact: true }).click();
   await editor.getByRole('button', { name: '预览上下文', exact: true }).click();
   await expect(page.locator('.context-item')).toHaveCount(1);
   await expect(page.locator('.context-item')).toContainText('让上下文可见');

@@ -97,6 +97,7 @@ test('runs conversations together, isolates stop, and preserves another card’s
   await expect(cards[1]).not.toContainText('獨立輸出 問題 A');
   const inputC = await open(2);
   await inputC.fill('另一個問題，保留輸入與選區。');
+  await cards[2].getByLabel('提问选项', { exact: true }).click();
   await cards[2].getByRole('button', { name: '预览上下文', exact: true }).click();
   await page.getByRole('button', { name: '關閉面板', exact: true }).click();
   await inputC.evaluate((element: HTMLTextAreaElement) => {
