@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 import { existsSync } from 'node:fs';
 export default defineConfig({
   testDir: './tests/e2e',
+  reporter: process.env.GITHUB_ACTIONS === 'true' ? [['github'], ['dot']] : 'dot',
   fullyParallel: false,
   workers: 1,
   timeout: 30000,
