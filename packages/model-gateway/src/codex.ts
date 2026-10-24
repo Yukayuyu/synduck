@@ -11,7 +11,7 @@ import { CODEX_CONFIG, type CodexConnection } from './codex-rpc';
 import { codexError } from './codex-errors';
 
 type AgentItem = { type?: string; text?: string; phase?: string };
-type CodexTurn = { status?: string; error?: unknown; items?: AgentItem[] };
+type CodexTurn = { id?: string; status?: string; error?: unknown; items?: AgentItem[] };
 const passiveItems = new Set([
   'userMessage',
   'agentMessage',
@@ -68,7 +68,8 @@ export class CodexProvider implements ModelProvider {
   private selectedReasoningEffort: string | null;
   private login: LoginState & { loginId?: string } = { status: 'idle' };
   private loginStarting = false;
-  private generating = false;
+  private generating = 0;
+  private closed = false;
   private lastFailure: {
     code: string;
     message: string;
@@ -189,7 +190,8 @@ export class CodexProvider implements ModelProvider {
     return {
       model: this.model,
       reasoning_effort: this.reasoningEffort,
-      generating: this.generating,
+      generating: this.generating > 0,
+      active_generations: this.generating,
       last_failure: this.lastFailure,
       last_retry: this.lastRetry,
     };
@@ -249,21 +251,37 @@ export class CodexProvider implements ModelProvider {
     if (this.generating)
       throw new DomainError('codex_busy', '回答正在生成，請完成後再變更登入。', 409);
   }
-  async generate(pkg: ContextPackage, onDraft?: (text: string) => void) {
-    this.assertIdle();
+  async generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
+    if (this.closed) throw new DomainError('codex_unavailable', '模型連線已關閉。', 503);
     if (this.loginStarting || this.login.status === 'pending')
       throw new DomainError('login_busy', '請先完成帳號登入。', 409);
-    this.generating = true;
-    this.lastFailure = null;
-    this.lastRetry = null;
+    this.generating++;
+    if (this.generating === 1) {
+      this.lastFailure = null;
+      this.lastRetry = null;
+    }
+    const model = this.model;
+    const effort = this.reasoningEffort;
+    let retry: { code: string; message: string } | null = null;
     const startedAt = Date.now();
     let stage = 'account/read';
     let unsubscribe = () => {};
     let timer: ReturnType<typeof setTimeout> | undefined;
     let threadId = '';
+    let turnId = '';
     let completed = false;
+    let connectionLost = false;
+    let needsStop = false;
+    let interruptSent = false;
+    let onAbort = () => {};
+    const interruptOwnTurn = async () => {
+      if (!threadId || !turnId || interruptSent || connectionLost || this.closed) return;
+      interruptSent = true;
+      await this.rpc.request('turn/interrupt', { threadId, turnId }).catch(() => {});
+    };
     try {
-      if (!this.model)
+      signal?.throwIfAborted();
+      if (!model)
         throw new DomainError(
           'codex_model_required',
           '請在「模型與登入」選擇 Codex 模型後再提交。',
@@ -275,6 +293,7 @@ export class CodexProvider implements ModelProvider {
           '請先在「模型與登入」使用 ChatGPT 帳號登入。',
           503,
         );
+      signal?.throwIfAborted();
       stage = 'thread/start';
       const thread = z
         .object({
@@ -284,7 +303,7 @@ export class CodexProvider implements ModelProvider {
         })
         .parse(
           await this.rpc.request('thread/start', {
-            model: this.model,
+            model,
             modelProvider: 'openai',
             ephemeral: true,
             approvalPolicy: 'never',
@@ -299,12 +318,13 @@ export class CodexProvider implements ModelProvider {
           }),
         );
       threadId = thread.thread.id;
-      if (thread.model !== this.model || thread.instructionSources?.length)
+      if (thread.model !== model || thread.instructionSources?.length)
         throw new DomainError(
           'codex_context_mismatch',
           'Codex 模型或額外指令與設定不符，已停止本次生成。',
           502,
         );
+      signal?.throwIfAborted();
       const answer = await new Promise<string>((resolve, reject) => {
         let finalText = '';
         let partial = '';
@@ -366,7 +386,7 @@ export class CodexProvider implements ModelProvider {
             fail(
               new DomainError(
                 'codex_generation_timeout',
-                `Codex 生成超過 3 分鐘，已停止本次回答。${this.lastRetry ? `最近的重試原因：${this.lastRetry.message}` : '請稍後重試或縮短問題。'}`,
+                `Codex 生成超過 3 分鐘，已停止本次回答。${retry ? `最近的重試原因：${retry.message}` : '請稍後重試或縮短問題。'}`,
                 504,
               ),
             ),
@@ -375,6 +395,7 @@ export class CodexProvider implements ModelProvider {
         unsubscribe = this.rpc.subscribe(({ method, params }) => {
           if (settled) return;
           if (method === 'canvas/disconnected') {
+            connectionLost = true;
             fail(
               new DomainError(
                 'codex_disconnected',
@@ -386,11 +407,14 @@ export class CodexProvider implements ModelProvider {
           }
           if (params.threadId !== threadId) return;
           stage = 'generation';
+          if (method === 'turn/started')
+            turnId = (params.turn as CodexTurn | undefined)?.id || turnId;
           if (method === 'error') {
             const error = codexError(params.error);
-            if (params.willRetry === true)
-              this.lastRetry = { code: error.code, message: error.message };
-            else fail(error);
+            if (params.willRetry === true) {
+              retry = { code: error.code, message: error.message };
+              this.lastRetry = retry;
+            } else fail(error);
             return;
           }
           if (method === 'item/agentMessage/delta' && typeof params.delta === 'string') {
@@ -430,17 +454,28 @@ export class CodexProvider implements ModelProvider {
             finishTurn(params.turn as CodexTurn | undefined);
           }
         });
+        onAbort = () =>
+          fail(
+            new DomainError('generation_cancelled', '已停止這段回答，可使用原上下文重試。', 499),
+          );
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
         stage = 'turn/start';
         void this.rpc
           .request('turn/start', {
             threadId,
-            ...(this.reasoningEffort !== null ? { effort: this.reasoningEffort } : {}),
+            ...(effort !== null ? { effort } : {}),
             input: [{ type: 'text', text: modelInput(pkg), text_elements: [] }],
             environments: [],
             outputSchema: z.toJSONSchema(AnswerSchema),
           })
           .then((response) => {
             const turn = (response as { turn?: CodexTurn } | undefined)?.turn;
+            turnId = turn?.id || turnId;
+            if (needsStop) void interruptOwnTurn();
             if (turn && ['completed', 'failed', 'interrupted'].includes(turn.status || ''))
               finishTurn(turn);
           })
@@ -448,12 +483,14 @@ export class CodexProvider implements ModelProvider {
             fail(error instanceof DomainError ? error : codexError(error), 'turn/start'),
           );
       });
+      signal?.throwIfAborted();
       const result = validateAnswer(JSON.parse(answer), pkg);
       completed = true;
       return result;
     } catch (error) {
-      const failure =
-        error instanceof DomainError
+      const failure = signal?.aborted
+        ? new DomainError('generation_cancelled', '已停止這段回答，可使用原上下文重試。', 499)
+        : error instanceof DomainError
           ? error
           : new DomainError('codex_invalid_response', 'Codex 未返回有效回答，請重試。', 502);
       this.lastFailure = {
@@ -467,19 +504,19 @@ export class CodexProvider implements ModelProvider {
     } finally {
       clearTimeout(timer);
       unsubscribe();
-      // Unload an ephemeral thread, also stopping any work left after timeout.
-      if (threadId && !completed) await this.rpc.close();
-      if (threadId && completed) {
-        try {
-          await this.rpc.request('thread/unsubscribe', { threadId });
-        } catch {
-          await this.rpc.close();
-        }
+      signal?.removeEventListener('abort', onAbort);
+      needsStop = !completed;
+      // Stop/unload this ephemeral thread only. A failure or cancellation must
+      // never close the shared app-server while other conversations are running.
+      if (threadId && !connectionLost && !this.closed) {
+        if (needsStop) await interruptOwnTurn();
+        await this.rpc.request('thread/unsubscribe', { threadId }).catch(() => {});
       }
-      this.generating = false;
+      this.generating--;
     }
   }
   close() {
+    this.closed = true;
     this.unsubscribe();
     return this.rpc.close();
   }

@@ -230,7 +230,8 @@ export class CodexRpc implements CodexConnection {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(unavailable());
-        this.close();
+        // One slow request must not disconnect other active threads.
+        if (method === 'initialize') void this.close();
       }, 30_000);
       this.pending.set(id, { resolve: (value) => resolve(value as T), reject, timer });
       try {

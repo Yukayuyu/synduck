@@ -171,6 +171,7 @@ interface Props {
   traceEpoch: number;
   onTraceCount: (count: number) => void;
   locked: boolean;
+  busyNodeIds: string[];
   onDelete: (node: CanvasNode) => void;
   onRename: (node: CanvasNode) => void;
   onBranch: (node: CanvasNode) => void;
@@ -196,6 +197,7 @@ export function Canvas({
   traceEpoch,
   onTraceCount,
   locked,
+  busyNodeIds,
   onDelete,
   onRename,
   onBranch,
@@ -397,7 +399,7 @@ export function Canvas({
         {
           label: '重新命名',
           icon: <Pencil size={16} />,
-          disabled: locked,
+          disabled: locked || busyNodeIds.includes(menuNode.id),
           run: () => onRename(menuNode),
         },
         {
@@ -482,7 +484,7 @@ export function Canvas({
           icon: <Trash2 size={16} />,
           divider: true,
           danger: true,
-          disabled: locked,
+          disabled: locked || busyNodeIds.includes(menuNode.id),
           run: () => onDelete(menuNode),
         },
       ]
@@ -543,7 +545,11 @@ export function Canvas({
           const node = state.nodes.find(
             (node) => node.id === selectedNodes[0].id && node.visibility !== 'hidden',
           );
-          if (node && ['Delete', 'Backspace', 'F2'].includes(event.key)) {
+          if (
+            node &&
+            !busyNodeIds.includes(node.id) &&
+            ['Delete', 'Backspace', 'F2'].includes(event.key)
+          ) {
             event.preventDefault();
             if (event.key === 'F2') onRename(node);
             else onDelete(node);

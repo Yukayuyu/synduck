@@ -193,8 +193,19 @@ export class Store {
       const snapshot = this.snapshot();
       const node = snapshot.nodes.find((n) => n.id === nodeId);
       if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
-      if (snapshot.turns.some((turn) => turn.status === 'streaming'))
-        throw new DomainError('generation_active', '請等回答完成後再刪除或還原卡片。', 409);
+      if (
+        snapshot.turns.some(
+          (turn) =>
+            turn.status === 'streaming' &&
+            ((node.ref_type === 'conversation' && turn.conversation_id === node.ref_id) ||
+              (node.ref_type === 'turn' && turn.id === node.ref_id)),
+        )
+      )
+        throw new DomainError(
+          'generation_active',
+          '請等這段對話的回答完成後再刪除或還原卡片。',
+          409,
+        );
       if ((node.visibility === 'hidden') === deleted) return node;
       const position = deleted
         ? { x: node.x, y: node.y }
@@ -222,8 +233,15 @@ export class Store {
       if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
       if (node.visibility === 'hidden')
         throw new DomainError('deleted_node', '請先從回收桶還原卡片。', 409);
-      if (snapshot.turns.some((turn) => turn.status === 'streaming'))
-        throw new DomainError('generation_active', '請等回答完成後再重新命名。', 409);
+      if (
+        snapshot.turns.some(
+          (turn) =>
+            turn.status === 'streaming' &&
+            ((node.ref_type === 'conversation' && turn.conversation_id === node.ref_id) ||
+              (node.ref_type === 'turn' && turn.id === node.ref_id)),
+        )
+      )
+        throw new DomainError('generation_active', '請等這段對話的回答完成後再重新命名。', 409);
       const updated = NodeSchema.parse({
         ...node,
         title: title.trim(),

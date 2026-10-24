@@ -17,7 +17,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
-import { api, streamAnswer, type ClientState } from './api';
+import { api, ApiError, streamAnswer, type ClientState } from './api';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
 import { Focus, type SelectedText, type SourceHighlight } from './Focus';
@@ -31,6 +31,18 @@ import { TrashDialog } from './TrashDialog';
 import './styles.css';
 import './canvas-first.css';
 
+interface GenerationJob {
+  prompt: string;
+  text: string;
+  retryTurnId: string | null;
+  contextSetId: string | null;
+  turnId?: string;
+  controller: AbortController;
+}
+interface RequestError {
+  message: string;
+  contextSetId: string | null;
+}
 export default function App() {
   const [state, setState] = useState<ClientState | null>(null);
   const [error, setError] = useState('');
@@ -42,14 +54,27 @@ export default function App() {
   const [inspected, setInspected] = useState<{ pkg: ContextPackage; historical: boolean } | null>(
     null,
   );
-  const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState({
-    conversationId: '',
-    text: '',
-    prompt: '',
-    retryTurnId: null as string | null,
-    contextSetId: null as string | null,
-  });
+  const [jobs, setJobs] = useState<Record<string, GenerationJob>>({});
+  const jobsRef = useRef<Record<string, GenerationJob>>({});
+  const [requestErrors, setRequestErrors] = useState<Record<string, RequestError>>({});
+  const streamingTurns = state?.turns.filter((turn) => turn.status === 'streaming') || [];
+  const streamingConversations = new Set(streamingTurns.map((turn) => turn.conversation_id));
+  const streamingTurnIds = new Set(streamingTurns.map((turn) => turn.id));
+  const runningConversations = new Set([...Object.keys(jobs), ...streamingConversations]);
+  const busy = runningConversations.size > 0;
+  const remoteGeneration = streamingTurns.some((turn) => !jobs[turn.conversation_id]);
+  const conversationBusy = (id: string) => !!jobsRef.current[id] || streamingConversations.has(id);
+  const nodeBusy = (node: CanvasNode) =>
+    node.ref_type === 'conversation'
+      ? conversationBusy(node.ref_id)
+      : node.ref_type === 'turn' && streamingTurnIds.has(node.ref_id);
+  const updateJob = (id: string, job?: GenerationJob) => {
+    const next = { ...jobsRef.current };
+    if (job) next[id] = job;
+    else delete next[id];
+    jobsRef.current = next;
+    setJobs(next);
+  };
   const [locate, setLocate] = useState<{ id: string; tick: number } | null>(null);
   const [highlight, setHighlight] = useState<SourceHighlight | null>(null);
   const [newDialog, setNewDialog] = useState(false);
@@ -81,23 +106,31 @@ export default function App() {
   } | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
-  const generationLock = useRef(false);
-  const directSendLock = useRef(false);
+  const activeRef = useRef(activeId);
+  activeRef.current = activeId;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const refreshSequence = useRef(0);
+  const appliedRefresh = useRef(0);
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
     const s = await api<ClientState>('/state');
-    setState(s);
+    if (sequence >= appliedRefresh.current) {
+      appliedRefresh.current = sequence;
+      setState(s);
+    }
     return s;
   }, []);
   useEffect(() => {
     void refresh().catch((e) => setError(e.message));
   }, [refresh]);
   useEffect(() => {
-    if (!state?.turns.some((t) => t.status === 'streaming') || busy) return;
+    if (!remoteGeneration) return;
     const timer = setInterval(() => {
       void refresh().catch((e) => setError(e.message));
     }, 1500);
     return () => clearInterval(timer);
-  }, [state, busy, refresh]);
+  }, [remoteGeneration, refresh]);
   const fail = useCallback(
     (error: unknown) => setError(error instanceof Error ? error.message : '操作失败'),
     [],
@@ -164,7 +197,7 @@ export default function App() {
     }
   };
   const deleteCard = async (node: CanvasNode) => {
-    if (cardActionBusy || busy) return;
+    if (cardActionBusy || nodeBusy(node)) return;
     setCardActionBusy(true);
     try {
       await api('/nodes/' + encodeURIComponent(node.id), {}, 'DELETE');
@@ -197,7 +230,7 @@ export default function App() {
     if (input instanceof HTMLTextAreaElement) input.focus({ preventScroll: true });
   };
   const restoreCard = async (id: string) => {
-    if (cardActionBusy || busy) return;
+    if (cardActionBusy) return;
     setCardActionBusy(true);
     try {
       const { node } = await api<{ node: CanvasNode }>(
@@ -296,73 +329,123 @@ export default function App() {
       fail(e);
     }
   };
-  const generate = async (retryId?: string, prepared?: ContextPackage) => {
-    const selectedPackage = prepared || preview;
-    if (!retryId && !selectedPackage) return;
-    if (generationLock.current) return;
-    generationLock.current = true;
-    const pkg = retryId
-      ? state?.packages.find(
-          (p) =>
-            p.context_set_id === state.turns.find((t) => t.id === retryId)?.input_context_set_id,
-        )
-      : selectedPackage;
-    const targetConversation = retryId
-      ? state?.turns.find((t) => t.id === retryId)?.conversation_id || conversationId
-      : conversationId;
-    setBusy(true);
-    setPanel(null);
-    const pendingInput = {
-      conversationId: targetConversation,
-      prompt: pkg?.current_prompt || '',
-      retryTurnId: retryId ?? null,
-      contextSetId: pkg?.context_set_id ?? null,
+  const generate = async (targetConversation: string, retryId?: string, direct = false) => {
+    const retryTurn = state?.turns.find((turn) => turn.id === retryId);
+    let pkg = retryId
+      ? state?.packages.find((p) => p.context_set_id === retryTurn?.input_context_set_id)
+      : direct
+        ? undefined
+        : preview;
+    if (!targetConversation || conversationBusy(targetConversation) || (!direct && !pkg)) return;
+    const submittedPrompt = prompts[targetConversation] || '';
+    if (direct && !submittedPrompt.trim()) return;
+    const submittedSelection = selected;
+    const targetNodeId = state?.nodes.find(
+      (n) => n.ref_type === 'conversation' && n.ref_id === targetConversation,
+    )?.id;
+    const requestId = crypto.randomUUID();
+    const job: GenerationJob = {
+      prompt: pkg?.current_prompt || submittedPrompt.trim(),
+      text: '',
+      retryTurnId: retryId || null,
+      contextSetId: pkg?.context_set_id || `direct-${requestId}`,
+      controller: new AbortController(),
     };
-    setDraft({ ...pendingInput, text: '' });
-    setError('');
+    let started = false;
+    updateJob(targetConversation, job);
+    setRequestErrors((previous) => {
+      const next = { ...previous };
+      delete next[targetConversation];
+      return next;
+    });
+    setPanel(null);
     try {
       await streamAnswer(
-        retryId ? '/retry' : '/answer',
-        retryId ? { turn_id: retryId } : { context_set_id: selectedPackage!.context_set_id },
-        (text) => setDraft({ ...pendingInput, text }),
+        retryId ? '/retry' : direct ? '/send' : '/answer',
+        retryId
+          ? { turn_id: retryId }
+          : direct
+            ? {
+                request_id: requestId,
+                conversation_id: targetConversation,
+                prompt: submittedPrompt,
+                selected_node_ids: submittedSelection,
+                budget: { ...DEFAULT_BUDGET, target_context_tokens: budget },
+              }
+            : { context_set_id: pkg!.context_set_id },
+        (text) => {
+          job.text = text;
+          updateJob(targetConversation, { ...job });
+        },
+        {
+          signal: job.controller.signal,
+          onStarted: (event) => {
+            started = true;
+            job.turnId = event.turn_id;
+            job.contextSetId = event.context_set_id;
+            pkg = event.package || pkg;
+            updateJob(targetConversation, { ...job });
+            void refresh().catch(fail);
+          },
+        },
       );
-      setPrompts((p) => ({ ...p, [targetConversation]: '' }));
-      setSelected([]);
-      if (pkg) setInspected({ pkg, historical: true });
-    } catch (e) {
-      fail(e);
+      if (!retryId)
+        setPrompts((previous) =>
+          previous[targetConversation] === submittedPrompt
+            ? { ...previous, [targetConversation]: '' }
+            : previous,
+        );
+      if (activeRef.current === targetNodeId && selectedRef.current === submittedSelection)
+        setSelected([]);
+      if (pkg)
+        setInspected((previous) =>
+          previous?.pkg.context_set_id === pkg!.context_set_id
+            ? { pkg: pkg!, historical: true }
+            : previous,
+        );
+    } catch (error) {
+      const message = job.controller.signal.aborted
+        ? '已停止這段回答，可使用原上下文重試。'
+        : error instanceof Error
+          ? error.message
+          : '生成失敗';
+      setRequestErrors((previous) => ({
+        ...previous,
+        [targetConversation]: { message, contextSetId: job.contextSetId },
+      }));
+      if (error instanceof ApiError && error.contextPackage && activeRef.current === targetNodeId) {
+        pkg = error.contextPackage;
+        setPreview(pkg);
+        setInspected({ pkg, historical: false });
+        setPanel('context');
+      }
     } finally {
       try {
         await refresh();
-      } catch (e) {
-        fail(e);
+      } catch (error) {
+        fail(error);
       } finally {
-        // Keep the visible exchange until its persisted replacement is ready.
-        generationLock.current = false;
-        setBusy(false);
-        setDraft({
-          conversationId: '',
-          text: '',
-          prompt: '',
-          retryTurnId: null,
-          contextSetId: null,
-        });
-        setPreview(null);
+        updateJob(targetConversation);
+        setPreview((previous) =>
+          started && previous?.context_set_id === job.contextSetId ? null : previous,
+        );
       }
     }
   };
-  const sendDirect = async () => {
-    if (generationLock.current || directSendLock.current || busy || !prompt.trim()) return;
-    directSendLock.current = true;
-    setBusy(true);
-    try {
-      const pkg = await compile(false);
-      if (pkg?.sendable) await generate(undefined, pkg);
-      else if (pkg) setPanel('context');
-    } finally {
-      directSendLock.current = false;
-      setBusy(false);
-    }
+  const cancel = async (targetConversation: string) => {
+    const job = jobsRef.current[targetConversation];
+    const turnId =
+      job?.turnId ||
+      state?.turns.find(
+        (turn) => turn.conversation_id === targetConversation && turn.status === 'streaming',
+      )?.id;
+    if (turnId) {
+      try {
+        await api('/answers/' + encodeURIComponent(turnId) + '/cancel', {});
+      } catch (error) {
+        fail(error);
+      }
+    } else job?.controller.abort();
   };
   if (!state)
     return (
@@ -412,6 +495,12 @@ export default function App() {
           </strong>
           <span className="board-divider" />
           <span className="workspace-name">{state.workspace.name}</span>
+          {busy && (
+            <span className="output-status generation-count" role="status">
+              <LoaderCircle className="spin" size={12} />
+              {runningConversations.size} 段回答生成中
+            </span>
+          )}
         </div>
         <div className="board-menu">
           <LocalControl onOpen={() => setLocalDialog(true)} />
@@ -461,7 +550,8 @@ export default function App() {
             traceEpoch={traceEpoch}
             onTraceCount={setTraceCount}
             onOpenTrace={setTraceId}
-            locked={busy || cardActionBusy}
+            locked={cardActionBusy}
+            busyNodeIds={state.nodes.filter(nodeBusy).map((node) => node.id)}
             onDelete={requestDelete}
             onRename={(node) => {
               setRenameTarget(node);
@@ -503,13 +593,25 @@ export default function App() {
                 node={node}
                 active={node.id === activeId}
                 inputReady={ready}
-                locked={busy}
+                locked={conversationBusy(node.ref_id)}
                 prompt={prompts[node.ref_id] || ''}
                 budget={budget}
                 preview={node.id === activeId ? preview : null}
-                busy={busy && draft.conversationId === node.ref_id}
-                draft={draft.conversationId === node.ref_id ? draft.text : ''}
-                pendingInput={busy && draft.conversationId === node.ref_id ? draft : null}
+                busy={conversationBusy(node.ref_id)}
+                draft={jobs[node.ref_id]?.text || ''}
+                pendingInput={jobs[node.ref_id] || null}
+                requestError={
+                  state.turns.some(
+                    (turn) =>
+                      turn.conversation_id === node.ref_id &&
+                      turn.input_context_set_id === requestErrors[node.ref_id]?.contextSetId &&
+                      turn.status === 'error' &&
+                      turn.error === requestErrors[node.ref_id]?.message,
+                  )
+                    ? ''
+                    : requestErrors[node.ref_id]?.message || ''
+                }
+                onCancel={() => void cancel(node.ref_id)}
                 highlight={node.id === activeId ? highlight : null}
                 onOpen={() => {
                   open(node);
@@ -528,8 +630,8 @@ export default function App() {
                   invalidate();
                 }}
                 onCompile={() => void compile()}
-                onSend={() => void generate()}
-                onSendDirect={() => void sendDirect()}
+                onSend={() => void generate(node.ref_id)}
+                onSendDirect={() => void generate(node.ref_id, undefined, true)}
                 onExcerpt={(s, b) => void excerpt(s, b)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
@@ -537,7 +639,7 @@ export default function App() {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
                 }}
-                onRetry={(id) => void generate(id)}
+                onRetry={(id) => void generate(node.ref_id, id)}
               />
             )}
           />
@@ -687,6 +789,9 @@ export default function App() {
                         <MessageSquare size={14} />
                       )}
                       <span>{c.title}</span>
+                      {conversationBusy(c.id) && (
+                        <LoaderCircle className="spin" size={12} aria-label="生成中" />
+                      )}
                     </button>
                   ))}
               </nav>
@@ -701,7 +806,7 @@ export default function App() {
         <div className="canvas-undo" role="status">
           <span>已刪除「{lastDeleted.title}」</span>
           <button
-            disabled={busy || cardActionBusy}
+            disabled={cardActionBusy}
             onClick={() => {
               void restoreCard(lastDeleted.id);
             }}
@@ -722,7 +827,7 @@ export default function App() {
         <TrashDialog
           state={state}
           target={trashTarget}
-          busy={busy || cardActionBusy}
+          busy={cardActionBusy}
           onRestore={restoreCard}
           onClose={() => setTrashOpen(false)}
         />
@@ -740,7 +845,7 @@ export default function App() {
             }}
             onSubmit={(event) => {
               event.preventDefault();
-              if (busy || cardActionBusy) return;
+              if (nodeBusy(renameTarget) || cardActionBusy) return;
               setCardActionBusy(true);
               void api('/nodes/' + encodeURIComponent(renameTarget.id) + '/rename', {
                 title: renameTitle.trim(),
@@ -773,7 +878,10 @@ export default function App() {
               >
                 取消
               </button>
-              <button className="primary" disabled={busy || cardActionBusy || !renameTitle.trim()}>
+              <button
+                className="primary"
+                disabled={nodeBusy(renameTarget) || cardActionBusy || !renameTitle.trim()}
+              >
                 儲存名稱
               </button>
             </div>
@@ -803,7 +911,7 @@ export default function App() {
               </button>
               <button
                 className="primary danger"
-                disabled={busy || cardActionBusy}
+                disabled={nodeBusy(pendingDelete) || cardActionBusy}
                 onClick={() => {
                   void deleteCard(pendingDelete);
                 }}
@@ -886,7 +994,8 @@ export default function App() {
               <li>
                 <MessageSquare size={18} />
                 <span>
-                  <strong>提出一个问题</strong>雙擊畫布空白處建立對話；回答會直接出現在卡片裡。
+                  <strong>提出一个问题</strong>
+                  雙擊畫布空白處建立對話；不同對話可以同時生成，各自停止。同一段對話依序提問。
                 </span>
               </li>
               <li>
@@ -922,6 +1031,7 @@ export default function App() {
             setActiveId(null);
             setSelected([]);
             setPrompts({});
+            setRequestErrors({});
             setInspected(null);
             setHighlight(null);
             setLocate(null);

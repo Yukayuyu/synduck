@@ -57,13 +57,15 @@ export class ProviderRegistry implements ModelProvider {
   get model() {
     return this.providers[this.mode].model;
   }
-  generate(pkg: ContextPackage, onDraft?: (text: string) => void) {
+  generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
     this.active++;
     const controller = new AbortController();
     this.controllers.add(controller);
+    const selectedProvider = this.providers[this.mode];
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const operation = (async () => {
       try {
-        return await this.providers[this.mode].generate(pkg, onDraft, controller.signal);
+        return await selectedProvider.generate(pkg, onDraft, combined);
       } finally {
         this.active--;
         this.controllers.delete(controller);

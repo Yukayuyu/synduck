@@ -210,15 +210,20 @@ test('direct send keeps a blocked draft and opens the context explanation withou
   await editor.fill('Keep this draft');
   await card.getByText('上下文預算', { exact: true }).click();
   await card.getByLabel('上下文预算', { exact: true }).selectOption('2000');
-  let answerRequests = 0;
-  page.on('request', (request) => {
-    if (request.url().endsWith('/api/answer')) answerRequests++;
-  });
+  const rejected = page.waitForResponse(
+    (response) => response.url().endsWith('/api/send') && response.request().method() === 'POST',
+  );
   await card.getByRole('button', { name: '傳送', exact: true }).click();
+  expect((await rejected).status()).toBe(422);
   await expect(page.getByText('需处理后才能发送', { exact: true })).toBeVisible();
   await expect(editor).toHaveValue('Keep this draft');
   await expect(editor).not.toHaveAttribute('readonly', '');
-  expect(answerRequests).toBe(0);
+  const after = await (await request.get('/api/state')).json();
+  expect(
+    after.turns.filter(
+      (turn: { conversation_id: string }) => turn.conversation_id === target.conversation.id,
+    ),
+  ).toEqual([]);
   await request.post('/api/context-control', { data: { node_id: root.node.id, action: 'unpin' } });
 });
 

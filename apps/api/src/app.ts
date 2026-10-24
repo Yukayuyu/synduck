@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import { z } from 'zod';
 import {
   CreateConversationSchema,
@@ -9,6 +9,8 @@ import {
   ContextStateSchema,
   Id,
   type ContextSet,
+  type ContextPackage,
+  type Turn,
 } from '@acc/domain';
 import {
   Store,
@@ -40,6 +42,7 @@ export function createApp(
   } = {},
 ) {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
+  const liveAnswers = new Map<string, AbortController>();
   registerAccess(app, options.access);
   registerRuntime(app, store, options.local, options.updates);
   const idle = () => {
@@ -206,8 +209,7 @@ export function createApp(
       return { ok: true };
     });
   });
-  app.post('/api/compile', async (request) => {
-    const input = CompileRequestSchema.parse(request.body);
+  const compileInput = (input: z.infer<typeof CompileRequestSchema>, contextId: string = id()) => {
     const s = store.snapshot();
     const node = s.nodes.find(
       (n) => n.ref_type === 'conversation' && n.ref_id === input.conversation_id,
@@ -216,7 +218,7 @@ export function createApp(
     if (node.visibility === 'hidden')
       throw new DomainError('deleted_node', '請先從回收桶還原對話，再繼續提問。', 409);
     const set: ContextSet = {
-      id: id(),
+      id: contextId,
       workspace_id: s.workspace.id,
       conversation_id: input.conversation_id,
       target_turn_id: null,
@@ -234,14 +236,24 @@ export function createApp(
     const pkg = compileContext(s, set);
     store.saveContext(set, pkg);
     return { context_set: set, package: pkg };
-  });
-  app.post('/api/answer', async (request, reply) => {
-    const { context_set_id } = z.object({ context_set_id: Id }).strict().parse(request.body);
-    const { turn, pkg } = store.beginAnswer(
-      context_set_id,
-      provider.name,
-      provider.model || 'unconfigured',
-    );
+  };
+  app.post('/api/compile', async (request) =>
+    compileInput(CompileRequestSchema.parse(request.body)),
+  );
+  const streamGeneration = async (
+    turn: Turn,
+    pkg: ContextPackage,
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => {
+    const controller = new AbortController();
+    liveAnswers.set(turn.id, controller);
+    let settled = false;
+    const disconnected = () => {
+      if (!settled) controller.abort();
+    };
+    request.raw.once('aborted', disconnected);
+    reply.raw.once('close', disconnected);
     reply.hijack();
     reply.raw.writeHead(200, {
       'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -251,22 +263,82 @@ export function createApp(
     const emit = (event: object) => {
       if (!reply.raw.destroyed) reply.raw.write(`${JSON.stringify(event)}\n`);
     };
-    emit({ type: 'started', turn_id: turn.id, context_set_id: pkg.context_set_id });
+    emit({ type: 'started', turn_id: turn.id, context_set_id: pkg.context_set_id, package: pkg });
     try {
-      const answer = await provider.generate(pkg, (text) => emit({ type: 'draft', text }));
+      const answer = await provider.generate(
+        pkg,
+        (text) => emit({ type: 'draft', text }),
+        controller.signal,
+      );
+      if (controller.signal.aborted)
+        throw new DomainError('generation_cancelled', '已停止這段回答，可使用原上下文重試。', 499);
       store.finishAnswer(turn.id, answer);
       emit({ type: 'complete', turn_id: turn.id });
     } catch (error) {
-      const message = error instanceof DomainError ? error.message : '生成失败，可重试。';
+      const cancelled = controller.signal.aborted;
+      const message = cancelled
+        ? '已停止這段回答，可使用原上下文重試。'
+        : error instanceof DomainError
+          ? error.message
+          : '生成失败，可重试。';
       store.failAnswer(turn.id, message);
       emit({
         type: 'error',
-        code: error instanceof DomainError ? error.code : 'generation_failed',
+        code: cancelled
+          ? 'generation_cancelled'
+          : error instanceof DomainError
+            ? error.code
+            : 'generation_failed',
         message,
       });
     } finally {
+      settled = true;
+      liveAnswers.delete(turn.id);
+      request.raw.off('aborted', disconnected);
+      reply.raw.off('close', disconnected);
       reply.raw.end();
     }
+  };
+  app.post('/api/answers/:id/cancel', async (request) => {
+    const { id: turnId } = z.object({ id: Id }).parse(request.params);
+    const turn = store.snapshot().turns.find((t) => t.id === turnId);
+    if (!turn || turn.actor !== 'assistant')
+      throw new DomainError('missing_turn', '找不到這段回答。', 404);
+    const controller = liveAnswers.get(turnId);
+    if (controller) controller.abort();
+    return { ok: true, already_finished: !controller };
+  });
+  app.post('/api/answer', async (request, reply) => {
+    const { context_set_id } = z.object({ context_set_id: Id }).strict().parse(request.body);
+    const { turn, pkg } = store.beginAnswer(
+      context_set_id,
+      provider.name,
+      provider.model || 'unconfigured',
+    );
+    return streamGeneration(turn, pkg, request, reply);
+  });
+  app.post('/api/send', async (request, reply) => {
+    const input = CompileRequestSchema.extend({ request_id: z.string().uuid() })
+      .strict()
+      .parse(request.body);
+    // Direct sends compile and claim their immutable input in the same SQLite
+    // transaction. Unrelated concurrent completions cannot invalidate the gap
+    // between preview and send; explicitly previewed /answer keeps that check.
+    const result = store.transaction(() => {
+      const contextId = `direct-${input.request_id}`;
+      if (store.snapshot().context_sets.some((set) => set.id === contextId))
+        throw new DomainError('already_used', '這個傳送請求已處理，請勿重複提交。', 409);
+      const compiled = compileInput(input, contextId);
+      if (!compiled.package.sendable) return { blocked: compiled.package };
+      return store.beginAnswer(contextId, provider.name, provider.model || 'unconfigured');
+    });
+    if ('blocked' in result)
+      return reply.code(422).send({
+        error: 'context_blocked',
+        message: '上下文存在阻塞问题，请先处理',
+        package: result.blocked,
+      });
+    return streamGeneration(result.turn, result.pkg, request, reply);
   });
   app.post('/api/retry', async (request, reply) => {
     const { turn_id } = z.object({ turn_id: Id }).strict().parse(request.body);
@@ -314,29 +386,7 @@ export function createApp(
       store.bump();
       return { turn, pkg };
     });
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      'Content-Type': 'application/x-ndjson; charset=utf-8',
-      'Cache-Control': 'no-store',
-    });
-    const emit = (event: object) => {
-      if (!reply.raw.destroyed) reply.raw.write(`${JSON.stringify(event)}\n`);
-    };
-    try {
-      const answer = await provider.generate(pkg, (text) => emit({ type: 'draft', text }));
-      store.finishAnswer(turn.id, answer);
-      emit({ type: 'complete' });
-    } catch (error) {
-      const message = error instanceof DomainError ? error.message : '生成失败，可重试。';
-      store.failAnswer(turn.id, message);
-      emit({
-        type: 'error',
-        code: error instanceof DomainError ? error.code : 'generation_failed',
-        message,
-      });
-    } finally {
-      reply.raw.end();
-    }
+    return streamGeneration(turn, pkg, request, reply);
   });
   app.get('/api/project/export', async (_request, reply) => {
     const project = exportProject(store);

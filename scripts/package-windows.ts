@@ -97,6 +97,7 @@ for (const name of [
   'mcp-desktop-traces.md',
   'github-updates.md',
   'public-readiness.md',
+  'concurrent-conversations.md',
 ])
   files[`app/docs/${name}`] = new Uint8Array(await fs.readFile(join(root, 'docs', name)));
 files['app/NOTICE.txt'] = new TextEncoder().encode(

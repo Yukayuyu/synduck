@@ -47,6 +47,8 @@ interface Props {
   onSource: (excerpt: Excerpt) => void;
   onInspect: (pkg: ContextPackage) => void;
   onRetry: (turnId: string) => void;
+  onCancel: () => void;
+  requestError: string;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
@@ -81,6 +83,9 @@ export function Focus(props: Props) {
           <LoaderCircle className="spin" size={12} />
           生成中 · 尚未保存
         </span>
+        <button className="text-button" onClick={props.onCancel} aria-label="停止這段回答">
+          停止
+        </button>
       </div>
       <div className="message-text">{draft || '正在整理這個問題…'}</div>
     </article>
@@ -210,7 +215,6 @@ export function Focus(props: Props) {
               className="primary"
               aria-label="从摘录开始分支"
               onClick={() => props.onBranch(excerpt)}
-              disabled={locked}
             >
               <GitBranch size={14} />
               延伸提問
@@ -290,6 +294,13 @@ export function Focus(props: Props) {
                           <span className="output-status">
                             <LoaderCircle className="spin" size={12} />
                             生成中 · 尚未保存
+                            <button
+                              className="text-button"
+                              onClick={props.onCancel}
+                              aria-label="停止這段回答"
+                            >
+                              停止
+                            </button>
                           </span>
                         ) : (
                           turn.model_provider === 'demo' && (
@@ -331,7 +342,7 @@ export function Focus(props: Props) {
                             );
                           })}
                       {turn.status === 'error' && !generating && (
-                        <div className="generation-error">
+                        <div className="generation-error" role="alert">
                           <p>{turn.error}</p>
                           <button
                             className="text-button"
@@ -395,6 +406,11 @@ export function Focus(props: Props) {
                 </section>
               )}
           </div>
+          {props.requestError && (
+            <p className="generation-error" role="alert">
+              {props.requestError}
+            </p>
+          )}
           {selection &&
             createPortal(
               <div
@@ -405,7 +421,6 @@ export function Focus(props: Props) {
               >
                 <span>{selection.selector.exact.length} 字</span>
                 <button
-                  disabled={locked}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     props.onExcerpt(selection, false);
@@ -416,7 +431,6 @@ export function Focus(props: Props) {
                   摘录
                 </button>
                 <button
-                  disabled={locked}
                   aria-label="摘录并分支"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {

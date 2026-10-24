@@ -627,6 +627,7 @@
     width: 17px;
   }
   .workspace-name,
+  .generation-count,
   .board-divider,
   .board-menu > button[aria-label='使用帮助'] {
     display: none;

@@ -148,7 +148,7 @@ test('shows the submitted input beside the live output and retains the same focu
     await holdState;
     await route.continue();
   });
-  await page.route('**/api/answer', async (route) => {
+  await page.route('**/api/send', async (route) => {
     const response = await route.fetch();
     await hold;
     await route.fulfill({ response });

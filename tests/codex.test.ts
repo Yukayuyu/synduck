@@ -235,7 +235,11 @@ describe('ChatGPT through official Codex protocol', () => {
     expect(rpc.calls.at(-1)?.method).toBe('thread/unsubscribe');
     rpc.response = { ...answer, used_source_ids: ['invented'] };
     await expect(provider.generate(pkg)).rejects.toThrow('未提供的来源');
-    expect(rpc.closed).toBe(true);
+    expect(rpc.closed).toBe(false);
+    expect(rpc.calls).toContainEqual({
+      method: 'thread/unsubscribe',
+      params: { threadId: 'thread1' },
+    });
     provider.close();
   });
   it('rejects missing login, tool execution and interrupted turns', async () => {
@@ -285,7 +289,11 @@ describe('ChatGPT through official Codex protocol', () => {
         expect(JSON.stringify(provider.diagnostics())).not.toMatch(
           /sensitive-auth-token|private-provider-body/,
         );
-        expect(rpc.closed).toBe(true);
+        expect(rpc.closed).toBe(false);
+        expect(rpc.calls).toContainEqual({
+          method: 'thread/unsubscribe',
+          params: { threadId: 'thread1' },
+        });
       } finally {
         await provider.close();
       }
@@ -334,7 +342,11 @@ describe('ChatGPT through official Codex protocol', () => {
       await expect(provider.generate(pkg)).rejects.toMatchObject({
         code: 'codex_invalid_response',
       });
-      expect(rpc.closed).toBe(true);
+      expect(rpc.closed).toBe(false);
+      expect(rpc.calls).toContainEqual({
+        method: 'thread/unsubscribe',
+        params: { threadId: 'thread1' },
+      });
     } finally {
       await provider.close();
     }
@@ -775,4 +787,120 @@ describe('ChatGPT through official Codex protocol', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   }, 15000);
+});
+
+class ParallelCodex extends FakeCodex {
+  nextThread = 0;
+  started: string[] = [];
+  failUnsubscribe = false;
+  override async request<T>(method: string, params: object): Promise<T> {
+    if (method === 'thread/start') {
+      this.calls.push({ method, params });
+      return {
+        thread: { id: `parallel-${++this.nextThread}` },
+        model: (params as { model: string }).model,
+        instructionSources: [],
+      } as T;
+    }
+    if (method === 'turn/start') {
+      this.calls.push({ method, params });
+      const { threadId } = params as { threadId: string };
+      this.started.push(threadId);
+      const turn = { id: `turn-${threadId}`, status: 'inProgress', items: [] };
+      this.emit('turn/started', { threadId, turn });
+      return { turn } as T;
+    }
+    if (method === 'thread/unsubscribe' && this.failUnsubscribe) {
+      this.calls.push({ method, params });
+      throw new Error('unsubscribe failed');
+    }
+    return super.request<T>(method, params);
+  }
+  complete(threadId: string, text: string) {
+    this.emit('turn/completed', {
+      threadId,
+      turn: {
+        id: `turn-${threadId}`,
+        status: 'completed',
+        items: [
+          {
+            type: 'agentMessage',
+            phase: 'final_answer',
+            text: JSON.stringify({ ...answer, answer: text }),
+          },
+        ],
+      },
+    });
+  }
+}
+
+describe('parallel Codex threads', () => {
+  it.each(['cancel', 'tool failure', 'provider failure'] as const)(
+    'isolates %s and keeps the other thread alive, including unsubscribe errors',
+    async (failure) => {
+      const rpc = new ParallelCodex();
+      const provider = new CodexProvider(rpc, 'test-model');
+      const controller = new AbortController();
+      const draftsA: string[] = [];
+      const draftsB: string[] = [];
+      const first = provider.generate(pkg, (text) => draftsA.push(text), controller.signal);
+      const firstResult = first.catch((error: unknown) => error);
+      const second = provider.generate(
+        { ...pkg, context_set_id: 'ctx-b', current_prompt: 'Question B' },
+        (text) => draftsB.push(text),
+      );
+      try {
+        await vi.waitFor(() => expect(rpc.started).toHaveLength(2));
+        expect(provider.diagnostics()).toMatchObject({ generating: true, active_generations: 2 });
+        expect(() => provider.setSelection('new-model', null)).toThrow();
+        rpc.emit('item/agentMessage/delta', {
+          threadId: 'parallel-1',
+          delta: '{"answer":"Draft A',
+        });
+        rpc.emit('item/agentMessage/delta', {
+          threadId: 'parallel-2',
+          delta: '{"answer":"Draft B',
+        });
+        expect(draftsA.at(-1)).toBe('Draft A');
+        expect(draftsB.at(-1)).toBe('Draft B');
+        rpc.failUnsubscribe = true;
+        if (failure === 'cancel') controller.abort();
+        else if (failure === 'tool failure')
+          rpc.emit('item/started', { threadId: 'parallel-1', item: { type: 'commandExecution' } });
+        else
+          rpc.emit('error', {
+            threadId: 'parallel-1',
+            error: { codexErrorInfo: 'unauthorized' },
+            willRetry: false,
+          });
+        expect(await firstResult).toMatchObject({
+          code:
+            failure === 'cancel'
+              ? 'generation_cancelled'
+              : failure === 'tool failure'
+                ? 'codex_tool_blocked'
+                : 'codex_auth_expired',
+        });
+        expect(rpc.closed).toBe(false);
+        expect(provider.diagnostics()).toMatchObject({ generating: true, active_generations: 1 });
+        expect(() => provider.setSelection('new-model', null)).toThrow();
+        expect(rpc.calls.filter((c) => c.method === 'turn/interrupt')).toEqual([
+          {
+            method: 'turn/interrupt',
+            params: { threadId: 'parallel-1', turnId: 'turn-parallel-1' },
+          },
+        ]);
+        rpc.complete('parallel-2', 'Completed B');
+        expect(await second).toEqual({ ...answer, answer: 'Completed B' });
+        expect(provider.diagnostics()).toMatchObject({ generating: false, active_generations: 0 });
+        provider.setSelection('new-model', null);
+        expect(rpc.closed).toBe(false);
+      } finally {
+        rpc.complete('parallel-1', 'cleanup');
+        rpc.complete('parallel-2', 'cleanup');
+        await Promise.allSettled([first, second]);
+        await provider.close();
+      }
+    },
+  );
 });
