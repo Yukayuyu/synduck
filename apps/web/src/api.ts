@@ -3,6 +3,16 @@ import type { AppSnapshot, ContextPackage } from '@acc/domain';
 export type ClientState = AppSnapshot & {
   provider: { name: string; model: string; demo: boolean };
 };
+export function threadStatus(state: Pick<AppSnapshot, 'turns'>, conversationId: string) {
+  const latest = state.turns
+    .filter((t) => t.conversation_id === conversationId)
+    .reduce<
+      (typeof state.turns)[number] | undefined
+    >((last, turn) => (!last || turn.sequence > last.sequence ? turn : last), undefined);
+  if (latest?.status === 'streaming') return '生成中';
+  if (latest?.status === 'error') return '需重试';
+  return latest?.actor === 'assistant' && latest.status === 'complete' ? '已回答' : '待回答';
+}
 export class ApiError extends Error {
   constructor(
     message: string,

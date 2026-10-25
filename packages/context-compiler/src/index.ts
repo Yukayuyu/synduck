@@ -9,6 +9,7 @@ import {
   type ContextPackage,
   type ContextItem,
   type CanvasNode,
+  type ContextState,
 } from '@acc/domain';
 
 // UTF-8 bytes are deliberately conservative, including CJK and emoji.
@@ -39,8 +40,19 @@ export function excludedSources(snapshot: GraphSnapshot, excludedNodeIds: string
   const nodes = new Set([...excludedNodeIds, ...deletedNodes]);
   const blocks = new Set<string>();
   const derivedBlocks = new Set<string>();
-  for (const node of snapshot.nodes)
-    if (nodes.has(node.id)) blocksForNode(snapshot, node).forEach((id) => blocks.add(id));
+  for (const node of snapshot.nodes) {
+    if (!nodes.has(node.id)) continue;
+    const collection =
+      node.ref_type === 'excerpt'
+        ? snapshot.excerpts.find((e) => e.id === node.ref_id)?.collection_source_ids
+        : undefined;
+    if (collection) {
+      for (const id of collection) {
+        const excerpt = snapshot.excerpts.find((e) => e.id === id);
+        if (excerpt) blocks.add(excerpt.source_block_id);
+      }
+    } else blocksForNode(snapshot, node).forEach((id) => blocks.add(id));
+  }
   // Follow immutable inputs transitively; answers can paraphrase uncited inputs.
   let changed = true;
   while (changed) {
@@ -90,6 +102,9 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     omit(nodeId, deletedNodes.has(nodeId) ? 'deleted from canvas' : 'explicitly excluded');
   }
   const roles = new Map<string, ContextItem['role']>();
+  const explicitNodes = new Set([...set.selected_node_ids, ...set.pinned_node_ids]);
+  const collectionStates = new Map<string, ContextState>();
+  const collectionRoots = new Map<string, string>();
   const priorities: Record<ContextItem['role'], number> = {
     selected: 1,
     pinned: 0.98,
@@ -98,7 +113,38 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     related: 0.6,
     historical: 0.3,
   };
-  const add = (nodeId: string, role: ContextItem['role']) => {
+  const add = (nodeId: string, role: ContextItem['role'], expand = true) => {
+    const node = nodeById.get(nodeId);
+    const collection =
+      expand && node?.ref_type === 'excerpt'
+        ? excerptById.get(node.ref_id)?.collection_source_ids
+        : undefined;
+    if (collection) {
+      if (node?.context_state === 'rejected' && !explicitNodes.has(nodeId)) {
+        omit(nodeId, 'rejected collection by lifecycle policy');
+        return;
+      }
+      for (const id of collection) {
+        const member = snapshot.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === id);
+        if (member) {
+          if (explicitNodes.has(nodeId) || role === 'branch_origin') explicitNodes.add(member.id);
+          if (node && node.context_state !== 'active')
+            collectionStates.set(member.id, node.context_state);
+          collectionRoots.set(member.id, nodeId);
+          add(member.id, role, false);
+        } else {
+          blocked = true;
+          conflicts.push({
+            a: id,
+            b: nodeId,
+            type: 'missing_reference',
+            resolution: 'restore the collection source',
+            status: 'unresolved',
+          });
+        }
+      }
+      return;
+    }
     if (!roles.has(nodeId) || priorities[role] > priorities[roles.get(nodeId)!])
       roles.set(nodeId, role);
   };
@@ -110,6 +156,36 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     (n) => n.ref_type === 'excerpt' && n.ref_id === conversation?.branch_origin_excerpt_id,
   );
   if (origin) add(origin.id, 'branch_origin');
+  const forkSources = new Map<string, Set<string>>();
+  if (conversation?.fork_origin) {
+    for (const blockId of conversation.fork_origin.source_block_ids) {
+      const block = blockById.get(blockId);
+      const turn = snapshot.turns.find((t) => t.id === block?.turn_id);
+      const source = snapshot.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id,
+      );
+      if (source) {
+        const ids = forkSources.get(source.id) ?? new Set<string>();
+        ids.add(blockId);
+        forkSources.set(source.id, ids);
+        add(source.id, 'branch_origin');
+      } else {
+        blocked = true;
+        conflicts.push({
+          a: blockId,
+          b: null,
+          type: 'missing_reference',
+          resolution: 'restore the fork background',
+          status: 'unresolved',
+        });
+      }
+    }
+    for (const id of conversation.fork_origin.source_excerpt_ids) {
+      const source = snapshot.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === id);
+      if (source) add(source.id, 'branch_origin', false);
+      else blocked = true;
+    }
+  }
   // Only directly addressable excerpts are retrieved structurally. Traversing the
   // parent conversation would import unrelated siblings into a new branch.
   for (const edge of snapshot.edges) {
@@ -151,7 +227,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
   for (const [nodeId, originalRole] of roles) {
     if (explicitlyExcluded.has(nodeId)) continue;
     const node = nodeById.get(nodeId);
-    const explicit = originalRole === 'selected' || originalRole === 'pinned';
+    const explicit = explicitNodes.has(nodeId);
     if (!node || node.workspace_id !== set.workspace_id) {
       conflicts.push({
         a: nodeId,
@@ -164,18 +240,25 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       if (explicit || originalRole === 'current') blocked = true;
       continue;
     }
-    if (node.context_state === 'rejected' && !explicit) {
+    const state = collectionStates.get(nodeId) ?? node.context_state;
+    const isSuperseded =
+      superseded.has(nodeId) || superseded.has(collectionRoots.get(nodeId) ?? '');
+    if (state === 'rejected' && !explicit) {
       omit(nodeId, 'rejected by lifecycle policy');
       continue;
     }
-    const historical =
-      ['superseded', 'rejected'].includes(node.context_state) || superseded.has(node.id);
+    const historical = ['superseded', 'rejected'].includes(state) || isSuperseded;
     const role = historical ? 'historical' : originalRole;
     const score =
       priorities[originalRole] +
-      (node.context_state === 'confirmed' ? 0.02 : 0) -
-      (node.context_state === 'deprecated' ? 0.2 : 0);
-    const blockIds = blocksForNode(snapshot, node);
+      (state === 'confirmed' ? 0.02 : 0) -
+      (state === 'deprecated' ? 0.2 : 0);
+    const blockIds = blocksForNode(snapshot, node).filter(
+      (id) =>
+        originalRole !== 'branch_origin' ||
+        !forkSources.has(nodeId) ||
+        forkSources.get(nodeId)!.has(id),
+    );
     if (blockIds.length === 0 && node.ref_type !== 'conversation') {
       omit(nodeId, 'missing source');
       if (explicit) blocked = true;
@@ -226,7 +309,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
         actor: sourceTurn?.actor ?? null,
         sequence: sourceTurn?.sequence ?? null,
         role,
-        state: superseded.has(nodeId) ? 'superseded' : node.context_state,
+        state: isSuperseded ? 'superseded' : state,
         content,
         content_hash: hash(content),
         score,
@@ -260,8 +343,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       omit(item.node_id, 'duplicate source content', item.source_id);
       continue;
     }
-    const explicit =
-      set.selected_node_ids.includes(item.node_id) || set.pinned_node_ids.includes(item.node_id);
+    const explicit = explicitNodes.has(item.node_id);
     if (
       used + item.token_estimate > set.budget.target_context_tokens ||
       inputSize([...items, item]) > inputLimit

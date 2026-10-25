@@ -98,6 +98,8 @@ for (const name of [
   'github-updates.md',
   'public-readiness.md',
   'concurrent-conversations.md',
+  'thought-islands.md',
+  'ui-previews/thought-islands.png',
   'ui-styles.md',
   'ui-previews/arc.png',
   'ui-previews/paper.png',

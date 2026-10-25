@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   CreateConversationSchema,
   CreateExcerptSchema,
+  CreateForksSchema,
   CompileRequestSchema,
   DomainError,
   ViewportSchema,
@@ -129,6 +130,19 @@ export function createApp(
   app.post('/api/branches', async (request) =>
     store.branchExcerpt(z.object({ excerpt_id: Id }).strict().parse(request.body).excerpt_id),
   );
+  app.post('/api/forks', async (request) => ({
+    branches: store.createForks(CreateForksSchema.parse(request.body)),
+  }));
+  app.post('/api/excerpts/:id/sources', async (request) =>
+    store.addToCollection(
+      z.object({ id: Id }).parse(request.params).id,
+      CreateExcerptSchema.parse(request.body),
+    ),
+  );
+  app.delete('/api/excerpts/:id/sources/:sourceId', async (request) => {
+    const { id, sourceId } = z.object({ id: Id, sourceId: Id }).parse(request.params);
+    return store.removeCollectionSource(id, sourceId);
+  });
   app.delete('/api/nodes/:id', async (request) => ({
     node: store.setNodeDeleted(z.object({ id: Id }).parse(request.params).id, true),
   }));
@@ -150,6 +164,7 @@ export function createApp(
       .object({
         x: z.number().finite().optional(),
         y: z.number().finite().optional(),
+        collapsed: z.boolean().optional(),
         context_state: ContextStateSchema.optional(),
       })
       .strict()

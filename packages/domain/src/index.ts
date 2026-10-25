@@ -42,6 +42,19 @@ export const ConversationSchema = z.object({
   root_turn_id: Id.nullable(),
   summary_block_id: Id.nullable(),
   branch_origin_excerpt_id: Id.nullable(),
+  // A fork freezes its inherited source identities; later parent turns never leak in.
+  fork_origin: z
+    .object({
+      conversation_id: Id,
+      turn_id: Id.nullable(),
+      mode: z.enum(['fork', 'btw']),
+      request_id: z.string().uuid(),
+      initial_prompt: z.string().min(1).max(32000),
+      source_block_ids: z.array(Id).max(2000),
+      source_excerpt_ids: z.array(Id).max(200),
+    })
+    .strict()
+    .optional(),
   ...timestamps,
 });
 export const GraphProposalSchema = z
@@ -110,6 +123,9 @@ export const ExcerptSchema = z
     selector: TextSelectorSchema,
     snapshot_text: z.string().min(1),
     source_content_hash: Hash,
+    // Optional collection membership. Original quote provenance stays immutable,
+    // even when the anchor quote is removed from the current collection.
+    collection_source_ids: z.array(Id).min(1).max(200).optional(),
     title: z.string().max(160),
     created_by: z.enum(['human', 'ai', 'system']),
     created_at: Time,
@@ -347,6 +363,29 @@ export const CreateExcerptSchema = z
     branch: z.boolean().default(false),
   })
   .strict();
+export const CreateForksSchema = z
+  .object({
+    conversation_id: Id,
+    branches: z
+      .array(
+        z
+          .object({
+            request_id: z.string().uuid(),
+            mode: z.enum(['fork', 'btw']),
+            prompt: z.string().trim().min(1).max(32000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(8),
+  })
+  .strict();
+
+export function collectionSources(snapshot: Pick<GraphSnapshot, 'excerpts'>, excerpt: Excerpt) {
+  return (excerpt.collection_source_ids ?? [excerpt.id])
+    .map((id) => snapshot.excerpts.find((source) => source.id === id))
+    .filter((source): source is Excerpt => Boolean(source));
+}
 export const CompileRequestSchema = z
   .object({
     conversation_id: Id,

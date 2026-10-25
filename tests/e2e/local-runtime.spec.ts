@@ -68,7 +68,15 @@ test('background update notification preserves the editor and blocks install wit
       data: { title: '更新通知保持焦點', position: { x: -18000, y: -18000 } },
     })
   ).json();
-  await request.patch('/api/workspace', { data: { viewport: { x: 18080, y: 18080, zoom: 1 } } });
+  await request.patch('/api/workspace', {
+    data: {
+      viewport: {
+        x: 80 - created.node.x,
+        y: 100 - created.node.y,
+        zoom: 1,
+      },
+    },
+  });
   // Install before the component creates its interval so the existing poll is controlled.
   await page.clock.install();
   await page.goto('/');

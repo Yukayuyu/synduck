@@ -15,6 +15,7 @@ import {
   ContextPackageSchema,
   AnswerSchema,
   CreateExcerptSchema,
+  CreateForksSchema,
   DomainError,
   type Workspace,
   type Conversation,
@@ -332,7 +333,8 @@ export class Store {
   }
   private createNode(type: CanvasNode['type'], refId: string, title: string, x: number, y: number) {
     const height = type === 'conversation' ? 650 : 420;
-    ({ x, y } = this.vacantPosition(x, y, 360, height));
+    const width = type === 'conversation' ? 420 : 280;
+    ({ x, y } = this.vacantPosition(x, y, width, height));
     const at = now();
     const n: CanvasNode = {
       id: id(),
@@ -343,7 +345,7 @@ export class Store {
       title,
       x,
       y,
-      width: 360,
+      width,
       height,
       z_index: 0,
       collapsed: false,
@@ -357,7 +359,11 @@ export class Store {
     this.saveNode(n);
     return n;
   }
-  private structural(source: string, target: string, type: 'excerpt_from' | 'branch_from') {
+  private structural(
+    source: string,
+    target: string,
+    type: 'excerpt_from' | 'branch_from' | 'continue_from',
+  ) {
     const at = now();
     this.saveEdge({
       id: id(),
@@ -472,6 +478,135 @@ export class Store {
       });
       this.structural(node.id, result.node.id, 'branch_from');
       return result;
+    });
+  }
+  createForks(input: z.infer<typeof CreateForksSchema>) {
+    const request = CreateForksSchema.parse(input);
+    return this.transaction(() => {
+      const s = this.snapshot();
+      const parent = s.conversations.find((c) => c.id === request.conversation_id);
+      const parentNode = s.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === parent?.id,
+      );
+      if (!parent || !parentNode || parentNode.visibility === 'hidden')
+        throw new DomainError('missing_conversation', '找不到可分叉的对话', 404);
+      if (new Set(request.branches.map((b) => b.request_id)).size !== request.branches.length)
+        throw new DomainError('duplicate_request', '分支请求不能重复');
+      const turns = s.turns
+        .filter((t) => t.conversation_id === parent.id && t.status === 'complete')
+        .sort((a, b) => a.sequence - b.sequence);
+      const turnIds = new Set(turns.map((t) => t.id));
+      const origin = s.excerpts.find((e) => e.id === parent.branch_origin_excerpt_id);
+      const sourceBlocks = [
+        ...new Set([
+          ...(parent.fork_origin?.source_block_ids ?? []),
+          ...s.blocks.filter((b) => b.turn_id && turnIds.has(b.turn_id)).map((b) => b.id),
+        ]),
+      ];
+      const sourceExcerpts = [
+        ...new Set([
+          ...(parent.fork_origin?.source_excerpt_ids ?? []),
+          ...(origin ? (origin.collection_source_ids ?? [origin.id]) : []),
+        ]),
+      ];
+      if (sourceBlocks.length > 2000 || sourceExcerpts.length > 200)
+        throw new DomainError('fork_too_large', '背景过多，请先摘录需要的部分再分支。');
+      return request.branches.map((entry, index) => {
+        const existing = this.snapshot().conversations.find(
+          (c) => c.fork_origin?.request_id === entry.request_id,
+        );
+        if (existing) {
+          if (
+            existing.fork_origin?.conversation_id !== parent.id ||
+            existing.fork_origin.initial_prompt !== entry.prompt ||
+            existing.fork_origin.mode !== entry.mode
+          )
+            throw new DomainError('request_conflict', '此分支请求已用于其他内容。', 409);
+          const node = s.nodes.find(
+            (n) => n.ref_type === 'conversation' && n.ref_id === existing.id,
+          );
+          if (!node || node.visibility === 'hidden')
+            throw new DomainError('deleted_node', '分支已删除，请先还原。', 409);
+          return { conversation: existing, node };
+        }
+        const created = this.createConversation(entry.prompt.slice(0, 48), undefined, {
+          x: parentNode.x + 600,
+          y: parentNode.y + index * 820,
+        });
+        const conversation: Conversation = {
+          ...created.conversation,
+          fork_origin: {
+            conversation_id: parent.id,
+            turn_id: turns.at(-1)?.id ?? null,
+            mode: entry.mode,
+            request_id: entry.request_id,
+            initial_prompt: entry.prompt,
+            source_block_ids: sourceBlocks,
+            source_excerpt_ids: sourceExcerpts,
+          },
+        };
+        this.saveConversation(conversation);
+        this.structural(parentNode.id, created.node.id, 'continue_from');
+        return { ...created, conversation };
+      });
+    });
+  }
+  addToCollection(excerptId: string, input: z.input<typeof CreateExcerptSchema>) {
+    return this.transaction(() => {
+      const s = this.snapshot();
+      const anchor = s.excerpts.find((e) => e.id === excerptId);
+      const node = s.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === excerptId);
+      if (!anchor || !node || node.visibility === 'hidden')
+        throw new DomainError('missing_excerpt', '找不到汇合点', 404);
+      if (
+        s.excerpts.some((e) => e.id !== anchor.id && e.collection_source_ids?.includes(anchor.id))
+      )
+        throw new DomainError('nested_collection', '请加入已有的汇合点。');
+      const request = CreateExcerptSchema.parse({ ...input, branch: false });
+      const ids = anchor.collection_source_ids ?? [anchor.id];
+      const duplicate = s.excerpts.find(
+        (e) =>
+          ids.includes(e.id) &&
+          e.source_block_id === request.source_block_id &&
+          e.source_content_hash === request.source_content_hash &&
+          e.selector.start_char === request.selector.start_char &&
+          e.selector.end_char === request.selector.end_char,
+      );
+      // Validate source hashes even on an idempotent duplicate add.
+      const block = s.blocks.find((b) => b.id === request.source_block_id);
+      if (
+        !block ||
+        contentHash(block.text_content ?? '') !== request.source_content_hash ||
+        block.text_content?.slice(request.selector.start_char, request.selector.end_char) !==
+          request.selector.exact
+      )
+        throw new DomainError('stale_source', '来源已变化，请重新选择文字', 409);
+      if (duplicate) return { excerpt: anchor, node };
+      if (ids.length >= 200)
+        throw new DomainError('collection_full', '汇合点最多保留 200 处摘录。');
+      const source = this.createExcerpt(request);
+      const excerpt: Excerpt = { ...anchor, collection_source_ids: [...ids, source.excerpt.id] };
+      this.saveExcerpt(excerpt);
+      this.bump();
+      return { excerpt, node };
+    });
+  }
+  removeCollectionSource(excerptId: string, sourceId: string) {
+    return this.transaction(() => {
+      const s = this.snapshot();
+      const anchor = s.excerpts.find((e) => e.id === excerptId);
+      const node = s.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === excerptId);
+      if (!anchor || !node || node.visibility === 'hidden')
+        throw new DomainError('missing_excerpt', '找不到汇合点', 404);
+      const ids = anchor.collection_source_ids ?? [anchor.id];
+      if (!ids.includes(sourceId))
+        throw new DomainError('missing_source', '摘录不在此汇合点中。', 404);
+      if (ids.length === 1)
+        throw new DomainError('empty_collection', '请至少保留一处摘录，或删除整个汇合点。');
+      const excerpt = { ...anchor, collection_source_ids: ids.filter((id) => id !== sourceId) };
+      this.saveExcerpt(excerpt);
+      this.bump();
+      return { excerpt, node };
     });
   }
   appendTurn(

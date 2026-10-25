@@ -13,7 +13,7 @@
 | 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md) |
 | 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)             |
 
-**发布方案（0.5.3）：** 源码、Windows 安装包和更新清单统一放在 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。普通用户从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`，完整解压后运行 `Start-ContextCanvas.cmd`；安装和更新不需要 GitHub 账号或 token。首次 Release 附件就绪前可按下面的源码步骤运行。发布流程自动检查仓库公开状态、主分支 CI、版本和校验和，详见[发布说明](docs/github-updates.md#当前状态)。
+**发布方案：** 源码、Windows 安装包和更新清单统一放在 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。普通用户从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`，完整解压后运行 `Start-ContextCanvas.cmd`；安装和更新不需要 GitHub 账号或 token。首次 Release 附件就绪前可按下面的源码步骤运行。发布流程自动检查仓库公开状态、主分支 CI、版本和校验和，详见[发布说明](docs/github-updates.md#当前状态)。
 
 ## 从源码快速启动
 
@@ -92,3 +92,5 @@ pnpm test:portable
 ## 许可证
 
 项目代码采用 [MIT License](LICENSE)。第三方依赖和资产保留各自的许可证。`package.json` 的 `private: true` 只防止误发 npm 包，不控制 GitHub 的公开状态。
+
+0.6.0 支持话题分组、输入分叉与多来源摘录汇合，见[操作说明](docs/thought-islands.md)。

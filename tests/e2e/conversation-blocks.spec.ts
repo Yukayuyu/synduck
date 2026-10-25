@@ -102,7 +102,7 @@ test('keeps paired input/output closer than exchanges and preserves cross-paragr
     source_content_hash: state.blocks.find((b) => b.id === sourceId)!.content_hash,
   });
   const edge = page.locator('.relation-excerpt_from .react-flow__edge-path').last();
-  await expect(edge).toHaveCSS('stroke-dasharray', '3px, 4px');
+  await expect(edge).toHaveCSS('stroke-dasharray', 'none');
   await excerpt.getByRole('button', { name: '回到来源并高亮', exact: true }).click();
   await expect(block.locator('mark')).toHaveText(exact);
   const visible = await block.locator('mark').evaluate((element) => {

@@ -95,6 +95,29 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
       invalid('对话的分支来源摘录不存在。');
     if (c.summary_block_id !== null && !blocks.has(c.summary_block_id))
       invalid('对话摘要引用不存在。');
+    const origin = c.fork_origin;
+    if (origin) {
+      if (
+        origin.conversation_id === c.id ||
+        !conversations.has(origin.conversation_id) ||
+        (origin.turn_id !== null &&
+          turns.get(origin.turn_id)?.conversation_id !== origin.conversation_id) ||
+        origin.source_block_ids.some((id) => !blocks.has(id)) ||
+        origin.source_excerpt_ids.some((id) => !excerpts.has(id)) ||
+        s.conversations.some(
+          (other) => other.id !== c.id && other.fork_origin?.request_id === origin.request_id,
+        )
+      )
+        invalid('分叉背景或请求标识无效。');
+      const seen = new Set([c.id]);
+      let ancestor: typeof c | undefined = c;
+      while (ancestor?.fork_origin) {
+        const id = ancestor.fork_origin.conversation_id;
+        if (seen.has(id)) invalid('分叉来源不能循环引用。');
+        seen.add(id);
+        ancestor = conversations.get(id);
+      }
+    }
   }
   for (const turn of s.turns) {
     if (!conversations.has(turn.conversation_id)) invalid('消息所属对话不存在。');
@@ -142,6 +165,23 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
       e.selector.end_char > b.text_content.length
     )
       invalid('摘录的来源、哈希或文字范围无效。');
+    if (e.collection_source_ids) {
+      const ids = e.collection_source_ids;
+      if (
+        new Set(ids).size !== ids.length ||
+        ids.some(
+          (id) =>
+            !excerpts.has(id) ||
+            (id !== e.id && excerpts.get(id)?.collection_source_ids !== undefined) ||
+            !s.nodes.some((n) => n.ref_type === 'excerpt' && n.ref_id === id),
+        )
+      )
+        invalid('汇合点必须保留有效且不重复的原始摘录。');
+      if (
+        s.excerpts.some((other) => other.id !== e.id && other.collection_source_ids?.includes(e.id))
+      )
+        invalid('汇合点不能嵌套。');
+    }
   }
   for (const n of s.nodes) {
     const refs =
@@ -171,6 +211,11 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
           : source.ref_type !== 'turn' || source.ref_id !== turn.id)
       )
         invalid('摘录连线与来源消息不一致。');
+    }
+    if (edge.type === 'continue_from' && target.ref_type === 'conversation') {
+      const origin = conversations.get(target.ref_id)?.fork_origin;
+      if (source.ref_type !== 'conversation' || !origin || origin.conversation_id !== source.ref_id)
+        invalid('分叉连线与背景来源不一致。');
     }
   }
   for (const ctx of s.context_sets) {

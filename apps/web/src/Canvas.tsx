@@ -39,8 +39,11 @@ import {
   Copy,
   RotateCcw,
   GitBranch,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import type { CanvasNode } from '@acc/domain';
+import { collectionSources, type CanvasNode } from '@acc/domain';
+import { SourceHandles, type SourceAnchor } from './SourceHandles';
 import { api, type ClientState } from './api';
 import { TraceCardContent, type CanvasTrace } from './TaskTrace';
 import { ContextMenu, type MenuAction } from './ContextMenu';
@@ -60,9 +63,15 @@ type CardData = {
   node: CanvasNode;
   onOpen: () => void;
   onMenu: (event: MouseEvent) => void;
+  sources: SourceAnchor[];
+  onFold: () => void;
+  mode: string;
+  sourceCount: number;
+  busy: boolean;
   [key: string]: unknown;
 };
 type CardNode = Node<CardData, 'card'>;
+const noAnchors: SourceAnchor[] = [];
 // React Flow mirrors node data through effects. Keep text and editor props
 // outside that queue, and keep layout nodes stable while the user types.
 const CardContentContext = createContext<(node: CanvasNode, ready: boolean) => ReactNode>(
@@ -72,9 +81,11 @@ const CardContentContext = createContext<(node: CanvasNode, ready: boolean) => R
 function Card({ data, width, height }: NodeProps<CardNode>) {
   const zoom = useStore((s) => s.transform[2]);
   const renderContent = useContext(CardContentContext);
+  const card = useRef<HTMLElement>(null);
   return (
     <article
-      className={`canvas-card ${data.branch ? 'branch' : ''} ${data.type} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
+      ref={card}
+      className={`canvas-card ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
     >
       <Handle type="target" position={Position.Left} />
       <div className="card-eyebrow">
@@ -93,8 +104,23 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
         <button className="card-title nodrag" aria-label={data.title} onClick={data.onOpen}>
           {data.displayTitle}
         </button>
+        {data.type === 'conversation' && (
+          <span className="thread-mode">{data.busy ? '生成中' : data.mode}</span>
+        )}
+        {data.type === 'excerpt' && data.sourceCount > 1 && (
+          <span className="collection-count">{data.sourceCount}</span>
+        )}
         {data.pinned && <Pin size={13} aria-label="已固定" />}
         {data.excluded && <Ban size={13} aria-label="已排除" />}
+        {data.type === 'conversation' && (
+          <button
+            className="fold-thread nodrag"
+            aria-label={data.node.collapsed ? '展开对话' : '折叠对话'}
+            onClick={data.onFold}
+          >
+            {data.node.collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+          </button>
+        )}
         <button
           className="card-menu-button nodrag nopan nokey"
           aria-label={'卡片操作：' + data.title}
@@ -104,12 +130,12 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
           <MoreHorizontal size={17} />
         </button>
       </div>
-      {data.active || zoom > 0.45 ? (
+      {!data.node.collapsed && (data.active || zoom > 0.45) ? (
         <div className="card-content nodrag nopan nowheel nokey">
           {renderContent(data.node, Boolean(width && height))}
         </div>
       ) : (
-        <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
+        !data.node.collapsed && <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
       )}
       {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
         <div className="card-footer">
@@ -117,6 +143,9 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
         </div>
       )}
       <Handle type="source" position={Position.Right} />
+      {!data.node.collapsed && data.sources.length > 0 && (
+        <SourceHandles nodeId={data.node.id} container={card} sources={data.sources} />
+      )}
     </article>
   );
 }
@@ -159,6 +188,7 @@ interface Props {
   onSource: (node: CanvasNode) => void;
   onTrash: () => void;
   onError: (error: unknown) => void;
+  onFold: (node: CanvasNode) => void;
 }
 
 export function Canvas({
@@ -185,6 +215,7 @@ export function Canvas({
   onSource,
   onTrash,
   onError,
+  onFold,
 }: Props) {
   const [menu, setMenu] = useState<{
     x: number;
@@ -229,13 +260,69 @@ export function Canvas({
     };
   }, [loadTraces, traceEpoch]);
   const flow = useReactFlow();
+  const foldHandler = useRef(onFold);
+  foldHandler.current = onFold;
+  const busyKey = busyNodeIds.join(',');
+  const busyIds = useMemo(() => new Set(busyKey.split(',')), [busyKey]);
   const latest = useRef({ nodes: state.nodes, activeNode });
   const lastLocated = useRef('');
   latest.current = { nodes: state.nodes, activeNode };
+  const collectionOwner = useMemo(() => {
+    const owners = new Map<string, string>();
+    for (const node of state.nodes.filter(
+      (n) => n.ref_type === 'excerpt' && n.visibility !== 'hidden',
+    )) {
+      const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
+      for (const id of excerpt?.collection_source_ids ?? []) owners.set(id, node.id);
+    }
+    return owners;
+  }, [state.nodes, state.excerpts]);
+  const anchors = useMemo(() => {
+    const result = new Map<string, SourceAnchor[]>();
+    for (const excerpt of state.excerpts) {
+      const block = state.blocks.find((b) => b.id === excerpt.source_block_id);
+      const turn = state.turns.find((t) => t.id === block?.turn_id);
+      const source = state.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id,
+      );
+      if (!source) continue;
+      const items = result.get(source.id) ?? [];
+      items.push({
+        id: 'pick:' + excerpt.id,
+        blockId: excerpt.source_block_id,
+        start: excerpt.selector.start_char,
+        end: excerpt.selector.end_char,
+        quote: true,
+      });
+      result.set(source.id, items);
+    }
+    for (const child of state.conversations.filter((c) => c.fork_origin)) {
+      const origin = child.fork_origin!;
+      const source = state.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === origin.conversation_id,
+      );
+      const block = state.blocks.filter((b) => b.turn_id === origin.turn_id).at(-1);
+      if (!source || !block?.text_content) continue;
+      const items = result.get(source.id) ?? [];
+      items.push({
+        id: 'fork:' + child.id,
+        blockId: block.id,
+        start: 0,
+        end: block.text_content.length,
+        quote: false,
+      });
+      result.set(source.id, items);
+    }
+    return result;
+  }, [state.blocks, state.turns, state.excerpts, state.nodes, state.conversations]);
   const mapped = useMemo<CardNode[]>(
     () =>
       state.nodes
-        .filter((n) => n.visibility !== 'hidden')
+        .filter(
+          (n) =>
+            n.visibility !== 'hidden' &&
+            (!collectionOwner.has(n.ref_id) || collectionOwner.get(n.ref_id) === n.id),
+        )
         .map((n) => ({
           id: n.id,
           type: 'card',
@@ -249,10 +336,28 @@ export function Canvas({
             displayTitle:
               n.ref_type === 'excerpt' &&
               n.title === state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text.slice(0, 60)
-                ? '摘录'
+                ? state.excerpts.find((e) => e.id === n.ref_id)?.collection_source_ids
+                  ? '汇合摘录'
+                  : n.title.slice(0, 24)
                 : n.title,
             type: n.type,
-            branch: !!state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id,
+            branch:
+              !!state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id ||
+              !!state.conversations.find((c) => c.id === n.ref_id)?.fork_origin,
+            mode:
+              state.conversations.find((c) => c.id === n.ref_id)?.fork_origin?.mode === 'btw'
+                ? '顺手问'
+                : state.conversations.find((c) => c.id === n.ref_id)?.fork_origin ||
+                    state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id
+                  ? '分支'
+                  : '主线',
+            busy: busyIds.has(n.id),
+            sourceCount:
+              n.ref_type === 'excerpt'
+                ? collectionSources(state, state.excerpts.find((e) => e.id === n.ref_id)!).length
+                : 0,
+            sources: anchors.get(n.id) ?? noAnchors,
+            onFold: () => foldHandler.current(n),
             preview:
               n.ref_type === 'excerpt'
                 ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
@@ -266,7 +371,7 @@ export function Canvas({
             onMenu: (event: MouseEvent) => openCardMenu(n.id, event),
           },
         })),
-    [state, activeNode, selected, onOpen, openCardMenu],
+    [state, activeNode, selected, onOpen, openCardMenu, collectionOwner, anchors, busyIds],
   );
   const traceNodes = useMemo<TraceNode[]>(
     () =>
@@ -287,7 +392,16 @@ export function Canvas({
     [traces, onOpenTrace, loadTraces],
   );
   const [nodes, setNodes] = useState<BoardNode[]>(mapped);
-  useEffect(() => setNodes([...mapped, ...traceNodes]), [mapped, traceNodes]);
+  useEffect(
+    () =>
+      setNodes((previous) =>
+        [...mapped, ...traceNodes].map((node) => ({
+          ...node,
+          measured: previous.find((old) => old.id === node.id)?.measured,
+        })),
+      ),
+    [mapped, traceNodes],
+  );
   useEffect(() => {
     if (!locate) return;
     const key = locate.id + ':' + locate.tick;
@@ -298,7 +412,7 @@ export function Canvas({
       const width = window.innerWidth;
       const height = window.innerHeight;
       const measured = flow.getNode(node.id)?.measured;
-      const nodeWidth = measured?.width || (node.ref_type === 'excerpt' ? 280 : 360);
+      const nodeWidth = measured?.width || (node.ref_type === 'excerpt' ? 280 : 420);
       const nodeHeight =
         node.ref_type === 'excerpt'
           ? measured?.height || 280
@@ -329,28 +443,43 @@ export function Canvas({
   );
   const visibleIds = new Set(mapped.map((n) => n.id));
   const edges = state.edges
-    .filter((e) => visibleIds.has(e.source_node_id) && visibleIds.has(e.target_node_id))
+    .filter((e) => {
+      const target = state.nodes.find((n) => n.id === e.target_node_id);
+      const owner = target?.ref_type === 'excerpt' ? collectionOwner.get(target.ref_id) : undefined;
+      if (e.type === 'excerpt_from' && target?.ref_type === 'excerpt') {
+        const excerpt = state.excerpts.find((item) => item.id === target.ref_id);
+        if (excerpt?.collection_source_ids && !excerpt.collection_source_ids.includes(excerpt.id))
+          return false;
+      }
+      return visibleIds.has(e.source_node_id) && visibleIds.has(owner ?? e.target_node_id);
+    })
     .map((e) => {
-      const color =
-        e.type === 'excerpt_from' ? '#bf9d68' : e.type === 'branch_from' ? '#9583c3' : '#a8b4ae';
+      const source = state.nodes.find((n) => n.id === e.source_node_id);
+      const target = state.nodes.find((n) => n.id === e.target_node_id);
+      const owner = target?.ref_type === 'excerpt' ? collectionOwner.get(target.ref_id) : undefined;
+      const color = e.type === 'excerpt_from' ? '#d3a14b' : '#64a3ae';
       return {
         id: e.id,
         source: e.source_node_id,
-        target: e.target_node_id,
-        label:
-          e.type === 'branch_from' ? '延伸提問' : e.type === 'excerpt_from' ? '摘錄原文' : e.type,
+        target: owner ?? e.target_node_id,
+        sourceHandle:
+          !source?.collapsed && e.type === 'excerpt_from'
+            ? 'pick:' + target?.ref_id
+            : !source?.collapsed &&
+                e.type === 'continue_from' &&
+                state.conversations.find((c) => c.id === target?.ref_id)?.fork_origin?.turn_id
+              ? 'fork:' + target?.ref_id
+              : undefined,
+        label: ['branch_from', 'excerpt_from', 'continue_from'].includes(e.type)
+          ? undefined
+          : e.type,
         className: `relation-${e.type}`,
         type: 'default',
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         style: {
           stroke: color,
           strokeWidth: 1.3,
-          strokeDasharray:
-            e.edge_class === 'semantic' && !e.confirmed
-              ? '5 5'
-              : e.type === 'excerpt_from'
-                ? '3 4'
-                : undefined,
+          strokeDasharray: e.edge_class === 'semantic' && !e.confirmed ? '5 5' : undefined,
         },
         labelStyle: { fill: 'var(--muted-ink)', fontSize: 10 },
         labelBgStyle: { fill: 'var(--canvas)' },

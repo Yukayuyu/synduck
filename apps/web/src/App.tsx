@@ -18,12 +18,18 @@ import {
   Palette,
   MoreHorizontal,
 } from 'lucide-react';
-import { DEFAULT_BUDGET, type CanvasNode, type ContextPackage, type Excerpt } from '@acc/domain';
+import {
+  DEFAULT_BUDGET,
+  type CanvasNode,
+  type ContextPackage,
+  type Excerpt,
+  type Conversation,
+} from '@acc/domain';
 import { api, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
-import { Focus, type SelectedText, type SourceHighlight } from './Focus';
+import { Focus, type SelectedText, type SourceHighlight, type ForkDraft } from './Focus';
 import { ProjectDialog } from './ProjectDialog';
 import { ModelDialog } from './ModelDialog';
 import { LocalDialog } from './LocalDialog';
@@ -34,6 +40,7 @@ import { TrashDialog } from './TrashDialog';
 import './styles.css';
 import './canvas-first.css';
 import './canvas-themes.css';
+import './thought-islands.css';
 import { AppearanceDialog, appearanceKey, readAppearance } from './AppearanceDialog';
 
 interface GenerationJob {
@@ -65,6 +72,10 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [forkDrafts, setForkDrafts] = useState<Record<string, ForkDraft[]>>({});
+  const [preparingForks, setPreparingForks] = useState<string[]>([]);
+  const preparingRef = useRef(new Set<string>());
+  const [collectingId, setCollectingId] = useState<string | null>(null);
   const [budget, setBudget] = useState(6000);
   const [preview, setPreview] = useState<ContextPackage | null>(null);
   const [inspected, setInspected] = useState<{ pkg: ContextPackage; historical: boolean } | null>(
@@ -77,9 +88,14 @@ export default function App() {
   const streamingConversations = new Set(streamingTurns.map((turn) => turn.conversation_id));
   const streamingTurnIds = new Set(streamingTurns.map((turn) => turn.id));
   const runningConversations = new Set([...Object.keys(jobs), ...streamingConversations]);
-  const busy = runningConversations.size > 0;
+  const busy = runningConversations.size > 0 || preparingForks.length > 0;
   const remoteGeneration = streamingTurns.some((turn) => !jobs[turn.conversation_id]);
   const conversationBusy = (id: string) => !!jobsRef.current[id] || streamingConversations.has(id);
+  const draftFor = (id: string) =>
+    prompts[id] ??
+    (state?.turns.some((t) => t.conversation_id === id)
+      ? ''
+      : (state?.conversations.find((c) => c.id === id)?.fork_origin?.initial_prompt ?? ''));
   const nodeBusy = (node: CanvasNode) =>
     node.ref_type === 'conversation'
       ? conversationBusy(node.ref_id)
@@ -119,6 +135,7 @@ export default function App() {
     title: string;
     prompt: string;
     selected: boolean;
+    forks: ForkDraft[];
   } | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const compileVersion = useRef(0);
@@ -158,15 +175,19 @@ export default function App() {
   }, []);
   const active = state?.nodes.find((n) => n.id === activeId) || null;
   const conversationId = active?.ref_type === 'conversation' ? active.ref_id : '';
-  const prompt = prompts[conversationId] || '';
+  const prompt = draftFor(conversationId);
   const open = useCallback(
     (n: CanvasNode) => {
+      if (n.collapsed)
+        void api('/nodes/' + encodeURIComponent(n.id), { collapsed: false }, 'PATCH')
+          .then(refresh)
+          .catch(fail);
       setPanel(null);
       setActiveId(n.id);
       setHighlight(null);
       invalidate();
     },
-    [invalidate],
+    [invalidate, refresh, fail],
   );
   const moveTo = useCallback((id: string) => {
     setLocate({ id, tick: Date.now() });
@@ -220,10 +241,13 @@ export default function App() {
       setLastDeleted({
         id: node.id,
         title: node.title,
-        prompt: prompts[node.ref_id] || '',
+        prompt: draftFor(node.ref_id),
         selected: selected.includes(node.id),
+        forks: forkDrafts[node.ref_id] ?? [],
       });
       setPrompts((previous) => ({ ...previous, [node.ref_id]: '' }));
+      setForkDrafts((previous) => ({ ...previous, [node.ref_id]: [] }));
+      if (collectingId === node.ref_id) setCollectingId(null);
       setSelected((previous) => previous.filter((id) => id !== node.id));
       setActiveId((previous) => (previous === node.id ? null : previous));
       setPendingDelete(null);
@@ -236,7 +260,7 @@ export default function App() {
     }
   };
   const requestDelete = (node: CanvasNode) => {
-    if (prompts[node.ref_id]?.length) setPendingDelete(node);
+    if (draftFor(node.ref_id).length || forkDrafts[node.ref_id]?.length) setPendingDelete(node);
     else void deleteCard(node);
   };
   const keepCard = () => {
@@ -255,6 +279,7 @@ export default function App() {
       );
       if (lastDeleted?.id === id) {
         setPrompts((previous) => ({ ...previous, [node.ref_id]: lastDeleted.prompt }));
+        setForkDrafts((previous) => ({ ...previous, [node.ref_id]: lastDeleted.forks }));
         if (lastDeleted.selected) setSelected((previous) => [...new Set([...previous, id])]);
         setLastDeleted(null);
       }
@@ -295,6 +320,34 @@ export default function App() {
       moveTo(result.node.id);
     } catch (e) {
       fail(e);
+    }
+  };
+  const collect = async (selection: SelectedText) => {
+    if (!collectingId) return;
+    try {
+      await api('/excerpts/' + encodeURIComponent(collectingId) + '/sources', {
+        source_block_id: selection.block.id,
+        source_content_hash: selection.block.content_hash,
+        selector: selection.selector,
+      });
+      invalidate();
+      await refresh();
+      window.getSelection()?.removeAllRanges();
+    } catch (error) {
+      fail(error);
+    }
+  };
+  const removeSource = async (excerptId: string, sourceId: string) => {
+    try {
+      await api(
+        '/excerpts/' + encodeURIComponent(excerptId) + '/sources/' + encodeURIComponent(sourceId),
+        {},
+        'DELETE',
+      );
+      invalidate();
+      await refresh();
+    } catch (error) {
+      fail(error);
     }
   };
   const source = (e: Excerpt) => {
@@ -345,7 +398,12 @@ export default function App() {
       fail(e);
     }
   };
-  const generate = async (targetConversation: string, retryId?: string, direct = false) => {
+  const generate = async (
+    targetConversation: string,
+    retryId?: string,
+    direct = false,
+    submission?: { prompt: string; selected: string[]; nodeId: string; requestId?: string },
+  ) => {
     const retryTurn = state?.turns.find((turn) => turn.id === retryId);
     let pkg = retryId
       ? state?.packages.find((p) => p.context_set_id === retryTurn?.input_context_set_id)
@@ -353,13 +411,14 @@ export default function App() {
         ? undefined
         : preview;
     if (!targetConversation || conversationBusy(targetConversation) || (!direct && !pkg)) return;
-    const submittedPrompt = prompts[targetConversation] || '';
+    const submittedPrompt = submission?.prompt ?? draftFor(targetConversation);
     if (direct && !submittedPrompt.trim()) return;
-    const submittedSelection = selected;
-    const targetNodeId = state?.nodes.find(
-      (n) => n.ref_type === 'conversation' && n.ref_id === targetConversation,
-    )?.id;
-    const requestId = crypto.randomUUID();
+    const submittedSelection = submission?.selected ?? selected;
+    const targetNodeId =
+      submission?.nodeId ??
+      state?.nodes.find((n) => n.ref_type === 'conversation' && n.ref_id === targetConversation)
+        ?.id;
+    const requestId = submission?.requestId ?? crypto.randomUUID();
     const job: GenerationJob = {
       prompt: pkg?.current_prompt || submittedPrompt.trim(),
       text: '',
@@ -407,7 +466,8 @@ export default function App() {
       );
       if (!retryId)
         setPrompts((previous) =>
-          previous[targetConversation] === submittedPrompt
+          previous[targetConversation] === submittedPrompt ||
+          previous[targetConversation] === undefined
             ? { ...previous, [targetConversation]: '' }
             : previous,
         );
@@ -446,6 +506,60 @@ export default function App() {
           started && previous?.context_set_id === job.contextSetId ? null : previous,
         );
       }
+    }
+  };
+  const sendForks = async (node: CanvasNode) => {
+    if (preparingRef.current.has(node.ref_id)) return;
+    const drafts = forkDrafts[node.ref_id] ?? [];
+    if (!drafts.length || drafts.some((d) => !d.prompt.trim())) return;
+    preparingRef.current.add(node.ref_id);
+    setPreparingForks([...preparingRef.current]);
+    const mainPrompt = draftFor(node.ref_id);
+    const sendMain = !conversationBusy(node.ref_id) && !!mainPrompt.trim();
+    const submittedSelection = selected;
+    try {
+      const { branches } = await api<{
+        branches: { conversation: Conversation; node: CanvasNode }[];
+      }>('/forks', {
+        conversation_id: node.ref_id,
+        branches: drafts.map((d) => ({ request_id: d.id, mode: d.mode, prompt: d.prompt })),
+      });
+      await refresh();
+      setForkDrafts((previous) => ({
+        ...previous,
+        [node.ref_id]: (previous[node.ref_id] ?? []).filter(
+          (d) => !drafts.some((sent) => sent.id === d.id),
+        ),
+      }));
+      setPrompts((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          branches.map((b) => [b.conversation.id, b.conversation.fork_origin!.initial_prompt]),
+        ),
+      }));
+      invalidate();
+      const tasks = branches.map((b) =>
+        generate(b.conversation.id, undefined, true, {
+          prompt: b.conversation.fork_origin!.initial_prompt,
+          selected: [],
+          nodeId: b.node.id,
+          requestId: b.conversation.fork_origin!.request_id,
+        }),
+      );
+      if (sendMain)
+        tasks.push(
+          generate(node.ref_id, undefined, true, {
+            prompt: mainPrompt,
+            selected: submittedSelection,
+            nodeId: node.id,
+          }),
+        );
+      void Promise.allSettled(tasks);
+    } catch (error) {
+      fail(error);
+    } finally {
+      preparingRef.current.delete(node.ref_id);
+      setPreparingForks([...preparingRef.current]);
     }
   };
   const cancel = async (targetConversation: string) => {
@@ -515,14 +629,21 @@ export default function App() {
           {busy && (
             <span className="output-status generation-count" role="status">
               <LoaderCircle className="spin" size={12} />
-              {runningConversations.size} 段回答生成中
+              {runningConversations.size
+                ? `${runningConversations.size} 段回答生成中`
+                : '正在准备分支'}
             </span>
           )}
         </div>
         <div className="board-menu">
           <LocalControl onOpen={() => setLocalDialog(true)} />
           <UpdateControl
-            canInstall={!busy && !Object.values(prompts).some((text) => text.trim())}
+            canInstall={
+              !busy &&
+              !preparingForks.length &&
+              !Object.values(prompts).some((text) => text.trim()) &&
+              !Object.values(forkDrafts).some((drafts) => drafts.length)
+            }
           />
           <button
             className="mode-pill"
@@ -554,6 +675,23 @@ export default function App() {
           </button>
         </div>
       </header>
+      {collectingId && (
+        <aside className="collecting-bar" role="status">
+          <GitBranch size={15} />
+          <span>收集中 · 选取文字后「加入汇合点」</span>
+          <button
+            onClick={() => {
+              const target = state.nodes.find(
+                (n) => n.ref_type === 'excerpt' && n.ref_id === collectingId,
+              );
+              if (target) openOnCanvas(target);
+            }}
+          >
+            查看汇合点
+          </button>
+          <button onClick={() => setCollectingId(null)}>完成</button>
+        </aside>
+      )}
       <main className="canvas-stage" aria-label="思考畫布">
         <ReactFlowProvider key={canvasEpoch}>
           <Canvas
@@ -585,6 +723,15 @@ export default function App() {
               setTrashOpen(true);
             }}
             onError={fail}
+            onFold={(node) => {
+              void api(
+                '/nodes/' + encodeURIComponent(node.id),
+                { collapsed: !node.collapsed },
+                'PATCH',
+              )
+                .then(refresh)
+                .catch(fail);
+            }}
             onOpen={openOnCanvas}
             onSelect={select}
             onControl={control}
@@ -609,7 +756,18 @@ export default function App() {
                 active={node.id === activeId}
                 inputReady={ready}
                 locked={conversationBusy(node.ref_id)}
-                prompt={prompts[node.ref_id] || ''}
+                prompt={draftFor(node.ref_id)}
+                forkDrafts={forkDrafts[node.ref_id] ?? []}
+                preparingForks={preparingForks.includes(node.ref_id)}
+                onForkDrafts={(drafts) => {
+                  setForkDrafts((previous) => ({ ...previous, [node.ref_id]: drafts }));
+                }}
+                onSendForks={() => void sendForks(node)}
+                collectingId={collectingId}
+                onCollect={collect}
+                onCollecting={(id) => setCollectingId((previous) => (previous === id ? null : id))}
+                onRemoveSource={(id) => void removeSource(node.ref_id, id)}
+                onOpenNode={openOnCanvas}
                 budget={budget}
                 preview={node.id === activeId ? preview : null}
                 busy={conversationBusy(node.ref_id)}
@@ -767,7 +925,25 @@ export default function App() {
                 if (state.nodes.some((node) => node.id === id && node.visibility === 'hidden')) {
                   setTrashTarget({ id });
                   setTrashOpen(true);
-                } else moveTo(id);
+                } else {
+                  const node = state.nodes.find((n) => n.id === id);
+                  const owner =
+                    node?.ref_type === 'excerpt'
+                      ? state.excerpts.find(
+                          (e) =>
+                            e.id !== node.ref_id && e.collection_source_ids?.includes(node.ref_id),
+                        )
+                      : undefined;
+                  const target = owner
+                    ? state.nodes.find(
+                        (n) =>
+                          n.ref_type === 'excerpt' &&
+                          n.ref_id === owner.id &&
+                          n.visibility !== 'hidden',
+                      )
+                    : node;
+                  if (target) openOnCanvas(target);
+                }
               }}
             />
           ) : (
@@ -798,7 +974,7 @@ export default function App() {
                         }
                       }}
                     >
-                      {c.branch_origin_excerpt_id ? (
+                      {c.branch_origin_excerpt_id || c.fork_origin ? (
                         <GitBranch size={14} />
                       ) : (
                         <MessageSquare size={14} />
@@ -1070,6 +1246,8 @@ export default function App() {
             setActiveId(null);
             setSelected([]);
             setPrompts({});
+            setForkDrafts({});
+            setCollectingId(null);
             setRequestErrors({});
             setInspected(null);
             setHighlight(null);

@@ -21,3 +21,7 @@ Adds `recovery_snapshots(id, created_at, name, payload)`. This is an additive, t
 Native project JSON declares `format: ai-context-canvas`, `format_version: 1`, an export timestamp, the canonical snapshot, an empty asset manifest and a SHA-256 checksum over canonicalized JSON. Object keys are sorted for checksum computation; array order is retained. Files are limited to 12 MiB, and unsupported fields/assets are rejected to avoid silent data loss.
 
 Import validates references and hashes before writing, requires explicit confirmation plus the current workspace identity/revision/full-snapshot fingerprint, and saves an automatic recovery copy in the same transaction. All existing workspace graph rows are replaced in foreign-key-safe order, with foreign keys still enabled. An insertion failure rolls back both the replacement and its recovery record. Restored entity IDs and historical context packages are preserved. The live workspace revision advances beyond both old and imported revisions to invalidate any existing preview. Context and graph schemas remain domain version 0.1.0.
+
+## 0.6.0 optional domain fields (no SQL migration)
+
+Conversation fork_origin freezes source identities and the initial task. Excerpt collection_source_ids stores flat, nonempty source membership while preserving the anchor quote. Existing rows and native format-1 files without these fields are unchanged. New exports retain and validate these fields; older applications reject unsupported fields rather than dropping provenance. See [behavior and compatibility](thought-islands.md).

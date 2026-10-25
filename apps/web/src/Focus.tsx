@@ -10,9 +10,18 @@ import {
   RotateCcw,
   LoaderCircle,
   SlidersHorizontal,
+  Plus,
+  Minus,
 } from 'lucide-react';
-import type { CanvasNode, ContentBlock, ContextPackage, Excerpt, Turn } from '@acc/domain';
-import type { ClientState } from './api';
+import {
+  collectionSources,
+  type CanvasNode,
+  type ContentBlock,
+  type ContextPackage,
+  type Excerpt,
+  type Turn,
+} from '@acc/domain';
+import { threadStatus, type ClientState } from './api';
 
 export interface SelectedText {
   block: ContentBlock;
@@ -22,6 +31,11 @@ export interface SourceHighlight {
   blockId: string;
   start: number;
   end: number;
+}
+export interface ForkDraft {
+  id: string;
+  mode: 'fork' | 'btw';
+  prompt: string;
 }
 interface Props {
   active: boolean;
@@ -50,6 +64,15 @@ interface Props {
   onRetry: (turnId: string) => void;
   onCancel: () => void;
   requestError: string;
+  forkDrafts: ForkDraft[];
+  preparingForks: boolean;
+  onForkDrafts: (drafts: ForkDraft[]) => void;
+  onSendForks: () => void;
+  collectingId: string | null;
+  onCollect: (selection: SelectedText) => void;
+  onCollecting: (id: string) => void;
+  onRemoveSource: (id: string) => void;
+  onOpenNode: (node: CanvasNode) => void;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
@@ -65,6 +88,25 @@ export function Focus(props: Props) {
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
   const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
+  const sources = excerpt ? collectionSources(state, excerpt) : [];
+  const forks = state.conversations.filter(
+    (c) =>
+      c.fork_origin?.conversation_id === conversation?.id &&
+      state.nodes.some(
+        (n) => n.ref_type === 'conversation' && n.ref_id === c.id && n.visibility !== 'hidden',
+      ),
+  );
+  const addDraft = (mode: ForkDraft['mode'], prompt = '') => {
+    if (props.forkDrafts.length >= 8 || props.preparingForks) return;
+    const id = crypto.randomUUID();
+    props.onForkDrafts([...props.forkDrafts, { id, mode, prompt }]);
+    requestAnimationFrame(() => {
+      const editor = document.getElementById('fork-prompt-' + id);
+      const list = editor?.closest('.fork-drafts');
+      if (list) list.scrollTop = list.scrollHeight;
+      editor?.focus({ preventScroll: true });
+    });
+  };
   const turns = state.turns
     .filter((t) => t.conversation_id === conversation?.id)
     .sort((a, b) => a.sequence - b.sequence);
@@ -177,7 +219,7 @@ export function Focus(props: Props) {
   }, [state.blocks, node.id]);
   return (
     <section
-      className={`focus-panel ${active ? 'editing' : 'reading'} ${turns.length || busy ? 'has-turns' : 'empty-conversation'}`}
+      className={`focus-panel ${active ? 'editing' : 'reading'} ${props.forkDrafts.length ? 'splitting-input' : ''} ${turns.length || busy ? 'has-turns' : 'empty-conversation'}`}
       data-node-id={node.id}
       data-active={active}
       aria-label={excerpt ? '摘录详情' : '对话详情'}
@@ -202,12 +244,49 @@ export function Focus(props: Props) {
       </div>
       {excerpt ? (
         <div className="focus-content excerpt-detail">
-          <blockquote>{excerpt.snapshot_text}</blockquote>
+          {!active ? (
+            <blockquote>
+              {sources.length > 1
+                ? `${sources.length} 处摘录 · ${sources[0]?.snapshot_text}`
+                : sources[0]?.snapshot_text}
+            </blockquote>
+          ) : (
+            <div className="collection-sources" aria-label="汇合点来源">
+              {sources.map((source, index) => {
+                const block = state.blocks.find((b) => b.id === source.source_block_id);
+                const turn = state.turns.find((t) => t.id === block?.turn_id);
+                const title = state.conversations.find(
+                  (c) => c.id === turn?.conversation_id,
+                )?.title;
+                return (
+                  <div className="collection-source" key={source.id}>
+                    <span className="source-number">{index + 1}</span>
+                    <button
+                      className="source-return"
+                      aria-label={`回到来源 ${index + 1}`}
+                      onClick={() => props.onSource(source)}
+                    >
+                      <blockquote>{source.snapshot_text}</blockquote>
+                      <small>{title}</small>
+                    </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`移出摘录 ${index + 1}`}
+                      disabled={sources.length === 1}
+                      onClick={() => props.onRemoveSource(source.id)}
+                    >
+                      <Minus size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="excerpt-actions">
             <button
               className="secondary"
               aria-label="回到来源并高亮"
-              onClick={() => props.onSource(excerpt)}
+              onClick={() => sources[0] && props.onSource(sources[0])}
             >
               <CornerUpRight size={14} />
               回到原文
@@ -220,31 +299,98 @@ export function Focus(props: Props) {
               <GitBranch size={14} />
               延伸提問
             </button>
+            <button
+              className="secondary"
+              aria-label="收集更多摘录"
+              aria-pressed={props.collectingId === excerpt.id}
+              onClick={() => props.onCollecting(excerpt.id)}
+            >
+              <Plus size={14} />
+              收集
+            </button>
           </div>
-          <details>
-            <summary>来源记录</summary>
-            <dl>
-              <dt>原文範圍</dt>
-              <dd>
-                {excerpt.selector.start_char}–{excerpt.selector.end_char} · 原文快照已保存
-              </dd>
-              <dt>Source block</dt>
-              <dd>{excerpt.source_block_id}</dd>
-              <dt>SHA-256</dt>
-              <dd>{excerpt.source_content_hash}</dd>
-            </dl>
-          </details>
+          {active && (
+            <details>
+              <summary>来源记录</summary>
+              <dl>
+                <dt>原文範圍</dt>
+                <dd>
+                  {excerpt.selector.start_char}–{excerpt.selector.end_char} · 原文快照已保存
+                </dd>
+                <dt>Source block</dt>
+                <dd>{excerpt.source_block_id}</dd>
+                <dt>SHA-256</dt>
+                <dd>{excerpt.source_content_hash}</dd>
+              </dl>
+            </details>
+          )}
         </div>
       ) : (
         <>
           {origin && (
-            <button className="branch-origin" onClick={() => props.onSource(origin)}>
+            <button
+              className="branch-origin"
+              onClick={() => {
+                const sources = collectionSources(state, origin);
+                if (sources.length === 1) {
+                  props.onSource(sources[0]);
+                  return;
+                }
+                const target = state.nodes.find(
+                  (n) => n.ref_type === 'excerpt' && n.ref_id === origin.id,
+                );
+                if (target) props.onOpenNode(target);
+              }}
+            >
               <GitBranch size={14} />
               <span>
-                源自摘录<strong>{origin.snapshot_text}</strong>
+                源自摘录 · {collectionSources(state, origin).length} 处
+                <strong>{collectionSources(state, origin)[0]?.snapshot_text}</strong>
               </span>
               <CornerUpRight size={14} />
             </button>
+          )}
+          {conversation?.fork_origin && (
+            <button
+              className="fork-origin"
+              onClick={() => {
+                const parent = state.nodes.find(
+                  (n) =>
+                    n.ref_type === 'conversation' &&
+                    n.ref_id === conversation.fork_origin!.conversation_id,
+                );
+                if (parent) props.onOpenNode(parent);
+              }}
+            >
+              <GitBranch size={13} />
+              {conversation.fork_origin.mode === 'btw' ? '顺手问' : '分支'} · 回到主线
+              <CornerUpRight size={13} />
+            </button>
+          )}
+          {forks.length > 0 && (
+            <details className="thread-branch-index">
+              <summary>
+                {forks.length} 个分支 ·{' '}
+                {forks.filter((c) => threadStatus(state, c.id) !== '已回答').length} 待答
+              </summary>
+              <div className="thread-branches">
+                {forks.map((child) => (
+                  <button
+                    key={child.id}
+                    onClick={() => {
+                      const target = state.nodes.find(
+                        (n) => n.ref_type === 'conversation' && n.ref_id === child.id,
+                      );
+                      if (target) props.onOpenNode(target);
+                    }}
+                  >
+                    <GitBranch size={12} />
+                    <span>{child.title}</span>
+                    <small>{threadStatus(state, child.id)}</small>
+                  </button>
+                ))}
+              </div>
+            </details>
           )}
           <div ref={scrollRef} className="focus-content conversation-scroll">
             {turns.length === 0 && !busy && (
@@ -322,15 +468,20 @@ export function Focus(props: Props) {
                                 className="message-text"
                                 onMouseUp={(event) => capture(event.currentTarget, block)}
                               >
-                                {marked ? (
-                                  <>
-                                    {text.slice(0, highlight.start)}
-                                    <mark>{text.slice(highlight.start, highlight.end)}</mark>
-                                    {text.slice(highlight.end)}
-                                  </>
-                                ) : (
-                                  text
-                                )}
+                                <SourceText
+                                  text={text}
+                                  focused={marked}
+                                  ranges={
+                                    marked
+                                      ? [{ start: highlight.start, end: highlight.end }]
+                                      : state.excerpts
+                                          .filter((e) => e.source_block_id === block.id)
+                                          .map((e) => ({
+                                            start: e.selector.start_char,
+                                            end: e.selector.end_char,
+                                          }))
+                                  }
+                                />
                               </div>
                             );
                           })}
@@ -368,6 +519,30 @@ export function Focus(props: Props) {
                           <ScanLine size={12} />
                           查看本轮上下文
                         </button>
+                      )}
+                      {forks.some((c) => c.fork_origin?.turn_id === turn.id) && (
+                        <div className="thread-branches" aria-label="此处分支">
+                          {forks
+                            .filter((c) => c.fork_origin?.turn_id === turn.id)
+                            .map((child) => {
+                              const status = threadStatus(state, child.id);
+                              return (
+                                <button
+                                  key={child.id}
+                                  onClick={() => {
+                                    const target = state.nodes.find(
+                                      (n) => n.ref_type === 'conversation' && n.ref_id === child.id,
+                                    );
+                                    if (target) props.onOpenNode(target);
+                                  }}
+                                >
+                                  <GitBranch size={12} />
+                                  <span>{child.title}</span>
+                                  <small>{status}</small>
+                                </button>
+                              );
+                            })}
+                        </div>
                       )}
                     </article>
                   );
@@ -434,6 +609,18 @@ export function Focus(props: Props) {
                   <GitBranch size={14} />
                   延伸提問
                 </button>
+                {props.collectingId && (
+                  <button
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      props.onCollect(selection);
+                      setSelection(null);
+                    }}
+                  >
+                    <Plus size={14} />
+                    加入汇合点
+                  </button>
+                )}
                 <button aria-label="取消文字選取" onClick={() => setSelection(null)}>
                   <X size={14} />
                 </button>
@@ -469,11 +656,115 @@ export function Focus(props: Props) {
                 placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
                 value={props.prompt}
                 onChange={(e) => props.onPrompt(e.target.value)}
-                readOnly={locked}
+                onKeyDown={(event) => {
+                  if (
+                    locked ||
+                    props.preparingForks ||
+                    event.key !== 'Enter' ||
+                    event.nativeEvent.isComposing ||
+                    event.nativeEvent.keyCode === 229 ||
+                    event.shiftKey ||
+                    event.ctrlKey ||
+                    event.altKey ||
+                    event.metaKey ||
+                    props.forkDrafts.length >= 8
+                  )
+                    return;
+                  const input = event.currentTarget;
+                  if (
+                    input.selectionStart !== input.value.length ||
+                    input.selectionEnd !== input.value.length
+                  )
+                    return;
+                  const match = /(?:^|\n)\/(fork|btw)(?:[ \t]+([^\n]*))?$/.exec(input.value);
+                  if (!match) return;
+                  event.preventDefault();
+                  props.onPrompt(input.value.slice(0, match.index));
+                  addDraft(match[1] as ForkDraft['mode'], match[2] ?? '');
+                }}
+                readOnly={locked || props.preparingForks}
                 rows={2}
                 maxLength={32000}
               />
+              <div className="fork-drafts">
+                {props.forkDrafts.map((entry, index) => (
+                  <div className="fork-draft" key={entry.id}>
+                    <div className="fork-draft-heading">
+                      <select
+                        aria-label={`分支方式 ${index + 1}`}
+                        value={entry.mode}
+                        disabled={props.preparingForks}
+                        onChange={(event) =>
+                          props.onForkDrafts(
+                            props.forkDrafts.map((d) =>
+                              d.id === entry.id
+                                ? { ...d, mode: event.target.value as ForkDraft['mode'] }
+                                : d,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="fork">分支 /fork</option>
+                        <option value="btw">顺手问 /btw</option>
+                      </select>
+                      <button
+                        type="button"
+                        aria-label={`移除分支问题 ${index + 1}`}
+                        disabled={props.preparingForks}
+                        onClick={() =>
+                          props.onForkDrafts(props.forkDrafts.filter((d) => d.id !== entry.id))
+                        }
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <textarea
+                      id={'fork-prompt-' + entry.id}
+                      aria-label={`分支问题 ${index + 1}`}
+                      rows={2}
+                      value={entry.prompt}
+                      readOnly={props.preparingForks}
+                      maxLength={32000}
+                      placeholder="这个问题单独回答，也能继续追问…"
+                      onChange={(event) =>
+                        props.onForkDrafts(
+                          props.forkDrafts.map((d) =>
+                            d.id === entry.id ? { ...d, prompt: event.target.value } : d,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
               <div className="composer-bottom">
+                <details className="fork-add">
+                  <summary aria-label="添加分支问题" title="添加分支问题">
+                    <Plus size={17} />
+                  </summary>
+                  <div className="fork-add-menu">
+                    <button
+                      type="button"
+                      disabled={props.forkDrafts.length >= 8 || props.preparingForks}
+                      onClick={(event) => {
+                        event.currentTarget.closest('details')?.removeAttribute('open');
+                        addDraft('fork');
+                      }}
+                    >
+                      分支 /fork
+                    </button>
+                    <button
+                      type="button"
+                      disabled={props.forkDrafts.length >= 8 || props.preparingForks}
+                      onClick={(event) => {
+                        event.currentTarget.closest('details')?.removeAttribute('open');
+                        addDraft('btw');
+                      }}
+                    >
+                      顺手问 /btw
+                    </button>
+                  </div>
+                </details>
                 <details className="composer-settings">
                   <summary aria-label="提问选项" title="预览上下文与预算">
                     <SlidersHorizontal size={16} />
@@ -496,14 +787,31 @@ export function Focus(props: Props) {
                     <button
                       type="submit"
                       className="secondary"
-                      disabled={locked || !props.prompt.trim()}
+                      disabled={
+                        locked ||
+                        props.preparingForks ||
+                        props.forkDrafts.length > 0 ||
+                        !props.prompt.trim()
+                      }
                     >
                       <ScanLine size={14} />
                       预览上下文
                     </button>
                   </div>
                 </details>
-                {preview ? (
+                {props.forkDrafts.length ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={props.onSendForks}
+                    disabled={
+                      props.preparingForks || props.forkDrafts.some((d) => !d.prompt.trim())
+                    }
+                  >
+                    <Send size={14} />
+                    分别发送 {props.forkDrafts.length + (!busy && props.prompt.trim() ? 1 : 0)}
+                  </button>
+                ) : preview ? (
                   <button
                     type="button"
                     className="primary"
@@ -538,4 +846,39 @@ export function Focus(props: Props) {
       )}
     </section>
   );
+}
+
+function SourceText({
+  text,
+  ranges,
+  focused,
+}: {
+  text: string;
+  ranges: { start: number; end: number }[];
+  focused: boolean;
+}) {
+  if (!ranges.length) return text;
+  const merged: { start: number; end: number }[] = [];
+  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
+    const previous = merged.at(-1);
+    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
+    else merged.push({ ...range });
+  }
+  const parts = [];
+  let start = 0;
+  for (const range of merged) {
+    parts.push(text.slice(start, range.start));
+    parts.push(
+      focused ? (
+        <mark key={range.start}>{text.slice(range.start, range.end)}</mark>
+      ) : (
+        <span className="picked-text" key={range.start}>
+          {text.slice(range.start, range.end)}
+        </span>
+      ),
+    );
+    start = range.end;
+  }
+  parts.push(text.slice(start));
+  return parts;
 }
