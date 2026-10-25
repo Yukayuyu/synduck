@@ -249,8 +249,11 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     }
     const historical = ['superseded', 'rejected'].includes(state) || isSuperseded;
     const role = historical ? 'historical' : originalRole;
+    // A large frozen parent history must not crowd out this branch's own
+    // instructions and replies. Explicit picks/pins retain their normal priority.
+    const inheritedFork = originalRole === 'branch_origin' && forkSources.has(nodeId);
     const score =
-      priorities[originalRole] +
+      (inheritedFork ? priorities.related : priorities[originalRole]) +
       (state === 'confirmed' ? 0.02 : 0) -
       (state === 'deprecated' ? 0.2 : 0);
     const blockIds = blocksForNode(snapshot, node).filter(

@@ -43,12 +43,37 @@ function quote(block: ContentBlock, exact = block.text_content!) {
   };
 }
 function source(store: Store, text: string) {
-  const conversation = store.createConversation(text);
+  const conversation = store.createConversation(text.slice(0, 80));
   const turn = store.appendTurn(conversation.conversation.id, 'human', text);
   return { ...conversation, block: store.snapshot().blocks.find((b) => b.turn_id === turn.id)! };
 }
 
 describe('thought branches and multi-source picks', () => {
+  it('retains the branch own instructions before optional parent history when the budget is tight', () => {
+    const store = new Store(':memory:');
+    try {
+      const parent = source(store, 'P'.repeat(2400));
+      const child = store.createForks({
+        conversation_id: parent.conversation.id,
+        branches: [{ request_id: id(), mode: 'fork', prompt: 'Separate task' }],
+      })[0];
+      const directive = 'Keep this branch focused on accessibility. '.repeat(20);
+      store.appendTurn(child.conversation.id, 'human', directive);
+      const set = input(store, child.conversation.id);
+      const pkg = compileContext(store.snapshot(), {
+        ...set,
+        budget: { ...DEFAULT_BUDGET, target_context_tokens: 2500 },
+      });
+      expect(pkg.sendable).toBe(true);
+      expect(pkg.items.map((i) => i.content)).toContain(directive);
+      expect(pkg.items.some((i) => i.source_block_id === parent.block.id)).toBe(false);
+      expect(
+        pkg.excluded.some((i) => i.source_id === parent.block.id && i.reason.includes('budget')),
+      ).toBe(true);
+    } finally {
+      store.close();
+    }
+  });
   it('creates a fork during a real streaming parent turn without inheriting its later output', () => {
     const store = new Store(':memory:');
     try {
