@@ -85,7 +85,7 @@ describe('native project packages', () => {
       store.createConversation('existing data');
       const before = store.snapshot();
       store.db.exec(
-        'DROP TABLE recovery_snapshots; DELETE FROM schema_migrations WHERE version = 2;',
+        'DROP TABLE canvas_task_owners; DROP TABLE canvas_catalog; DROP TABLE recovery_snapshots; DELETE FROM schema_migrations WHERE version IN (2,3);',
       );
       store.close();
       store = new Store(path);
@@ -96,7 +96,7 @@ describe('native project packages', () => {
           .prepare('SELECT version FROM schema_migrations ORDER BY version')
           .all()
           .map((row) => row.version),
-      ).toEqual([1, 2]);
+      ).toEqual([1, 2, 3]);
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });

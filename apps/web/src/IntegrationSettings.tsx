@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Plug, Monitor } from 'lucide-react';
-import { api } from './api';
+import { useApi } from './api';
 import type { McpServer } from '../../../packages/local-runtime/src/mcp';
 import type { DesktopWindow } from '../../../packages/local-runtime/src/desktop';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
@@ -23,6 +23,8 @@ export function IntegrationSettings({
   onChanged: () => Promise<void>;
   onTask: (id: string) => Promise<void>;
 }) {
+  const api = useApi();
+
   const [servers, setServers] = useState<McpServer[]>(() =>
     integrations.mcp.map(({ connected: _, tools: __, ...server }) => server),
   );
@@ -316,6 +318,8 @@ export function ManualIntegrations({
   busy: boolean;
   onTask: (id: string) => Promise<void>;
 }) {
+  const api = useApi();
+
   const [mode, setMode] = useState<'mcp' | 'desktop'>('desktop');
   const [serverId, setServerId] = useState(''),
     [tool, setTool] = useState(''),

@@ -145,6 +145,14 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       }
       return;
     }
+    // An excerpt chosen as a branch origin is a required reference, including
+    // cross-canvas snapshots and frozen excerpt inputs inherited by a fork.
+    if (
+      node?.ref_type === 'excerpt' &&
+      role === 'branch_origin' &&
+      node.context_state !== 'rejected'
+    )
+      explicitNodes.add(nodeId);
     if (!roles.has(nodeId) || priorities[role] > priorities[roles.get(nodeId)!])
       roles.set(nodeId, role);
   };

@@ -94,3 +94,5 @@ pnpm test:portable
 项目代码采用 [MIT License](LICENSE)。第三方依赖和资产保留各自的许可证。`package.json` 的 `private: true` 只防止误发 npm 包，不控制 GitHub 的公开状态。
 
 0.6.0 支持话题分组、输入分叉与多来源摘录汇合，见[操作说明](docs/thought-islands.md)。
+
+0.7.0 支持多画布切换、独立草稿和跨画布摘录引用，见[多画布说明](docs/multiple-canvases.md)。

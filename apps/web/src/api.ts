@@ -1,6 +1,33 @@
 import type { AppSnapshot, ContextPackage } from '@acc/domain';
+import { createContext, useCallback, useContext } from 'react';
+
+export const CanvasApiContext = createContext<string | null>(null);
+export interface CanvasEntry {
+  id: string;
+  name: string;
+  created_at: string;
+  busy: boolean;
+  unavailable?: boolean;
+}
+export function useApi() {
+  const canvasId = useContext(CanvasApiContext);
+  return useCallback(
+    <T>(path: string, body?: unknown, method = 'POST') => api<T>(path, body, method, canvasId),
+    [canvasId],
+  );
+}
+export function useCanvasUrl() {
+  const canvasId = useContext(CanvasApiContext);
+  return useCallback(
+    (path: string) =>
+      path +
+      (canvasId ? (path.includes('?') ? '&' : '?') + 'canvas=' + encodeURIComponent(canvasId) : ''),
+    [canvasId],
+  );
+}
 
 export type ClientState = AppSnapshot & {
+  canvas_id?: string;
   provider: { name: string; model: string; demo: boolean };
 };
 export function threadStatus(state: Pick<AppSnapshot, 'turns'>, conversationId: string) {
@@ -27,17 +54,20 @@ export interface GenerationStarted {
   context_set_id: string;
   package?: ContextPackage;
 }
-export async function api<T>(path: string, body?: unknown, method = 'POST'): Promise<T> {
-  const response = await fetch(
-    `/api${path}`,
-    body === undefined
-      ? undefined
-      : {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-  );
+export async function api<T>(
+  path: string,
+  body?: unknown,
+  method = 'POST',
+  canvasId?: string | null,
+): Promise<T> {
+  const response = await fetch(`/api${path}`, {
+    method: body === undefined ? 'GET' : method,
+    headers: {
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(canvasId ? { 'X-Canvas-ID': canvasId } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
   if (response.status === 401) window.dispatchEvent(new Event('canvas-session-expired'));
   const data = await response.json();
   if (!response.ok) throw new ApiError(data.message || '请求失败', data.error, data.package);
@@ -47,12 +77,19 @@ export async function streamAnswer(
   path: '/send' | '/answer' | '/retry',
   body: object,
   onDraft: (text: string) => void,
-  options: { signal?: AbortSignal; onStarted?: (event: GenerationStarted) => void } = {},
+  options: {
+    signal?: AbortSignal;
+    onStarted?: (event: GenerationStarted) => void;
+    canvasId?: string | null;
+  } = {},
 ) {
   const response = await fetch(`/api${path}`, {
     signal: options.signal,
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.canvasId ? { 'X-Canvas-ID': options.canvasId } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {

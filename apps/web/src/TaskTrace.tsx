@@ -10,7 +10,7 @@ import {
   Clock,
   FileText,
 } from 'lucide-react';
-import { api } from './api';
+import { useApi, useCanvasUrl } from './api';
 import type { LocalAction, LocalTask } from '../../../packages/local-runtime/src/executor';
 import type { Evidence } from '../../../packages/local-runtime/src/evidence';
 import type { Frame } from '../../../packages/local-runtime/src/desktop';
@@ -60,11 +60,13 @@ export function FrameImage({
   point?: { x: number; y: number };
   onPoint?: (x: number, y: number) => void;
 }) {
+  const canvasUrl = useCanvasUrl();
+
   return (
     <figure className={'trace-frame ' + (onPoint ? 'pick-point' : '')}>
       <div className="trace-image-surface">
         <img
-          src={imageUrl(task, image)}
+          src={canvasUrl(imageUrl(task, image))}
           alt={image.label}
           loading="lazy"
           draggable={false}
@@ -293,6 +295,9 @@ export function TraceDialog({
   onClose: () => void;
   onContext?: (id: string) => void;
 }) {
+  const api = useApi();
+  const canvasUrl = useCanvasUrl();
+
   const [task, setTask] = useState<LocalTask | null>(null),
     [error, setError] = useState('');
   useEffect(() => {
@@ -342,7 +347,7 @@ export function TraceDialog({
                 <Clock size={14} />
                 {taskStates[task.status]} · {task.actions.length} 步
               </span>
-              <a href={'/api/local/tasks/' + id + '/export'} download>
+              <a href={canvasUrl('/api/local/tasks/' + id + '/export')} download>
                 <Download size={14} />
                 匯出紀錄與圖片
               </a>
@@ -401,6 +406,8 @@ export type CanvasTrace = {
   }[];
 };
 export function TraceCardContent({ trace, onOpen }: { trace: CanvasTrace; onOpen: () => void }) {
+  const canvasUrl = useCanvasUrl();
+
   const last = trace.steps.flatMap((step) => step.images).at(-1);
   const waiting = trace.steps.some((step) => step.status === 'waiting');
   return (
@@ -423,7 +430,7 @@ export function TraceCardContent({ trace, onOpen }: { trace: CanvasTrace; onOpen
           aria-label="開啟截圖與操作路徑"
         >
           <img
-            src={imageUrl(trace.task_id, last)}
+            src={canvasUrl(imageUrl(trace.task_id, last))}
             alt={last.label}
             loading="lazy"
             draggable={false}

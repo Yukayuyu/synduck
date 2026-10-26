@@ -27,7 +27,7 @@ describe('SQLite provenance', () => {
       store = new Store(path);
       expect(store.snapshot().excerpts[0].selector.exact).toBe('🌱');
       expect(store.snapshot().conversations).toHaveLength(2);
-      expect(store.db.prepare('SELECT * FROM schema_migrations').all()).toHaveLength(2);
+      expect(store.db.prepare('SELECT * FROM schema_migrations').all()).toHaveLength(3);
       expect(() => store.db.prepare('DELETE FROM content_blocks WHERE id=?').run(b.id)).toThrow();
     } finally {
       store.close();

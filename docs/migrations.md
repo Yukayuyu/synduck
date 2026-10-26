@@ -25,3 +25,9 @@ Import validates references and hashes before writing, requires explicit confirm
 ## 0.6.0 optional domain fields (no SQL migration)
 
 Conversation fork_origin freezes source identities and the initial task. Excerpt collection_source_ids stores flat, nonempty source membership while preserving the anchor quote. Existing rows and native format-1 files without these fields are unchanged. New exports retain and validate these fields; older applications reject unsupported fields rather than dropping provenance. See [behavior and compatibility](thought-islands.md).
+
+## 003 / canvas catalog and scoped local tasks
+
+Adds canvas_catalog(id, is_primary, created_at, name), its unique primary index, and canvas_task_owners(task_id, canvas_id) transactionally and idempotently. Existing graph tables, root database paths and canonical entity IDs are unchanged. A canvas catalog ID is stable across project replacement and can differ from the workspace ID inside an imported file. Additional canvases use separate <DATABASE_PATH>.canvases/<UUID>.sqlite files. Each owns its graph and recovery table; restoring one does not replace the catalog or other databases. Missing files are not initialized as empty replacements.
+
+Optional Excerpt.external_origin and content-block structured_data.external_origin preserve original canvas/workspace/block/turn IDs, full source hash and UTF-16 range while only the explicitly selected fragment is copied. Old format-1 files remain valid. New external provenance is retained and validated; older clients reject unsupported fields on import. Browser drafts are local per-canvas data, outside native project exports. See [behavior, backups and request isolation](multiple-canvases.md).

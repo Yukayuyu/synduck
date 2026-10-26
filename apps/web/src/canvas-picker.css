@@ -1,0 +1,190 @@
+.canvas-host-panel {
+  width: 100%;
+  height: 100%;
+}
+.canvas-host-panel[hidden] {
+  display: none;
+}
+.canvas-first .canvas-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 5px;
+  border-radius: 8px;
+  text-align: left;
+  color: var(--muted-ink);
+}
+.canvas-picker-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-first .canvas-picker-trigger:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.canvas-picker {
+  position: fixed;
+  z-index: 75;
+  top: 72px;
+  left: 24px;
+  width: 330px;
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  background: var(--surface, #fff);
+  color: var(--ink, #253342);
+  border: 1px solid var(--stroke, #dce3ea);
+  border-radius: 22px;
+  box-shadow: 0 16px 50px #12243b20;
+}
+.canvas-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.canvas-picker-heading strong {
+  font-size: 14px;
+}
+.canvas-picker-heading button {
+  color: var(--muted-ink);
+  padding: 4px;
+}
+.canvas-picker input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--input-surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+.canvas-picker label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.canvas-picker nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
+  margin: 12px 0;
+}
+.canvas-picker nav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  color: var(--ink);
+  text-align: left;
+  font-size: 12px;
+}
+.canvas-picker nav button > span {
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.canvas-picker nav button:hover,
+.canvas-picker nav button[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.canvas-picker nav small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--muted-ink);
+}
+.canvas-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--stroke);
+  padding-top: 10px;
+  margin-top: 12px;
+}
+.canvas-picker-actions button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  color: var(--accent);
+  font-size: 11px;
+}
+.canvas-picker-actions .primary {
+  color: var(--on-accent, #fff);
+  padding-inline: 12px;
+}
+.canvas-picker-error {
+  font-size: 11px;
+  color: #b54747;
+  margin: 10px 0 0;
+}
+.canvas-reference-dialog {
+  width: 430px;
+  height: auto;
+  min-height: 0;
+  max-width: calc(100vw - 28px);
+  max-height: calc(100dvh - 50px);
+  overflow-y: auto;
+  background: var(--surface, #fff);
+  color: var(--ink, #253342);
+  border: 1px solid var(--stroke);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 20px 80px #12243b30;
+}
+.canvas-reference-dialog h2 {
+  font-size: 18px;
+  margin: 0 0 16px;
+}
+.canvas-reference-dialog blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.8;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--excerpt-surface);
+  color: var(--excerpt-ink);
+  border-left: 3px solid var(--excerpt-stroke);
+  margin: 0 0 18px;
+  padding: 12px;
+  border-radius: 8px;
+}
+.canvas-reference-dialog label {
+  display: block;
+  font-size: 11px;
+  margin: 12px 0 6px;
+}
+.canvas-reference-dialog select,
+.canvas-reference-dialog input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  background: var(--input-surface);
+  color: var(--ink);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+}
+.canvas-reference-dialog p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted-ink);
+}
+@media (max-width: 600px) {
+  .canvas-picker {
+    left: 12px;
+    top: 62px;
+  }
+}

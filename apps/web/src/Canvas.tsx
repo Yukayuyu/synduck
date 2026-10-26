@@ -44,7 +44,7 @@ import {
 } from 'lucide-react';
 import { collectionSources, type CanvasNode } from '@acc/domain';
 import { SourceHandles, type SourceAnchor } from './SourceHandles';
-import { api, type ClientState } from './api';
+import { useApi, type ClientState } from './api';
 import { TraceCardContent, type CanvasTrace } from './TaskTrace';
 import { ContextMenu, type MenuAction } from './ContextMenu';
 import '@xyflow/react/dist/style.css';
@@ -166,6 +166,7 @@ const nodeTypes = { card: Card, trace: TraceCard };
 
 interface Props {
   state: ClientState;
+  initialViewport?: Viewport;
   activeNode: string | null;
   selected: string[];
   locate: { id: string; tick: number } | null;
@@ -193,6 +194,7 @@ interface Props {
 
 export function Canvas({
   state,
+  initialViewport,
   activeNode,
   selected,
   locate,
@@ -217,6 +219,8 @@ export function Canvas({
   onError,
   onFold,
 }: Props) {
+  const api = useApi();
+
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -714,7 +718,7 @@ export function Canvas({
           else onMove(node.id, node.position.x, node.position.y);
         }}
         onMoveEnd={(_e, viewport) => onViewport(viewport)}
-        defaultViewport={state.workspace.settings.viewport}
+        defaultViewport={initialViewport ?? state.workspace.settings.viewport}
         minZoom={0.01}
         maxZoom={2}
         nodesConnectable={false}

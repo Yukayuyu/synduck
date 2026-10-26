@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, ExternalLink } from 'lucide-react';
-import { api } from './api';
+import { useApi } from './api';
 
 type AccountState = {
   connected: boolean;
@@ -48,6 +48,8 @@ export function ModelDialog({
   onClose: () => void;
   onChanged: () => Promise<unknown>;
 }) {
+  const api = useApi();
+
   const [account, setAccount] = useState<AccountState | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

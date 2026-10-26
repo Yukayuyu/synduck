@@ -126,6 +126,7 @@ type ModelSelection = { model: string; effort: string | null; connected: () => P
 type RpcFactory = (handler: HostToolHandler) => CodexConnection;
 
 export class LocalExecutor {
+  onTaskCreated?: (taskId: string) => void;
   private settings = { enabled: false, root: '' };
   private configuring = false;
   private tasks: LocalTask[] = [];
@@ -481,6 +482,7 @@ export class LocalExecutor {
     this.tasks.unshift(task);
     this.tasks = this.tasks.slice(0, 50);
     this.active = { task, abort: new AbortController(), tools: new Set() };
+    this.onTaskCreated?.(task.id);
     return task;
   }
   async manual(tool: string, args: unknown, continuationId?: string) {

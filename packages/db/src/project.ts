@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   DomainError,
+  ExternalOriginSchema,
   MAX_PROJECT_BYTES,
   ProjectFileSchema,
   type AppSnapshot,
@@ -144,6 +145,11 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
   }
   const ordinals = new Set<string>();
   for (const b of s.blocks) {
+    if (b.structured_data?.external_origin) {
+      const origin = ExternalOriginSchema.safeParse(b.structured_data.external_origin);
+      if (!origin.success || origin.data.selector.exact !== b.text_content)
+        invalid('跨画布引用快照与原文记录不一致。');
+    }
     if (b.turn_id !== null && !turns.has(b.turn_id)) invalid('内容块所属消息不存在。');
     if (b.asset_id !== null || ['image', 'file'].includes(b.block_type))
       invalid('当前版本尚不支持带附件的项目导入。');

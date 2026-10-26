@@ -16,6 +16,7 @@ import {
   AnswerSchema,
   CreateExcerptSchema,
   CreateForksSchema,
+  ExternalOriginSchema,
   DomainError,
   type Workspace,
   type Conversation,
@@ -57,42 +58,60 @@ CREATE INDEX edges_target ON edges(target_node_id);
 export class Store {
   readonly db: DatabaseSync;
   private inTransaction = false;
-  constructor(path: string) {
+  constructor(readonly path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
-    this.db.exec(
-      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;',
-    );
-    this.db.exec(
-      'CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);',
-    );
-    if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 1').get()) {
-      this.transaction(() => {
-        this.db.exec(migration);
-        this.db.prepare('INSERT INTO schema_migrations VALUES(1, ?)').run(now());
-      });
-    }
-    if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get()) {
-      this.transaction(() => {
-        this.db.exec(
-          'CREATE TABLE recovery_snapshots(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));',
-        );
-        this.db.prepare('INSERT INTO schema_migrations VALUES(2, ?)').run(now());
-      });
-    }
-    if (this.all('workspaces', WorkspaceSchema).length === 0) {
-      const at = now();
-      this.saveWorkspace({
-        id: id(),
-        name: '我的思考空间',
-        description: null,
-        root_node_id: null,
-        schema_version: '0.1.0',
-        revision: 0,
-        settings: { pinned_node_ids: [], excluded_node_ids: [], viewport: { x: 0, y: 0, zoom: 1 } },
-        created_at: at,
-        updated_at: at,
-      });
+    try {
+      this.db.exec(
+        'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;',
+      );
+      this.db.exec(
+        'CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);',
+      );
+      if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 1').get()) {
+        this.transaction(() => {
+          this.db.exec(migration);
+          this.db.prepare('INSERT INTO schema_migrations VALUES(1, ?)').run(now());
+        });
+      }
+      if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 2').get()) {
+        this.transaction(() => {
+          this.db.exec(
+            'CREATE TABLE recovery_snapshots(id TEXT PRIMARY KEY, created_at TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload)));',
+          );
+          this.db.prepare('INSERT INTO schema_migrations VALUES(2, ?)').run(now());
+        });
+      }
+      if (!this.db.prepare('SELECT version FROM schema_migrations WHERE version = 3').get()) {
+        this.transaction(() => {
+          this.db
+            .exec(`CREATE TABLE canvas_catalog(id TEXT PRIMARY KEY, is_primary INTEGER NOT NULL CHECK(is_primary IN (0,1)), created_at TEXT NOT NULL, name TEXT NOT NULL);
+          CREATE UNIQUE INDEX one_primary_canvas ON canvas_catalog(is_primary) WHERE is_primary = 1;
+          CREATE TABLE canvas_task_owners(task_id TEXT PRIMARY KEY, canvas_id TEXT NOT NULL REFERENCES canvas_catalog(id));`);
+          this.db.prepare('INSERT INTO schema_migrations VALUES(3, ?)').run(now());
+        });
+      }
+      if (this.all('workspaces', WorkspaceSchema).length === 0) {
+        const at = now();
+        this.saveWorkspace({
+          id: id(),
+          name: '我的思考空间',
+          description: null,
+          root_node_id: null,
+          schema_version: '0.1.0',
+          revision: 0,
+          settings: {
+            pinned_node_ids: [],
+            excluded_node_ids: [],
+            viewport: { x: 0, y: 0, zoom: 1 },
+          },
+          created_at: at,
+          updated_at: at,
+        });
+      }
+    } catch (error) {
+      this.db.close();
+      throw error;
     }
   }
   close() {
@@ -444,6 +463,17 @@ export class Store {
         created_by: 'human',
         created_at: now(),
       };
+      if (block.structured_data?.external_origin) {
+        const original = ExternalOriginSchema.parse(block.structured_data.external_origin);
+        excerpt.external_origin = {
+          ...original,
+          selector: {
+            ...sel,
+            start_char: original.selector.start_char + sel.start_char,
+            end_char: original.selector.start_char + sel.end_char,
+          },
+        };
+      }
       this.saveExcerpt(excerpt);
       const siblings = s.edges.filter(
         (e) => e.source_node_id === sourceNode.id && e.type === 'excerpt_from',
@@ -732,8 +762,17 @@ export class Store {
     });
   }
   recoverInterrupted() {
-    for (const t of this.snapshot().turns.filter((t) => t.status === 'streaming'))
-      this.failAnswer(t.id, '服务重启中断了生成，可重试。');
+    this.transaction(() => {
+      const interrupted = this.db
+        .prepare("SELECT payload FROM turns WHERE status = 'streaming'")
+        .all();
+      for (const row of interrupted) {
+        const turn = TurnSchema.parse(JSON.parse(row.payload as string));
+        if (turn.status !== 'streaming') continue;
+        this.saveTurn({ ...turn, status: 'error', error: '服务重启中断了生成，可重试。' });
+        this.bump();
+      }
+    });
   }
 }
 

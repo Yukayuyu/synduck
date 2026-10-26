@@ -20,6 +20,7 @@ import {
   type ContextPackage,
   type Excerpt,
   type Turn,
+  type ExternalOrigin,
 } from '@acc/domain';
 import { threadStatus, type ClientState } from './api';
 
@@ -73,6 +74,8 @@ interface Props {
   onCollecting: (id: string) => void;
   onRemoveSource: (id: string) => void;
   onOpenNode: (node: CanvasNode) => void;
+  onReference: (selection: SelectedText) => void;
+  onExternalSource: (origin: ExternalOrigin) => void;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
@@ -264,10 +267,20 @@ export function Focus(props: Props) {
                     <button
                       className="source-return"
                       aria-label={`回到来源 ${index + 1}`}
-                      onClick={() => props.onSource(source)}
+                      onClick={() =>
+                        source.external_origin
+                          ? props.onExternalSource(source.external_origin)
+                          : props.onSource(source)
+                      }
                     >
                       <blockquote>{source.snapshot_text}</blockquote>
-                      <small>{title}</small>
+                      <small>
+                        {source.external_origin
+                          ? source.external_origin.canvas_name +
+                            ' · ' +
+                            source.external_origin.conversation_title
+                          : title}
+                      </small>
                     </button>
                     <button
                       className="icon-button"
@@ -286,7 +299,12 @@ export function Focus(props: Props) {
             <button
               className="secondary"
               aria-label="回到来源并高亮"
-              onClick={() => sources[0] && props.onSource(sources[0])}
+              onClick={() =>
+                sources[0] &&
+                (sources[0].external_origin
+                  ? props.onExternalSource(sources[0].external_origin)
+                  : props.onSource(sources[0]))
+              }
             >
               <CornerUpRight size={14} />
               回到原文
@@ -621,6 +639,17 @@ export function Focus(props: Props) {
                     加入汇合点
                   </button>
                 )}
+                <button
+                  aria-label="引用到其他画布"
+                  title="引用到其他画布"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    props.onReference(selection);
+                    setSelection(null);
+                  }}
+                >
+                  <CornerUpRight size={14} />
+                </button>
                 <button aria-label="取消文字選取" onClick={() => setSelection(null)}>
                   <X size={14} />
                 </button>
@@ -654,7 +683,7 @@ export function Focus(props: Props) {
                 ref={inputRef}
                 id={`prompt-${node.id}`}
                 placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
-                value={props.prompt}
+                value={busy && props.pendingInput ? props.pendingInput.prompt : props.prompt}
                 onChange={(e) => props.onPrompt(e.target.value)}
                 onKeyDown={(event) => {
                   if (

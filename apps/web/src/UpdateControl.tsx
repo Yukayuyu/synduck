@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, X, Bell } from 'lucide-react';
-import { api } from './api';
+import { useApi } from './api';
 import type { UpdateState } from '../../../packages/local-runtime/src/updates';
 const phases: Record<string, string> = {
   idle: '已是目前檢查到的版本',
@@ -28,6 +28,8 @@ const saveMarker = (version: string | null) => {
   }
 };
 export function UpdateControl({ canInstall }: { canInstall: boolean }) {
+  const api = useApi();
+
   const [state, setState] = useState<UpdateState | null>(null);
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState(false);

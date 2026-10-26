@@ -256,6 +256,32 @@ try {
   });
   await request('/answer', { context_set_id: compiled.context_set.id });
   const originalState = await request('/state');
+  const otherCanvas = await request('/canvases', {
+    name: 'Preserve a second canvas through updates',
+  });
+  const otherConversation = await request('/conversations?canvas=' + otherCanvas.id, {
+    title: 'Isolated canvas evidence',
+  });
+  const otherCompiled = await request('/compile?canvas=' + otherCanvas.id, {
+    conversation_id: otherConversation.conversation.id,
+    prompt: 'Preserve this canvas independently',
+    selected_node_ids: [],
+  });
+  await request('/answer?canvas=' + otherCanvas.id, {
+    context_set_id: otherCompiled.context_set.id,
+  });
+  const otherOriginal = await request('/state?canvas=' + otherCanvas.id);
+  const assertOtherCanvas = async () => {
+    const current = await request('/state?canvas=' + otherCanvas.id);
+    assert.deepEqual(current.nodes, otherOriginal.nodes);
+    assert.deepEqual(current.turns, otherOriginal.turns);
+    assert.deepEqual(current.packages, otherOriginal.packages);
+    assert.ok(
+      (await request('/canvases')).canvases.some(
+        (entry: { id: string }) => entry.id === otherCanvas.id,
+      ),
+    );
+  };
   assert.equal(originalState.turns.length, 2);
   assert.equal(originalState.packages.length, 1);
   assert.ok(originalState.turns.every((turn: { status: string }) => turn.status === 'complete'));
@@ -286,6 +312,7 @@ try {
   assert.deepEqual(updatedState.excerpts, originalState.excerpts);
   assert.deepEqual(updatedState.packages, originalState.packages);
   assert.deepEqual(updatedState.turns, originalState.turns);
+  await assertOtherCanvas();
   assert.equal(
     await fs.readFile(join(home, 'data/codex/marker.txt'), 'utf8'),
     'Keep app-owned login directory',
@@ -306,6 +333,7 @@ try {
   });
   assert.equal((await request('/health')).version, nextVersion);
   assert.deepEqual((await request('/state')).packages, originalState.packages);
+  await assertOtherCanvas();
   assert.equal(
     await fs.readFile(join(home, 'data/codex/marker.txt'), 'utf8'),
     'Keep app-owned login directory',
@@ -317,6 +345,7 @@ try {
   const backup = `update-backup-${randomUUID()}`;
   await fs.cp(join(home, 'data'), join(home, '.runtime', backup), { recursive: true });
   await fs.writeFile(join(home, 'data/codex/marker.txt'), 'Interrupted update mutation');
+  await fs.rm(join(home, 'data/context-canvas.sqlite.canvases'), { recursive: true });
   await fs.writeFile(
     join(home, '.runtime/pending-install.json'),
     JSON.stringify({ previous, backup, backup_ready: true }),
@@ -329,6 +358,7 @@ try {
     'Keep app-owned login directory',
   );
   assert.deepEqual((await request('/state')).packages, originalState.packages);
+  await assertOtherCanvas();
   console.log('PASS: pending-journal recovery after a simulated interrupted update.');
   phase = 'abrupt exit and stale-lock recovery';
   const crashConversation = await request('/conversations', {
@@ -391,6 +421,7 @@ try {
   );
   assert.equal(recoveredTurn?.status, 'error');
   assert.equal(recoveredTurn.input_context_set_id, crashInput.context_set.id);
+  await assertOtherCanvas();
   console.log('PASS: abrupt launcher exit stops its API and generation; stale lock recovers.');
 } catch (error) {
   if (error instanceof Error) {

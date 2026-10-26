@@ -125,4 +125,7 @@ test('runs conversations together, isolates stop, and preserves another card’s
   const restoredB = await open(1);
   await expect(restoredB).toHaveValue('問題 B');
   await expect(restoredB).toBeEditable();
+  await page.reload();
+  await expect(await open(0)).toHaveValue('');
+  await expect(await open(1)).toHaveValue('問題 B');
 });

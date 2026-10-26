@@ -31,23 +31,57 @@ import { registerAccess, type AccessConfig } from './access';
 import { registerRuntime, type UpdateService } from './runtime';
 import type { LocalExecutor } from '../../../packages/local-runtime/src/executor';
 import packageJson from '../../../package.json';
+import { CanvasRegistry } from './canvases';
 
 export function createApp(
-  store: Store,
+  primaryStore: Store,
   provider: ModelProvider,
   options: {
     access?: AccessConfig;
     models?: ProviderRegistry;
     local?: LocalExecutor;
     updates?: UpdateService;
+    canvases?: CanvasRegistry;
   } = {},
 ) {
   const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
+  const canvases = options.canvases ?? new CanvasRegistry(primaryStore);
+  const store = canvases.store;
   const liveAnswers = new Map<string, AbortController>();
+  const previousTaskHook = options.local?.onTaskCreated;
+  const previousBusyHook = canvases.localBusy;
+  if (options.local)
+    canvases.localBusy = (id) =>
+      options
+        .local!.snapshot()
+        .tasks.some(
+          (task) =>
+            ['running', 'waiting'].includes(task.status) && canvases.taskOwner(task.id) === id,
+        );
+  if (options.local)
+    options.local.onTaskCreated = (id) => {
+      previousTaskHook?.(id);
+      canvases.ownTask(id);
+    };
   registerAccess(app, options.access);
-  registerRuntime(app, store, options.local, options.updates);
+  app.addHook('onRequest', (request, _reply, done) => {
+    if (!request.url.startsWith('/api/')) return done();
+    try {
+      const query = new URL(request.url, 'http://canvas.local').searchParams.get('canvas');
+      const canvasId = Id.parse(request.headers['x-canvas-id'] ?? query ?? canvases.primaryId);
+      canvases.run(canvasId, done);
+    } catch (error) {
+      done(error as Error);
+    }
+  });
+  app.addHook('onClose', async () => {
+    if (options.local) options.local.onTaskCreated = previousTaskHook;
+    canvases.localBusy = previousBusyHook;
+    canvases.close();
+  });
+  registerRuntime(app, store, options.local, options.updates, canvases);
   const idle = () => {
-    if (options.local?.busy || store.snapshot().turns.some((turn) => turn.status === 'streaming'))
+    if (options.local?.busy || canvases.busy)
       throw new DomainError('generation_active', '回答正在生成，請完成後再變更模型或登入。', 409);
   };
   app.get('/api/models', async () => ({
@@ -118,8 +152,34 @@ export function createApp(
   }));
   app.get('/api/state', async () => ({
     ...store.snapshot(),
+    canvas_id: canvases.currentId,
     provider: { name: provider.name, model: provider.model, demo: provider.name === 'demo' },
   }));
+  app.get('/api/canvases', async (_request, reply) =>
+    reply.header('Cache-Control', 'no-store').send({
+      canvases: canvases.list(),
+      primary_id: canvases.primaryId,
+    }),
+  );
+  app.post('/api/canvases', async (request) => {
+    const { name, request_id } = z
+      .object({ name: z.string().trim().min(1).max(160), request_id: z.string().uuid().optional() })
+      .strict()
+      .parse(request.body);
+    return canvases.create(name, request_id);
+  });
+  app.patch('/api/canvases/:id', async (request) =>
+    canvases.rename(
+      z.object({ id: Id }).parse(request.params).id,
+      z
+        .object({ name: z.string().trim().min(1).max(160) })
+        .strict()
+        .parse(request.body).name,
+    ),
+  );
+  app.post('/api/canvases/:id/references', async (request) =>
+    canvases.reference(z.object({ id: Id }).parse(request.params).id, request.body),
+  );
   app.post('/api/conversations', async (request) => {
     const { title, position } = CreateConversationSchema.parse(request.body);
     return store.createConversation(title, undefined, position);
@@ -262,7 +322,8 @@ export function createApp(
     reply: FastifyReply,
   ) => {
     const controller = new AbortController();
-    liveAnswers.set(turn.id, controller);
+    const answerKey = JSON.stringify([canvases.currentId, turn.id]);
+    liveAnswers.set(answerKey, controller);
     let settled = false;
     const disconnected = () => {
       if (!settled) controller.abort();
@@ -308,7 +369,7 @@ export function createApp(
       });
     } finally {
       settled = true;
-      liveAnswers.delete(turn.id);
+      liveAnswers.delete(answerKey);
       request.raw.off('aborted', disconnected);
       reply.raw.off('close', disconnected);
       reply.raw.end();
@@ -319,7 +380,7 @@ export function createApp(
     const turn = store.snapshot().turns.find((t) => t.id === turnId);
     if (!turn || turn.actor !== 'assistant')
       throw new DomainError('missing_turn', '找不到這段回答。', 404);
-    const controller = liveAnswers.get(turnId);
+    const controller = liveAnswers.get(JSON.stringify([canvases.currentId, turnId]));
     if (controller) controller.abort();
     return { ok: true, already_finished: !controller };
   });

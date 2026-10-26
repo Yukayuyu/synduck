@@ -115,6 +115,21 @@ export const TextSelectorSchema = z
   .refine((s) => s.end_char > s.start_char && s.exact.length === s.end_char - s.start_char, {
     message: 'Selector uses a nonempty, half-open UTF-16 range matching exact text',
   });
+export const ExternalOriginSchema = z
+  .object({
+    canvas_id: Id,
+    workspace_id: Id,
+    source_block_id: Id,
+    conversation_id: Id,
+    turn_id: Id,
+    selector: TextSelectorSchema,
+    source_content_hash: Hash,
+    canvas_name: z.string().min(1).max(160),
+    conversation_title: z.string().min(1).max(160),
+    request_id: z.string().uuid(),
+  })
+  .strict();
+export type ExternalOrigin = z.infer<typeof ExternalOriginSchema>;
 export const ExcerptSchema = z
   .object({
     id: Id,
@@ -126,11 +141,17 @@ export const ExcerptSchema = z
     // Optional collection membership. Original quote provenance stays immutable,
     // even when the anchor quote is removed from the current collection.
     collection_source_ids: z.array(Id).min(1).max(200).optional(),
+    external_origin: ExternalOriginSchema.optional(),
     title: z.string().max(160),
     created_by: z.enum(['human', 'ai', 'system']),
     created_at: Time,
   })
-  .refine((e) => e.snapshot_text === e.selector.exact, { message: 'Snapshot must match selector' });
+  .refine(
+    (e) =>
+      e.snapshot_text === e.selector.exact &&
+      (!e.external_origin || e.external_origin.selector.exact === e.snapshot_text),
+    { message: 'Snapshot must match selector and external origin' },
+  );
 export const NodeSchema = z
   .object({
     id: Id,

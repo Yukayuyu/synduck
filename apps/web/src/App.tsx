@@ -25,7 +25,7 @@ import {
   type Excerpt,
   type Conversation,
 } from '@acc/domain';
-import { api, ApiError, streamAnswer, type ClientState } from './api';
+import { useApi, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
 import { Inspector } from './Inspector';
@@ -42,6 +42,7 @@ import './canvas-first.css';
 import './canvas-themes.css';
 import './thought-islands.css';
 import { AppearanceDialog, appearanceKey, readAppearance } from './AppearanceDialog';
+import { readDrafts, writeDrafts, type CanvasSession } from './canvas-session';
 
 interface GenerationJob {
   prompt: string;
@@ -55,7 +56,9 @@ interface RequestError {
   message: string;
   contextSetId: string | null;
 }
-export default function App() {
+export default function App({ canvas }: { canvas: CanvasSession }) {
+  const api = useApi();
+
   const [appearance, setAppearance] = useState(readAppearance);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [workspaceMenu, setWorkspaceMenu] = useState<{ x: number; y: number } | null>(null);
@@ -69,14 +72,17 @@ export default function App() {
   }, [appearance]);
   const [state, setState] = useState<ClientState | null>(null);
   const [error, setError] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [prompts, setPrompts] = useState<Record<string, string>>({});
-  const [forkDrafts, setForkDrafts] = useState<Record<string, ForkDraft[]>>({});
+  const [activeId, setActiveId] = useState<string | null>(canvas.initialView?.activeId ?? null);
+  const [selected, setSelected] = useState<string[]>(canvas.initialView?.selected ?? []);
+  const [initialDrafts] = useState(() => readDrafts(canvas.id));
+  const [prompts, setPrompts] = useState<Record<string, string>>(initialDrafts.prompts);
+  const [forkDrafts, setForkDrafts] = useState<Record<string, ForkDraft[]>>(
+    initialDrafts.forkDrafts,
+  );
   const [preparingForks, setPreparingForks] = useState<string[]>([]);
   const preparingRef = useRef(new Set<string>());
   const [collectingId, setCollectingId] = useState<string | null>(null);
-  const [budget, setBudget] = useState(6000);
+  const [budget, setBudget] = useState(canvas.initialView?.budget ?? 6000);
   const [preview, setPreview] = useState<ContextPackage | null>(null);
   const [inspected, setInspected] = useState<{ pkg: ContextPackage; historical: boolean } | null>(
     null,
@@ -89,6 +95,26 @@ export default function App() {
   const streamingTurnIds = new Set(streamingTurns.map((turn) => turn.id));
   const runningConversations = new Set([...Object.keys(jobs), ...streamingConversations]);
   const busy = runningConversations.size > 0 || preparingForks.length > 0;
+  const dirty =
+    Object.values(prompts).some((text) => text.trim()) ||
+    Object.values(forkDrafts).some((drafts) => drafts.length > 0);
+  const lastSavedDrafts = useRef(JSON.stringify(initialDrafts));
+  useEffect(() => {
+    const next = JSON.stringify({ prompts, forkDrafts });
+    if (next === lastSavedDrafts.current) return;
+    try {
+      writeDrafts(canvas.id, prompts, forkDrafts);
+      lastSavedDrafts.current = next;
+    } catch {
+      setError('草稿暂未保存到浏览器，请保留此页面并备份未发送的文字。');
+    }
+  }, [canvas.id, prompts, forkDrafts]);
+  useEffect(() => {
+    canvas.onRuntime(canvas.id, { busy, dirty });
+  }, [canvas.id, canvas.onRuntime, busy, dirty]);
+  useEffect(() => {
+    canvas.onView(canvas.id, { activeId, selected, budget, viewport: localViewport.current });
+  }, [canvas.id, canvas.onView, activeId, selected, budget]);
   const remoteGeneration = streamingTurns.some((turn) => !jobs[turn.conversation_id]);
   const conversationBusy = (id: string) => !!jobsRef.current[id] || streamingConversations.has(id);
   const draftFor = (id: string) =>
@@ -138,6 +164,36 @@ export default function App() {
     forks: ForkDraft[];
   } | null>(null);
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingViewport = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  const localViewport = useRef(canvas.initialView?.viewport);
+  useEffect(
+    () => () => {
+      if (viewportTimer.current) clearTimeout(viewportTimer.current);
+      if (pendingViewport.current)
+        void api('/workspace', { viewport: pendingViewport.current }, 'PATCH').catch(() => {});
+    },
+    [api],
+  );
+  useEffect(() => {
+    if (canvas.visible) return;
+    if (viewportTimer.current) clearTimeout(viewportTimer.current);
+    if (pendingViewport.current) {
+      void api('/workspace', { viewport: pendingViewport.current }, 'PATCH').catch(fail);
+      pendingViewport.current = null;
+    }
+    setPanel(null);
+    setModelDialog(false);
+    setLocalDialog(false);
+    setProjectDialog(false);
+    setWorkspaceMenu(null);
+    setAppearanceOpen(false);
+    setHelp(false);
+    setNewDialog(false);
+    setRenameTarget(null);
+    setPendingDelete(null);
+    setTrashOpen(false);
+    setTraceId('');
+  }, [canvas.visible]);
   const compileVersion = useRef(0);
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
@@ -153,10 +209,12 @@ export default function App() {
       setState(s);
     }
     return s;
-  }, []);
+  }, [api]);
   useEffect(() => {
+    if (!canvas.visible) return;
+    setAppearance(readAppearance());
     void refresh().catch((e) => setError(e.message));
-  }, [refresh]);
+  }, [refresh, canvas.visible]);
   useEffect(() => {
     if (!remoteGeneration) return;
     const timer = setInterval(() => {
@@ -351,6 +409,10 @@ export default function App() {
     }
   };
   const source = (e: Excerpt) => {
+    if (e.external_origin) {
+      canvas.onSourceJump(e.external_origin);
+      return;
+    }
     if (!state) return;
     const b = state.blocks.find((b) => b.id === e.source_block_id);
     const t = state.turns.find((t) => t.id === b?.turn_id);
@@ -379,6 +441,67 @@ export default function App() {
       moveTo(n.id);
     }
   };
+  const handledNavigation = useRef('');
+  useEffect(() => {
+    const navigation = canvas.navigation;
+    if (!navigation || !canvas.visible || handledNavigation.current === navigation.token) return;
+    handledNavigation.current = navigation.token;
+    let alive = true;
+    void api<ClientState>('/state')
+      .then((fresh) => {
+        if (!alive) return;
+        setState(fresh);
+        if (navigation.nodeId) {
+          const node = fresh.nodes.find(
+            (n) => n.id === navigation.nodeId && n.visibility !== 'hidden',
+          );
+          if (!node) throw new Error('引用节点已变化，请从画布中重新查找。');
+          open(node);
+          moveTo(node.id);
+        } else if (navigation.origin) {
+          const origin = navigation.origin;
+          const block = fresh.blocks.find((b) => b.id === origin.source_block_id);
+          const turn = fresh.turns.find((t) => t.id === block?.turn_id);
+          const node = fresh.nodes.find(
+            (n) => n.ref_type === 'conversation' && n.ref_id === origin.conversation_id,
+          );
+          if (
+            fresh.workspace.id !== origin.workspace_id ||
+            !node ||
+            !block ||
+            turn?.id !== origin.turn_id ||
+            turn.conversation_id !== origin.conversation_id ||
+            block.content_hash !== origin.source_content_hash ||
+            block.text_content?.slice(origin.selector.start_char, origin.selector.end_char) !==
+              origin.selector.exact
+          )
+            throw new Error('来源已变化或已不在这张画布，引用快照仍完整保留。');
+          const highlight = {
+            blockId: block.id,
+            start: origin.selector.start_char,
+            end: origin.selector.end_char,
+          };
+          if (node.visibility === 'hidden') {
+            setTrashTarget({ id: node.id, highlight });
+            setTrashOpen(true);
+          } else {
+            open(node);
+            setHighlight(highlight);
+            moveTo(node.id);
+          }
+        }
+        canvas.onNavigated(navigation.token);
+      })
+      .catch((error) => {
+        if (alive) {
+          fail(error);
+          canvas.onNavigated(navigation.token);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [canvas.navigation, canvas.visible, api, canvas.onNavigated, open, moveTo, fail]);
   const compile = async (inspect = true) => {
     const version = ++compileVersion.current;
     try {
@@ -453,12 +576,20 @@ export default function App() {
           updateJob(targetConversation, { ...job });
         },
         {
+          canvasId: canvas.id,
           signal: job.controller.signal,
           onStarted: (event) => {
             started = true;
             job.turnId = event.turn_id;
             job.contextSetId = event.context_set_id;
             pkg = event.package || pkg;
+            if (!retryId)
+              setPrompts((previous) =>
+                previous[targetConversation] === submittedPrompt ||
+                previous[targetConversation] === undefined
+                  ? { ...previous, [targetConversation]: '' }
+                  : previous,
+              );
             updateJob(targetConversation, { ...job });
             void refresh().catch(fail);
           },
@@ -480,6 +611,12 @@ export default function App() {
             : previous,
         );
     } catch (error) {
+      if (started && !retryId)
+        setPrompts((previous) =>
+          previous[targetConversation] === ''
+            ? { ...previous, [targetConversation]: submittedPrompt }
+            : previous,
+        );
       const message = job.controller.signal.aborted
         ? '已停止這段回答，可使用原上下文重試。'
         : error instanceof Error
@@ -577,6 +714,7 @@ export default function App() {
       }
     } else job?.controller.abort();
   };
+  if (!canvas.visible) return null;
   if (!state)
     return (
       <div className="loading-screen">
@@ -625,7 +763,7 @@ export default function App() {
             context<span>canvas</span>
           </strong>
           <span className="board-divider" />
-          <span className="workspace-name">{state.workspace.name}</span>
+          {canvas.switcher}
           {busy && (
             <span className="output-status generation-count" role="status">
               <LoaderCircle className="spin" size={12} />
@@ -640,6 +778,8 @@ export default function App() {
           <UpdateControl
             canInstall={
               !busy &&
+              !canvas.globalBusy &&
+              !canvas.globalDirty &&
               !preparingForks.length &&
               !Object.values(prompts).some((text) => text.trim()) &&
               !Object.values(forkDrafts).some((drafts) => drafts.length)
@@ -648,7 +788,7 @@ export default function App() {
           <button
             className="mode-pill"
             aria-label="模型與登入"
-            disabled={busy}
+            disabled={busy || canvas.globalBusy}
             onClick={() => setModelDialog(true)}
           >
             <span className="status-dot" />
@@ -696,6 +836,7 @@ export default function App() {
         <ReactFlowProvider key={canvasEpoch}>
           <Canvas
             state={state}
+            initialViewport={localViewport.current}
             activeNode={activeId}
             selected={selected}
             locate={locate}
@@ -744,8 +885,12 @@ export default function App() {
                 .catch(fail);
             }}
             onViewport={(v) => {
+              localViewport.current = v;
+              canvas.onView(canvas.id, { activeId, selected, budget, viewport: v });
+              pendingViewport.current = v;
               if (viewportTimer.current) clearTimeout(viewportTimer.current);
               viewportTimer.current = setTimeout(() => {
+                pendingViewport.current = null;
                 void api('/workspace', { viewport: v }, 'PATCH').catch(fail);
               }, 350);
             }}
@@ -753,7 +898,7 @@ export default function App() {
               <Focus
                 state={state}
                 node={node}
-                active={node.id === activeId}
+                active={node.id === activeId && canvas.visible}
                 inputReady={ready}
                 locked={conversationBusy(node.ref_id)}
                 prompt={draftFor(node.ref_id)}
@@ -808,6 +953,8 @@ export default function App() {
                 onExcerpt={(s, b) => void excerpt(s, b)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
+                onReference={canvas.onReference}
+                onExternalSource={canvas.onSourceJump}
                 onInspect={(pkg) => {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
@@ -1242,6 +1389,9 @@ export default function App() {
           onClose={() => setProjectDialog(false)}
           onImported={async () => {
             if (viewportTimer.current) clearTimeout(viewportTimer.current);
+            pendingViewport.current = null;
+            localViewport.current = undefined;
+            canvas.onView(canvas.id, { activeId: null, selected: [], budget });
             invalidate();
             setActiveId(null);
             setSelected([]);
@@ -1255,6 +1405,7 @@ export default function App() {
             await refresh();
             setCanvasEpoch((epoch) => epoch + 1);
             setProjectDialog(false);
+            canvas.onCatalogChange();
           }}
         />
       )}

@@ -10,7 +10,7 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import { MAX_PROJECT_BYTES, type ProjectFile, type ProjectPreview } from '@acc/domain';
-import { api } from './api';
+import { useApi } from './api';
 
 interface Recovery {
   id: string;
@@ -25,6 +25,8 @@ export function ProjectDialog({
   onClose: () => void;
   onImported: () => Promise<void>;
 }) {
+  const api = useApi();
+
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');

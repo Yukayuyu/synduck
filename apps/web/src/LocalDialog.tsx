@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Terminal, Check, Square } from 'lucide-react';
-import { api } from './api';
+import { useApi } from './api';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
 import { IntegrationSettings, ManualIntegrations, type Integrations } from './IntegrationSettings';
 import { TraceSteps } from './TaskTrace';
@@ -9,6 +9,7 @@ type LocalState = {
   enabled: boolean;
   root: string;
   busy: boolean;
+  other_canvas_busy?: boolean;
   tasks: LocalTask[];
 };
 const toolNames: Record<string, string> = {
@@ -56,6 +57,8 @@ export function LocalDialog({
   contextId?: string;
   onShowTrace: (id: string) => Promise<void>;
 }) {
+  const api = useApi();
+
   const [state, setState] = useState<LocalState | null>(null);
   const [root, setRoot] = useState('');
   const [enabled, setEnabled] = useState(false);
@@ -153,7 +156,13 @@ export function LocalDialog({
         </h2>
         <p className="project-description">
           操作在後端電腦執行。先選擇那台電腦上的專案資料夾；ChatGPT 任務使用已選模型與思考深度。
+          项目目录、MCP 与桌面设置在所有画布间共用。
         </p>
+        {state?.other_canvas_busy && (
+          <p role="status" className="quiet-note">
+            另一张画布正在执行本地任务，可从左上角画布列表切回查看。
+          </p>
+        )}
         {error && (
           <p role="alert" className="project-error">
             {error}

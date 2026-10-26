@@ -6,6 +6,7 @@ import type { LocalExecutor } from '../../../packages/local-runtime/src/executor
 import type { UpdateState } from '../../../packages/local-runtime/src/updates';
 import { randomUUID } from 'node:crypto';
 import packageJson from '../../../package.json';
+import type { CanvasRegistry } from './canvases';
 
 export interface UpdateService {
   status(): Promise<UpdateState>;
@@ -100,27 +101,60 @@ export function registerRuntime(
   store: Store,
   local?: LocalExecutor,
   updates?: UpdateService,
+  canvases?: CanvasRegistry,
 ) {
+  const otherCanvasBusy = () =>
+    !!local &&
+    !!canvases &&
+    local
+      .snapshot()
+      .tasks.some(
+        (task) =>
+          ['running', 'waiting'].includes(task.status) &&
+          canvases.taskOwner(task.id) !== canvases.currentId,
+      );
   const idle = () => {
-    if (local?.busy || store.snapshot().turns.some((turn) => turn.status === 'streaming'))
+    if (
+      local?.busy ||
+      (canvases
+        ? canvases.busy
+        : store.snapshot().turns.some((turn) => turn.status === 'streaming'))
+    )
       throw new DomainError('runtime_busy', '請先完成或停止 AI 回答與本地任務。', 409);
   };
   app.get('/api/local', async () =>
     local
-      ? { available: true, ...local.summary() }
+      ? {
+          available: true,
+          ...local.summary(),
+          ...(otherCanvasBusy() ? { other_canvas_busy: true } : {}),
+          tasks: local
+            .summary()
+            .tasks.filter(
+              (task) => !canvases || canvases.taskOwner(task.id) === canvases.currentId,
+            ),
+        }
       : { available: false, enabled: false, root: '', busy: false, tasks: [] },
   );
   app.get('/api/local/status', async () =>
-    local ? local.status() : { enabled: false, busy: false, waiting: 0 },
+    local
+      ? { ...local.status(), ...(otherCanvasBusy() ? { waiting: 0, other_canvas_busy: true } : {}) }
+      : { enabled: false, busy: false, waiting: 0 },
   );
   app.get('/api/local/canvas', async () => ({
-    traces: local ? await local.canvasTraces() : [],
+    traces: local
+      ? (await local.canvasTraces()).filter(
+          (trace) => !canvases || canvases.taskOwner(trace.task_id) === canvases.currentId,
+        )
+      : [],
     busy: local?.busy || false,
   }));
   if (local) {
-    app.get('/api/local/tasks/:id', async (request) =>
-      local.readTask(z.object({ id: z.string().uuid() }).parse(request.params).id),
-    );
+    app.get('/api/local/tasks/:id', async (request) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      canvases?.assertTask(id);
+      return local.readTask(id);
+    });
     app.get('/api/local/integrations', async () => local.integrations());
     app.post('/api/local/mcp/configure', async (request) => {
       idle();
@@ -146,17 +180,22 @@ export function registerRuntime(
         })
         .strict()
         .parse(request.body);
-      return local.pinTrace(task_id, pinned, x, y);
+      canvases?.assertTask(task_id);
+      return (await local.pinTrace(task_id, pinned, x, y)).filter(
+        (trace) => !canvases || canvases.taskOwner(trace.task_id) === canvases.currentId,
+      );
     });
     app.get('/api/local/tasks/:id/images/:sha', async (request, reply) => {
       const { id, sha } = z
         .object({ id: z.string().uuid(), sha: z.string().regex(/^[a-f0-9]{64}$/) })
         .parse(request.params);
+      canvases?.assertTask(id);
       const { evidence, bytes } = await local.image(id, sha);
       return reply.type(evidence.mime).header('X-Content-Type-Options', 'nosniff').send(bytes);
     });
     app.get('/api/local/tasks/:id/export', async (request, reply) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      canvases?.assertTask(id);
       const task = await local.readTask(id);
       const context = store
         .snapshot()
@@ -172,7 +211,13 @@ export function registerRuntime(
         .strict()
         .parse(request.body);
       idle();
-      return local.configure(enabled, root);
+      const result = await local.configure(enabled, root);
+      return {
+        ...result,
+        tasks: result.tasks.filter(
+          (task) => !canvases || canvases.taskOwner(task.id) === canvases.currentId,
+        ),
+      };
     });
     app.post('/api/local/actions', async (request) => {
       const {
@@ -187,7 +232,10 @@ export function registerRuntime(
         })
         .strict()
         .parse(request.body);
-      return local.manual(tool, args, continuation_id);
+      if (continuation_id) canvases?.assertTask(continuation_id);
+      const task = await local.manual(tool, args, continuation_id);
+      canvases?.ownTask(task.id);
+      return task;
     });
     app.post('/api/local/tasks', async (request) => {
       const { prompt, context_set_id: contextId } = z
@@ -204,19 +252,24 @@ export function registerRuntime(
         if (!pkg?.sendable || pkg.graph_snapshot_version !== state.workspace.revision)
           throw new DomainError('stale_context', '請重新預覽上下文，再開始本地任務。', 409);
       }
-      return local.start(prompt, pkg);
+      const task = await local.start(prompt, pkg);
+      canvases?.ownTask(task.id);
+      return task;
     });
     app.post('/api/local/tasks/:id/approve', async (request) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      canvases?.assertTask(id);
       const { action_id, approved } = z
         .object({ action_id: z.string().uuid(), approved: z.boolean() })
         .strict()
         .parse(request.body);
       return local.approve(id, action_id, approved);
     });
-    app.post('/api/local/tasks/:id/cancel', async (request) =>
-      local.cancel(z.object({ id: z.string().uuid() }).parse(request.params).id),
-    );
+    app.post('/api/local/tasks/:id/cancel', async (request) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      canvases?.assertTask(id);
+      return local.cancel(id);
+    });
   }
   app.get('/api/updates', async () =>
     updates

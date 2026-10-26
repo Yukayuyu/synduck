@@ -99,6 +99,8 @@ for (const name of [
   'public-readiness.md',
   'concurrent-conversations.md',
   'thought-islands.md',
+  'multiple-canvases.md',
+  'ui-previews/multiple-canvases.png',
   'ui-previews/thought-islands.png',
   'ui-styles.md',
   'ui-previews/arc.png',

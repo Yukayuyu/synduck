@@ -11,6 +11,7 @@ import { LocalExecutor } from '../../../packages/local-runtime/src/executor';
 import { UpdateManager } from '../../../packages/local-runtime/src/updates';
 import { LauncherBridge, type UpdateService } from './runtime';
 import packageJson from '../../../package.json';
+import { CanvasRegistry } from './canvases';
 const managedParent = process.env.CANVAS_MANAGED === '1' && !!process.send;
 const parentShutdown: { stop?: () => Promise<void> } = {};
 if (managedParent)
@@ -25,7 +26,8 @@ const models = new ProviderRegistry(
 );
 const store = new Store(process.env.DATABASE_PATH || './data/context-canvas.sqlite');
 mkdirSync(process.env.ASSET_PATH || './data/assets', { recursive: true });
-store.recoverInterrupted();
+const canvases = new CanvasRegistry(store);
+canvases.recoverInterrupted();
 const local =
   process.env.LOCAL_EXECUTOR_DISABLED === '1'
     ? undefined
@@ -67,7 +69,7 @@ const updates: UpdateService | undefined =
         },
       }
     : undefined);
-const app = createApp(store, models, { access, models, local, updates });
+const app = createApp(store, models, { access, models, local, updates, canvases });
 let closing = false;
 app.addHook('onRequest', async (_request, reply) => {
   if (closing)
@@ -100,7 +102,7 @@ console.log('Context Canvas API started.');
 if (managedParent && !process.connected) void stopApp().then(() => process.exit(0));
 process.on('message', (message) => {
   if ((message as { kind?: string })?.kind === 'runtime-quiesce') {
-    if (local?.busy || store.snapshot().turns.some((turn) => turn.status === 'streaming')) {
+    if (local?.busy || canvases.busy) {
       process.send?.({ kind: 'runtime-quiesce-rejected' });
     } else void stopApp().then(() => process.exit(0));
   }
