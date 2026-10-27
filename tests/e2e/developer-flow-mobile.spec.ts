@@ -69,12 +69,19 @@ test('phone options keep geometry stable and local development opens with the sa
   await card.locator('.card-title').tap();
   const editor = card.getByLabel('你的问题', { exact: true });
   await editor.fill('在项目里检查源码，不修改文件。');
-  const before = await card.boundingBox();
+  // Opening a card also animates the canvas zoom. Compare layout dimensions,
+  // not screen-space pixels sampled at different points of that animation.
+  const before = await card.evaluate((element: HTMLElement) => ({
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  }));
   await card.getByLabel('提问选项', { exact: true }).tap();
   await expect(card.getByLabel('上下文预算', { exact: true })).toBeVisible();
-  const after = await card.boundingBox();
-  expect(Math.abs(before!.height - after!.height)).toBeLessThan(1);
-  expect(Math.abs(before!.width - after!.width)).toBeLessThan(1);
+  const after = await card.evaluate((element: HTMLElement) => ({
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  }));
+  expect(after).toEqual(before);
   const menu = await card.locator('.composer-options').boundingBox();
   expect(menu!.x).toBeGreaterThanOrEqual(0);
   expect(menu!.x + menu!.width).toBeLessThanOrEqual(390);

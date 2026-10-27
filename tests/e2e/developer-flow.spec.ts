@@ -215,11 +215,16 @@ test('keeps options out of the layout and persists pointer and numeric conversat
   const editor = wrapper.getByLabel('你的问题', { exact: true });
   await editor.fill('普通输入，继续编辑。');
   await editor.evaluate((element) => Reflect.set(window, 'sameDeveloperEditor', element));
-  const before = await card.boundingBox();
+  const before = await card.evaluate((element: HTMLElement) => ({
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  }));
   await wrapper.getByLabel('提问选项', { exact: true }).click();
-  const opened = await card.boundingBox();
-  expect(Math.abs(opened!.height - before!.height)).toBeLessThan(1);
-  expect(Math.abs(opened!.width - before!.width)).toBeLessThan(1);
+  const opened = await card.evaluate((element: HTMLElement) => ({
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+  }));
+  expect(opened).toEqual(before);
   await expect(wrapper.getByRole('button', { name: '傳送', exact: true })).toBeVisible();
   // Click outside the floating menu; its center intentionally overlays part
   // of the composer without resizing it.
