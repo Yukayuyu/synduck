@@ -24,6 +24,8 @@ import {
   type NodeChange,
   type Viewport,
   MarkerType,
+  NodeResizeControl,
+  type ResizeParams,
 } from '@xyflow/react';
 import {
   MessageSquare,
@@ -41,6 +43,7 @@ import {
   GitBranch,
   ChevronDown,
   ChevronUp,
+  MoveDiagonal2,
 } from 'lucide-react';
 import { collectionSources, type CanvasNode } from '@acc/domain';
 import { SourceHandles, type SourceAnchor } from './SourceHandles';
@@ -68,6 +71,7 @@ type CardData = {
   mode: string;
   sourceCount: number;
   busy: boolean;
+  onResize: (size: ResizeParams) => void;
   [key: string]: unknown;
 };
 type CardNode = Node<CardData, 'card'>;
@@ -82,9 +86,11 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
   const zoom = useStore((s) => s.transform[2]);
   const renderContent = useContext(CardContentContext);
   const card = useRef<HTMLElement>(null);
+  const [resizing, setResizing] = useState(false);
   return (
     <article
       ref={card}
+      data-manual-size={resizing || data.node.size_mode === 'manual'}
       className={`canvas-card ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
     >
       <Handle type="target" position={Position.Left} />
@@ -146,6 +152,25 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
       {!data.node.collapsed && data.sources.length > 0 && (
         <SourceHandles nodeId={data.node.id} container={card} sources={data.sources} />
       )}
+      {data.active && data.type === 'conversation' && !data.node.collapsed && (
+        <NodeResizeControl
+          position="bottom-right"
+          className="card-resize nodrag nopan nokey"
+          minWidth={340}
+          minHeight={360}
+          maxWidth={1600}
+          maxHeight={1800}
+          onResizeStart={() => setResizing(true)}
+          onResizeEnd={(_event, size) => {
+            data.onResize(size);
+            setResizing(false);
+          }}
+        >
+          <span title="拖动调整对话框宽高">
+            <MoveDiagonal2 size={16} />
+          </span>
+        </NodeResizeControl>
+      )}
     </article>
   );
 }
@@ -174,6 +199,12 @@ interface Props {
   onSelect: (id: string) => void;
   onControl: (id: string, action: 'pin' | 'unpin' | 'exclude' | 'restore') => void;
   onMove: (id: string, x: number, y: number) => void;
+  onResize: (
+    id: string,
+    patch: Partial<Pick<CanvasNode, 'x' | 'y' | 'width' | 'height'>> & {
+      size_mode: 'auto' | 'manual';
+    },
+  ) => Promise<void>;
   onViewport: (v: Viewport) => void;
   renderContent: (node: CanvasNode, ready: boolean) => ReactNode;
   tool: 'select' | 'hand';
@@ -202,6 +233,7 @@ export function Canvas({
   onSelect,
   onControl,
   onMove,
+  onResize,
   onViewport,
   renderContent,
   tool,
@@ -220,6 +252,12 @@ export function Canvas({
   onFold,
 }: Props) {
   const api = useApi();
+  const [sizeDialog, setSizeDialog] = useState<{
+    id: string;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [savingSize, setSavingSize] = useState(false);
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -266,6 +304,8 @@ export function Canvas({
   const flow = useReactFlow();
   const foldHandler = useRef(onFold);
   foldHandler.current = onFold;
+  const resizeHandler = useRef(onResize);
+  resizeHandler.current = onResize;
   const busyKey = busyNodeIds.join(',');
   const busyIds = useMemo(() => new Set(busyKey.split(',')), [busyKey]);
   const latest = useRef({ nodes: state.nodes, activeNode });
@@ -334,6 +374,10 @@ export function Canvas({
           dragHandle: '.card-eyebrow',
           zIndex: activeNode === n.id ? 10 : 0,
           position: { x: n.x, y: n.y },
+          style:
+            n.size_mode === 'manual' && !n.collapsed
+              ? { width: n.width, height: n.height }
+              : undefined,
           data: {
             node: n,
             title: n.title,
@@ -362,6 +406,7 @@ export function Canvas({
                 : 0,
             sources: anchors.get(n.id) ?? noAnchors,
             onFold: () => foldHandler.current(n),
+            onResize: (size) => resizeCard(n.id, size),
             preview:
               n.ref_type === 'excerpt'
                 ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
@@ -401,11 +446,43 @@ export function Canvas({
       setNodes((previous) =>
         [...mapped, ...traceNodes].map((node) => ({
           ...node,
+          ...(previous.find((old) => old.id === node.id)?.resizing
+            ? {
+                style: previous.find((old) => old.id === node.id)?.style,
+                width: previous.find((old) => old.id === node.id)?.width,
+                height: previous.find((old) => old.id === node.id)?.height,
+                resizing: true,
+              }
+            : {}),
           measured: previous.find((old) => old.id === node.id)?.measured,
         })),
       ),
     [mapped, traceNodes],
   );
+  const resizeCard = (id: string, size: ResizeParams) => {
+    const patch = {
+      x: size.x,
+      y: size.y,
+      width: size.width,
+      height: size.height,
+      size_mode: 'manual' as const,
+    };
+    setNodes((previous) =>
+      previous.map((node) =>
+        node.id === id && node.type === 'card'
+          ? {
+              ...node,
+              position: { x: size.x, y: size.y },
+              width: size.width,
+              height: size.height,
+              style: { width: size.width, height: size.height },
+              data: { ...node.data, node: { ...node.data.node, ...patch } },
+            }
+          : node,
+      ),
+    );
+    void resizeHandler.current(id, patch).catch(onError);
+  };
   useEffect(() => {
     if (!locate) return;
     const key = locate.id + ':' + locate.tick;
@@ -427,7 +504,7 @@ export function Canvas({
         (height - 175) / Math.max(560, nodeHeight),
       );
       void flow.setCenter(node.x + nodeWidth / 2, node.y + nodeHeight / 2, {
-        zoom: Math.max(0.5, zoom),
+        zoom: Math.max(node.size_mode === 'manual' ? 0.1 : 0.5, zoom),
         duration: 250,
       });
     } else {
@@ -551,6 +628,31 @@ export function Canvas({
               .catch(() => onError(new Error('無法寫入剪貼簿，請選取文字後複製。')));
           },
         },
+        ...(menuNode.ref_type === 'conversation'
+          ? [
+              {
+                label: '调整对话框尺寸',
+                icon: <MoveDiagonal2 size={16} />,
+                run: () => {
+                  const measured = flow.getNode(menuNode.id)?.measured;
+                  setSizeDialog({
+                    id: menuNode.id,
+                    width: Math.round(
+                      menuNode.size_mode === 'manual' ? menuNode.width : (measured?.width ?? 420),
+                    ),
+                    height: Math.max(
+                      360,
+                      Math.round(
+                        menuNode.size_mode === 'manual'
+                          ? menuNode.height
+                          : (measured?.height ?? 650),
+                      ),
+                    ),
+                  });
+                },
+              },
+            ]
+          : []),
         ...(menuNode.ref_type === 'excerpt'
           ? [
               {
@@ -743,6 +845,91 @@ export function Canvas({
         />
       </ReactFlow>
       {menu && <ContextMenu x={menu.x} y={menu.y} actions={actions} onClose={closeMenu} />}
+      {sizeDialog && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!savingSize) setSizeDialog(null);
+          }}
+        >
+          <form
+            className="modal card-size-dialog nokey"
+            role="dialog"
+            aria-label="调整对话框尺寸"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.key === 'Escape' && !event.nativeEvent.isComposing && !savingSize)
+                setSizeDialog(null);
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              setSavingSize(true);
+              void resizeHandler
+                .current(sizeDialog.id, {
+                  width: sizeDialog.width,
+                  height: sizeDialog.height,
+                  size_mode: 'manual',
+                })
+                .then(() => setSizeDialog(null))
+                .catch(onError)
+                .finally(() => setSavingSize(false));
+            }}
+          >
+            <h2>对话框尺寸</h2>
+            <label>
+              宽度
+              <input
+                autoFocus
+                type="number"
+                min={340}
+                max={1600}
+                required
+                value={Number.isFinite(sizeDialog.width) ? sizeDialog.width : ''}
+                onChange={(event) =>
+                  setSizeDialog({ ...sizeDialog, width: event.currentTarget.valueAsNumber })
+                }
+              />
+            </label>
+            <label>
+              高度
+              <input
+                type="number"
+                min={360}
+                max={1800}
+                required
+                value={Number.isFinite(sizeDialog.height) ? sizeDialog.height : ''}
+                onChange={(event) =>
+                  setSizeDialog({ ...sizeDialog, height: event.currentTarget.valueAsNumber })
+                }
+              />
+            </label>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={savingSize}
+                onClick={() => {
+                  setSavingSize(true);
+                  void resizeHandler
+                    .current(sizeDialog.id, { size_mode: 'auto' })
+                    .then(() => setSizeDialog(null))
+                    .catch(onError)
+                    .finally(() => setSavingSize(false));
+                }}
+              >
+                恢复自动尺寸
+              </button>
+              <button type="button" disabled={savingSize} onClick={() => setSizeDialog(null)}>
+                取消
+              </button>
+              <button className="primary" disabled={savingSize}>
+                保存尺寸
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </CardContentContext.Provider>
   );
 }

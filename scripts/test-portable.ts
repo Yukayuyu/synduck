@@ -70,13 +70,13 @@ function newerArchive(next: string, broken = false) {
   updated[manifestPath] = new TextEncoder().encode(JSON.stringify(manifest));
   return zipSync(updated);
 }
-async function request(path: string, body?: unknown) {
+async function request(path: string, body?: unknown, method = 'POST') {
   const response = await fetch(
     `${address}/api${path}`,
     body === undefined
       ? undefined
       : {
-          method: 'POST',
+          method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         },
@@ -255,6 +255,11 @@ try {
     selected_node_ids: [],
   });
   await request('/answer', { context_set_id: compiled.context_set.id });
+  await request(
+    '/nodes/' + conversation.node.id,
+    { width: 600, height: 700, size_mode: 'manual' },
+    'PATCH',
+  );
   const originalState = await request('/state');
   const otherCanvas = await request('/canvases', {
     name: 'Preserve a second canvas through updates',

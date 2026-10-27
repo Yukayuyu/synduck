@@ -23,6 +23,12 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             canvas: ['@xyflow/react'],
+            markdown: [
+              'mdast-util-from-markdown',
+              'mdast-util-gfm',
+              'micromark-extension-gfm',
+              'micromark-util-decode-string',
+            ],
           },
         },
       },

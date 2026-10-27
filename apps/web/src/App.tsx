@@ -141,6 +141,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
   const [localDialog, setLocalDialog] = useState(false);
+  const [localSeed, setLocalSeed] = useState<{ prompt: string; contextId?: string } | null>(null);
+  const [preparingLocal, setPreparingLocal] = useState('');
+  const localRequest = useRef(0);
   const [traceId, setTraceId] = useState('');
   const [traceEpoch, setTraceEpoch] = useState(0);
   const [traceCount, setTraceCount] = useState(0);
@@ -184,6 +187,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     setPanel(null);
     setModelDialog(false);
     setLocalDialog(false);
+    setLocalSeed(null);
+    localRequest.current++;
+    setPreparingLocal('');
     setProjectDialog(false);
     setWorkspaceMenu(null);
     setAppearanceOpen(false);
@@ -645,6 +651,47 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
       }
     }
   };
+  const handoffLocal = async (node: CanvasNode) => {
+    const token = ++localRequest.current;
+    const lastQuestion = state?.turns
+      .filter((turn) => turn.conversation_id === node.ref_id && turn.actor === 'human')
+      .sort((a, b) => b.sequence - a.sequence)[0];
+    const currentDraft = draftFor(node.ref_id);
+    const question =
+      (currentDraft.trim() ? currentDraft : '') ||
+      state?.blocks
+        .filter((block) => block.turn_id === lastQuestion?.id)
+        .sort((a, b) => a.ordinal - b.ordinal)
+        .map((block) => block.text_content ?? '')
+        .join('\n\n') ||
+      '';
+    setPreparingLocal(node.id);
+    try {
+      const result = question
+        ? await api<{ package: ContextPackage }>('/compile', {
+            conversation_id: node.ref_id,
+            prompt: question,
+            selected_node_ids: selected,
+            budget: { ...DEFAULT_BUDGET, target_context_tokens: budget },
+          })
+        : undefined;
+      if (token !== localRequest.current || activeRef.current !== node.id) return;
+      if (result && !result.package.sendable) {
+        setPreview(result.package);
+        setInspected({ pkg: result.package, historical: false });
+        setPanel('context');
+        return;
+      }
+      if (result) await refresh();
+      if (token !== localRequest.current || activeRef.current !== node.id) return;
+      setLocalSeed({ prompt: question, contextId: result?.package.context_set_id });
+      setLocalDialog(true);
+    } catch (error) {
+      if (token === localRequest.current) fail(error);
+    } finally {
+      if (token === localRequest.current) setPreparingLocal('');
+    }
+  };
   const sendForks = async (node: CanvasNode) => {
     if (preparingRef.current.has(node.ref_id)) return;
     const drafts = forkDrafts[node.ref_id] ?? [];
@@ -774,7 +821,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           )}
         </div>
         <div className="board-menu">
-          <LocalControl onOpen={() => setLocalDialog(true)} />
+          <LocalControl
+            onOpen={() => {
+              localRequest.current++;
+              setPreparingLocal('');
+              setLocalSeed(null);
+              setLocalDialog(true);
+            }}
+          />
           <UpdateControl
             canInstall={
               !busy &&
@@ -836,6 +890,10 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
         <ReactFlowProvider key={canvasEpoch}>
           <Canvas
             state={state}
+            onResize={async (id, patch) => {
+              await api('/nodes/' + encodeURIComponent(id), patch, 'PATCH');
+              await refresh();
+            }}
             initialViewport={localViewport.current}
             activeNode={activeId}
             selected={selected}
@@ -955,6 +1013,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
                 onSource={source}
                 onReference={canvas.onReference}
                 onExternalSource={canvas.onSourceJump}
+                onLocalTask={() => void handoffLocal(node)}
+                preparingLocal={preparingLocal === node.id}
                 onInspect={(pkg) => {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
@@ -1427,8 +1487,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             const trace = traces.find((trace) => trace.task_id === id);
             if (trace) setLocate({ id: 'trace:' + id, tick: Date.now() });
           }}
-          onClose={() => setLocalDialog(false)}
-          contextId={preview?.sendable ? preview.context_set_id : undefined}
+          onClose={() => {
+            setLocalDialog(false);
+            setLocalSeed(null);
+          }}
+          initialPrompt={localSeed?.prompt}
+          contextId={
+            localSeed ? localSeed.contextId : preview?.sendable ? preview.context_set_id : undefined
+          }
           onUseResult={async (text) => {
             let node = active?.ref_type === 'conversation' ? active : null;
             if (!node) {

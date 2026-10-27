@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
+import { sourceDomRange } from './source-ranges';
 
 export interface SourceAnchor {
   id: string;
@@ -36,25 +37,8 @@ export function SourceHandles({
         for (const source of sources) {
           const block = document.getElementById('block-' + source.blockId);
           if (!block || !card.contains(block)) continue;
-          const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
-          const range = document.createRange();
-          let offset = 0,
-            startSet = false,
-            endSet = false;
-          for (let text = walker.nextNode(); text; text = walker.nextNode()) {
-            const length = text.textContent?.length ?? 0;
-            if (!startSet && source.start <= offset + length) {
-              range.setStart(text, Math.max(0, source.start - offset));
-              startSet = true;
-            }
-            if (source.end <= offset + length) {
-              range.setEnd(text, Math.max(0, source.end - offset));
-              endSet = true;
-              break;
-            }
-            offset += length;
-          }
-          if (!startSet || !endSet) continue;
+          const range = sourceDomRange(block, source.start, source.end);
+          if (!range) continue;
           const rects = range.getClientRects();
           const rect = rects[rects.length - 1];
           if (!rect) continue;

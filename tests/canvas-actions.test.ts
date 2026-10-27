@@ -7,6 +7,90 @@ import { DemoProvider } from '@acc/model-gateway';
 import { createApp } from '../apps/api/src/app';
 
 describe('canvas card actions', () => {
+  it('persists explicit card dimensions across restart and backup without invalidating input context', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'canvas-resize-'));
+    const path = join(directory, 'workspace.sqlite');
+    let store = new Store(path);
+    let app = createApp(store, new DemoProvider());
+    try {
+      const root = store.createConversation('Size is presentation');
+      const preview = (
+        await app.inject({
+          method: 'POST',
+          url: '/api/compile',
+          payload: {
+            conversation_id: root.conversation.id,
+            prompt: 'Use this input',
+            selected_node_ids: [],
+          },
+        })
+      ).json();
+      const snapshot = store.snapshot();
+      const resize = await app.inject({
+        method: 'PATCH',
+        url: '/api/nodes/' + root.node.id,
+        payload: { width: 600, height: 700, size_mode: 'manual' },
+      });
+      expect(resize.statusCode).toBe(200);
+      expect(store.workspace().revision).toBe(snapshot.workspace.revision);
+      expect(store.snapshot().packages).toEqual(snapshot.packages);
+      expect(store.snapshot().nodes.find((node) => node.id === root.node.id)).toMatchObject({
+        width: 600,
+        height: 700,
+        size_mode: 'manual',
+      });
+      expect(validateProject(exportProject(store)).project.snapshot.nodes[0]).toMatchObject({
+        width: 600,
+        height: 700,
+        size_mode: 'manual',
+      });
+      for (const payload of [
+        { width: 0, height: 700, size_mode: 'manual' },
+        { width: 600 },
+        { width: 600, height: 700, size_mode: 'auto' },
+        { width: 1700, height: 700, size_mode: 'manual' },
+      ]) {
+        expect(
+          (await app.inject({ method: 'PATCH', url: '/api/nodes/' + root.node.id, payload }))
+            .statusCode,
+        ).toBe(400);
+      }
+      await app.close();
+      store.close();
+      store = new Store(path);
+      app = createApp(store, new DemoProvider());
+      expect(store.snapshot().nodes.find((node) => node.id === root.node.id)).toMatchObject({
+        width: 600,
+        height: 700,
+        size_mode: 'manual',
+      });
+      expect(
+        (
+          await app.inject({
+            method: 'POST',
+            url: '/api/answer',
+            payload: { context_set_id: preview.context_set.id },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(
+        (
+          await app.inject({
+            method: 'PATCH',
+            url: '/api/nodes/' + root.node.id,
+            payload: { size_mode: 'auto' },
+          })
+        ).statusCode,
+      ).toBe(200);
+      expect(store.snapshot().nodes.find((node) => node.id === root.node.id)?.size_mode).toBe(
+        'auto',
+      );
+    } finally {
+      await app.close();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it('rejects retrying a historical package through an alias of a deleted source until restored', async () => {
     const store = new Store(':memory:');
     const app = createApp(store, new DemoProvider());

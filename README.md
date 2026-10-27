@@ -4,14 +4,15 @@
 
 ## 从这里开始
 
-| 你的目标                             | 阅读说明                                              |
-| ------------------------------------ | ----------------------------------------------------- |
-| 在 Windows 上安装，或从源码启动      | [安装与配置指南](docs/setup.md)                       |
-| 登录 ChatGPT、选择模型或配置 API key | [模型与登录配置](docs/setup.md#连接-ai)               |
-| 用 iPhone／iPad 访问电脑上的画布     | [Windows 与 iOS 访问](docs/windows-ios.md)            |
-| 连接 MCP、使用桌面控制、回看操作     | [MCP 与桌面控制](docs/mcp-desktop-traces.md)          |
-| 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md) |
-| 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)             |
+| 你的目标                             | 阅读说明                                                    |
+| ------------------------------------ | ----------------------------------------------------------- |
+| 在 Windows 上安装，或从源码启动      | [安装与配置指南](docs/setup.md)                             |
+| 登录 ChatGPT、选择模型或配置 API key | [模型与登录配置](docs/setup.md#连接-ai)                     |
+| 用 iPhone／iPad 访问电脑上的画布     | [Windows 与 iOS 访问](docs/windows-ios.md)                  |
+| 连接 MCP、使用桌面控制、回看操作     | [MCP 与桌面控制](docs/mcp-desktop-traces.md)                |
+| 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md)       |
+| 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)                   |
+| 在 Synduck 界面中开发项目或自身      | [开发任务、Markdown 与尺寸调整](docs/developer-workflow.md) |
 
 **发布方案：** 源码、Windows 安装包和更新清单统一放在 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。普通用户从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`，完整解压后运行 `Start-ContextCanvas.cmd`；安装和更新不需要 GitHub 账号或 token。首次 Release 附件就绪前可按下面的源码步骤运行。发布流程自动检查仓库公开状态、主分支 CI、版本和校验和，详见[发布说明](docs/github-updates.md#当前状态)。
 

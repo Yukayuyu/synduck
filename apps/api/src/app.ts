@@ -224,10 +224,19 @@ export function createApp(
       .object({
         x: z.number().finite().optional(),
         y: z.number().finite().optional(),
+        width: z.number().min(340).max(1600).optional(),
+        height: z.number().min(360).max(1800).optional(),
+        size_mode: z.enum(['auto', 'manual']).optional(),
         collapsed: z.boolean().optional(),
         context_state: ContextStateSchema.optional(),
       })
       .strict()
+      .refine(
+        (value) =>
+          (value.width === undefined) === (value.height === undefined) &&
+          (value.width === undefined || value.size_mode === 'manual'),
+        { message: 'Resizing requires both dimensions and manual size mode.' },
+      )
       .parse(request.body);
     return store.transaction(() => {
       const n = store.snapshot().nodes.find((n) => n.id === nodeId);

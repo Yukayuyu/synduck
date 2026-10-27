@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Plus,
   Minus,
+  Terminal,
 } from 'lucide-react';
 import {
   collectionSources,
@@ -23,6 +24,8 @@ import {
   type ExternalOrigin,
 } from '@acc/domain';
 import { threadStatus, type ClientState } from './api';
+import { MessageText } from './MessageText';
+import { selectionSource } from './source-ranges';
 
 export interface SelectedText {
   block: ContentBlock;
@@ -76,12 +79,23 @@ interface Props {
   onOpenNode: (node: CanvasNode) => void;
   onReference: (selection: SelectedText) => void;
   onExternalSource: (origin: ExternalOrigin) => void;
+  onLocalTask: () => void;
+  preparingLocal: boolean;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const optionsRef = useRef<HTMLDetailsElement>(null);
   const wasGenerating = useRef(false);
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (!optionsRef.current?.contains(event.target as Node))
+        optionsRef.current?.removeAttribute('open');
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, []);
   useLayoutEffect(() => {
     // Focus only on explicit activation, once the node is measured and visible.
     // React Flow initially mounts fresh nodes hidden, so autofocus is too early.
@@ -133,7 +147,9 @@ export function Focus(props: Props) {
           停止
         </button>
       </div>
-      <div className="message-text">{draft || '正在整理這個問題…'}</div>
+      <div className="message-text">
+        <MessageText text={draft || '正在整理這個問題…'} />
+      </div>
     </article>
   );
   const origin = state.excerpts.find((e) => e.id === conversation?.branch_origin_excerpt_id);
@@ -184,12 +200,9 @@ export function Focus(props: Props) {
       setSelection(null);
       return;
     }
-    const before = range.cloneRange();
-    before.selectNodeContents(element);
-    before.setEnd(range.startContainer, range.startOffset);
-    const start = before.toString().length;
-    const exact = range.toString();
-    if (!exact || block.text_content?.slice(start, start + exact.length) !== exact) return;
+    const picked = selectionSource(element, range, block.text_content ?? '');
+    if (!picked) return;
+    const { start, end, exact } = picked;
     const rect = range.getBoundingClientRect();
     setSelectionPosition({
       left: Math.max(12, Math.min(window.innerWidth - 310, rect.left)),
@@ -197,7 +210,7 @@ export function Focus(props: Props) {
     });
     setSelection({
       block,
-      selector: { type: 'text_range', start_char: start, end_char: start + exact.length, exact },
+      selector: { type: 'text_range', start_char: start, end_char: end, exact },
     });
   };
   useEffect(() => {
@@ -486,8 +499,9 @@ export function Focus(props: Props) {
                                 className="message-text"
                                 onMouseUp={(event) => capture(event.currentTarget, block)}
                               >
-                                <SourceText
+                                <MessageText
                                   text={text}
+                                  markdown={turn.actor === 'assistant'}
                                   focused={marked}
                                   ranges={
                                     marked
@@ -521,7 +535,7 @@ export function Focus(props: Props) {
                       )}
                       {generating && (
                         <div className="message-text live-draft">
-                          {draft || '正在整理這個問題…'}
+                          <MessageText text={draft || '正在整理這個問題…'} />
                         </div>
                       )}
                       {turn.actor === 'assistant' && !generating && (
@@ -794,12 +808,45 @@ export function Focus(props: Props) {
                     </button>
                   </div>
                 </details>
-                <details className="composer-settings">
+                <button
+                  type="button"
+                  className="composer-local"
+                  aria-label="交给本地任务"
+                  title="交给本地任务：读取源码、修改文件和运行命令"
+                  disabled={props.preparingLocal || locked || props.preparingForks}
+                  onClick={props.onLocalTask}
+                >
+                  {props.preparingLocal ? (
+                    <LoaderCircle className="spin" size={16} />
+                  ) : (
+                    <Terminal size={16} />
+                  )}
+                </button>
+                <details
+                  className="composer-settings"
+                  ref={optionsRef}
+                  onToggle={(event) => {
+                    const details = event.currentTarget;
+                    if (!details.open) return;
+                    const panel = details.querySelector<HTMLElement>('.composer-options');
+                    const top = details.getBoundingClientRect().top;
+                    details.dataset.placement =
+                      top - (panel?.getBoundingClientRect().height ?? 0) < 70 ? 'below' : 'above';
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+                      event.preventDefault();
+                      event.currentTarget.removeAttribute('open');
+                      event.currentTarget.querySelector('summary')?.focus({ preventScroll: true });
+                    }
+                  }}
+                >
                   <summary aria-label="提问选项" title="预览上下文与预算">
                     <SlidersHorizontal size={16} />
                     <span>选项</span>
                   </summary>
                   <div className="composer-options">
+                    <small className="composer-mode">画布对话 · 使用选定上下文回答</small>
                     <label>
                       上下文预算
                       <select
@@ -875,39 +922,4 @@ export function Focus(props: Props) {
       )}
     </section>
   );
-}
-
-function SourceText({
-  text,
-  ranges,
-  focused,
-}: {
-  text: string;
-  ranges: { start: number; end: number }[];
-  focused: boolean;
-}) {
-  if (!ranges.length) return text;
-  const merged: { start: number; end: number }[] = [];
-  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
-    const previous = merged.at(-1);
-    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
-    else merged.push({ ...range });
-  }
-  const parts = [];
-  let start = 0;
-  for (const range of merged) {
-    parts.push(text.slice(start, range.start));
-    parts.push(
-      focused ? (
-        <mark key={range.start}>{text.slice(range.start, range.end)}</mark>
-      ) : (
-        <span className="picked-text" key={range.start}>
-          {text.slice(range.start, range.end)}
-        </span>
-      ),
-    );
-    start = range.end;
-  }
-  parts.push(text.slice(start));
-  return parts;
 }

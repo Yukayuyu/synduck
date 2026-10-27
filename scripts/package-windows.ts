@@ -100,6 +100,8 @@ for (const name of [
   'concurrent-conversations.md',
   'thought-islands.md',
   'multiple-canvases.md',
+  'developer-workflow.md',
+  'ui-previews/developer-workflow.png',
   'ui-previews/multiple-canvases.png',
   'ui-previews/thought-islands.png',
   'ui-styles.md',

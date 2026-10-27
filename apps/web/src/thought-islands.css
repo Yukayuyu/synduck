@@ -145,6 +145,114 @@
   gap: 8px;
   padding-top: 4px;
 }
+.canvas-first .composer-local {
+  color: var(--muted-ink);
+  padding: 7px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.canvas-first .composer-local:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.canvas-first .composer-settings {
+  flex-shrink: 0;
+}
+.canvas-first .composer-settings .composer-options {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: 25;
+  margin: 0 0 8px;
+  width: 230px;
+  min-width: 0;
+  max-width: calc(100vw - 48px);
+  box-shadow: 0 8px 28px #25203a25;
+}
+.canvas-first .composer-settings[data-placement='below'] .composer-options {
+  bottom: auto;
+  top: 100%;
+  margin: 8px 0 0;
+}
+.composer-mode {
+  color: var(--muted-ink);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.canvas-first .canvas-card[data-manual-size='true']:not(.collapsed) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.canvas-first [data-manual-size='true']:not(.collapsed) .card-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.canvas-first [data-manual-size='true']:not(.collapsed) .focus-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.canvas-first [data-manual-size='true'] .focus-panel .conversation-scroll {
+  height: auto;
+  min-height: 40px;
+  max-height: none;
+  flex: 1;
+}
+.canvas-first [data-manual-size='true'] .continue-on-canvas {
+  flex-shrink: 0;
+}
+.canvas-first [data-manual-size='true'] .composer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 1;
+  min-height: 0;
+}
+.canvas-first [data-manual-size='true'] .composer > textarea,
+.canvas-first [data-manual-size='true'] .composer-heading,
+.canvas-first [data-manual-size='true'] .composer-bottom {
+  flex-shrink: 0;
+}
+.canvas-first [data-manual-size='true'] .fork-drafts {
+  max-height: 120px;
+  min-height: 0;
+  flex-shrink: 1;
+}
+.canvas-first .card-resize {
+  width: 25px;
+  height: 25px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.card-size-dialog {
+  width: 340px;
+  max-width: calc(100vw - 32px);
+}
+.card-size-dialog label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 14px 0;
+}
+.card-size-dialog input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--input-surface);
+  color: var(--ink);
+}
+.card-size-dialog .modal-actions {
+  flex-wrap: wrap;
+}
 .canvas-first .composer-bottom > .primary,
 .canvas-first .composer-send-actions {
   margin-left: auto;

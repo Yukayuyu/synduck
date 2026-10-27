@@ -11,6 +11,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useApi, useCanvasUrl } from './api';
+import { MessageText } from './MessageText';
 import type { LocalAction, LocalTask } from '../../../packages/local-runtime/src/executor';
 import type { Evidence } from '../../../packages/local-runtime/src/evidence';
 import type { Frame } from '../../../packages/local-runtime/src/desktop';
@@ -375,7 +376,9 @@ export function TraceDialog({
             {task.answer && (
               <div className="trace-final">
                 <strong>任務回覆</strong>
-                <pre>{task.answer}</pre>
+                <div className="message-text">
+                  <MessageText text={task.answer} />
+                </div>
               </div>
             )}
             {task.error && <p role="alert">{task.error}</p>}

@@ -7,6 +7,7 @@ export default defineConfig({
     'appearance-mobile.spec.ts',
     'thoughts-mobile.spec.ts',
     'canvases-mobile.spec.ts',
+    'developer-flow-mobile.spec.ts',
   ],
   use: {
     ...base.use,

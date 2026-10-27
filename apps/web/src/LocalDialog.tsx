@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, Terminal, Check, Square } from 'lucide-react';
 import { useApi } from './api';
+import { MessageText } from './MessageText';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
 import { IntegrationSettings, ManualIntegrations, type Integrations } from './IntegrationSettings';
 import { TraceSteps } from './TaskTrace';
@@ -51,11 +52,13 @@ export function LocalDialog({
   onUseResult,
   contextId,
   onShowTrace,
+  initialPrompt = '',
 }: {
   onClose: () => void;
   onUseResult: (text: string) => Promise<void>;
   contextId?: string;
   onShowTrace: (id: string) => Promise<void>;
+  initialPrompt?: string;
 }) {
   const api = useApi();
 
@@ -66,8 +69,8 @@ export function LocalDialog({
   const [tab, setTab] = useState<'codex' | 'manual' | 'integrations'>('codex');
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
   const refreshIntegrations = async () => setIntegrations(await api('/local/integrations'));
-  const [prompt, setPrompt] = useState('');
-  const [attachContext, setAttachContext] = useState(false);
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [attachContext, setAttachContext] = useState(!!initialPrompt && !!contextId);
   const [tool, setTool] = useState('canvas_list_files');
   const [path, setPath] = useState('.');
   const [content, setContent] = useState('');
@@ -156,7 +159,8 @@ export function LocalDialog({
         </h2>
         <p className="project-description">
           操作在後端電腦執行。先選擇那台電腦上的專案資料夾；ChatGPT 任務使用已選模型與思考深度。
-          项目目录、MCP 与桌面设置在所有画布间共用。
+          项目目录、MCP 与桌面设置在所有画布间共用。 尚未克隆源码时，可先选择已有的父目录，再让 AI
+          任务克隆并安装依赖。
         </p>
         {state?.other_canvas_busy && (
           <p role="status" className="quiet-note">
@@ -235,9 +239,25 @@ export function LocalDialog({
                   />
                   附上目前已預覽的畫布上下文
                 </label>
+                <p className="quiet-note">
+                  此处可读取项目、修改文件和运行命令。先保存后端电脑上的源码目录，并选择已登录的
+                  ChatGPT / Codex 模型。
+                  {initialPrompt && contextId ? ' 当前问题和选定上下文已带入。' : ''}
+                </p>
+                {prompt.length > 8000 && (
+                  <p role="alert">
+                    任务指令最多 8000 字符。请缩短这里的指令；已附上的上下文仍保留完整问题。
+                  </p>
+                )}
                 <button
                   className="primary"
-                  disabled={working || !state?.enabled || state.busy || !prompt.trim()}
+                  disabled={
+                    working ||
+                    !state?.enabled ||
+                    state.busy ||
+                    !prompt.trim() ||
+                    prompt.length > 8000
+                  }
                   onClick={() =>
                     void action(async () => {
                       const task = await api<LocalTask>('/local/tasks', {
@@ -481,7 +501,11 @@ export function LocalDialog({
                         )}
                       </article>
                     ))}
-                  {selected.answer && <pre className="runtime-answer">{selected.answer}</pre>}
+                  {selected.answer && (
+                    <div className="runtime-answer">
+                      <MessageText text={selected.answer} />
+                    </div>
+                  )}
                   {selected.error && <p role="alert">{selected.error}</p>}
                   {['complete', 'failed', 'cancelled', 'interrupted'].includes(selected.status) && (
                     <button

@@ -1,0 +1,115 @@
+.markdown-body {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.markdown-body > :first-child {
+  margin-top: 0;
+}
+.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+.markdown-body p {
+  margin: 0 0 0.8em;
+  line-height: inherit;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.15em 0 0.55em;
+  color: inherit;
+  line-height: 1.5;
+  font-weight: 650;
+}
+.markdown-body h1 {
+  font-size: 1.4em;
+}
+.markdown-body h2 {
+  font-size: 1.25em;
+}
+.markdown-body h3 {
+  font-size: 1.1em;
+}
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 1em;
+}
+.markdown-body ul,
+.markdown-body ol {
+  margin: 0.6em 0;
+  padding-left: 1.65em;
+}
+.markdown-body li {
+  margin: 0.3em 0;
+}
+.markdown-body li > p {
+  display: inline;
+}
+.markdown-body li > input {
+  margin-right: 0.5em;
+}
+.markdown-body blockquote {
+  border-left: 3px solid var(--accent, #7764bf);
+  margin: 0.8em 0;
+  padding: 0.2em 0 0.2em 1em;
+  color: var(--muted-ink, #6c6576);
+}
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--accent-soft, #eeeaf5);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  white-space: pre-wrap;
+}
+.markdown-body pre {
+  max-width: 100%;
+  padding: 12px;
+  margin: 0.8em 0;
+  background: var(--input-surface, #f6f4f9);
+  border: 1px solid var(--stroke, #e4e0eb);
+  border-radius: 12px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  white-space: pre;
+  tab-size: 2;
+}
+.markdown-body pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+.markdown-body a {
+  color: var(--accent, #7764bf);
+  text-decoration: underline;
+}
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--stroke, #e4e0eb);
+  margin: 1em 0;
+}
+.markdown-table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.markdown-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.markdown-table th,
+.markdown-table td {
+  border: 1px solid var(--stroke, #e4e0eb);
+  padding: 6px 10px;
+  min-width: 70px;
+  text-align: left;
+}
+.markdown-table th {
+  background: var(--input-surface, #f6f4f9);
+  font-weight: 600;
+}
