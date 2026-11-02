@@ -1852,3 +1852,29 @@ small {
     min-height: 36px;
   }
 }
+
+.conversation-tools {
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.conversation-tools > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.conversation-tools .trace-path {
+  max-height: 140px;
+  overflow: auto;
+}
+.conversation-tools pre {
+  max-height: 240px;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

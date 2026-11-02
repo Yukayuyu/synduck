@@ -13,6 +13,7 @@ export interface CodexConnection {
   request<T>(method: string, params: object): Promise<T>;
   subscribe(listener: (event: RpcEvent) => void): () => void;
   close(): void | Promise<void>;
+  registerTools?(threadId: string, handler: HostToolHandler): () => void;
 }
 const unavailable = () =>
   new DomainError(
@@ -22,7 +23,8 @@ const unavailable = () =>
   );
 
 // Fixed application policy, never taken from browser input. Each generation is
-// ephemeral, with no workspace environment or external tools attached.
+// ephemeral, with no implicit workspace environment. Project tools are attached
+// explicitly per thread and executed by LocalExecutor, never by native tools.
 export const CODEX_CONFIG: Record<string, unknown> = {
   forced_login_method: 'chatgpt',
   cli_auth_credentials_store: 'file',
@@ -58,6 +60,12 @@ export class CodexRpc implements CodexConnection {
   private directory = '';
   private nextId = 0;
   private listeners = new Set<(event: RpcEvent) => void>();
+  private threadTools = new Map<string, HostToolHandler>();
+  registerTools(threadId: string, handler: HostToolHandler) {
+    if (this.threadTools.has(threadId)) throw new Error('Thread tools already registered');
+    this.threadTools.set(threadId, handler);
+    return () => this.threadTools.delete(threadId);
+  }
   private pending = new Map<
     number,
     {
@@ -187,11 +195,12 @@ export class CodexRpc implements CodexConnection {
     error?: unknown;
   }) {
     if (message.method) {
-      // No approval or tool execution is granted by the host application.
+      // Only registered dynamic tools are routed to the application executor.
       if (message.id !== undefined) {
-        if (message.method === 'item/tool/call' && this.hostTool) {
+        const handler = this.threadTools.get(String(message.params?.threadId)) ?? this.hostTool;
+        if (message.method === 'item/tool/call' && handler) {
           const child = this.child;
-          void this.hostTool(message.params || {})
+          void handler(message.params || {})
             .then(
               (result) => {
                 if (child === this.child) this.write({ id: message.id, result });
@@ -260,6 +269,7 @@ export class CodexRpc implements CodexConnection {
       pending.reject(unavailable());
     }
     this.pending.clear();
+    this.threadTools.clear();
     for (const listener of this.listeners) listener({ method: 'canvas/disconnected', params: {} });
     const directory = this.directory;
     this.directory = '';

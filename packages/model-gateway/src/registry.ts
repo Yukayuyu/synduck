@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { DomainError, type ContextPackage } from '@acc/domain';
-import { DemoProvider, OpenAIProvider, type ModelProvider } from './index';
+import { DemoProvider, OpenAIProvider, type ModelProvider, type GenerationTools } from './index';
 import { CodexProvider, ReasoningEffort } from './codex';
 import { CodexRpc } from './codex-rpc';
 
@@ -57,7 +57,12 @@ export class ProviderRegistry implements ModelProvider {
   get model() {
     return this.providers[this.mode].model;
   }
-  generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
+  generate(
+    pkg: ContextPackage,
+    onDraft?: (text: string) => void,
+    signal?: AbortSignal,
+    tools?: GenerationTools,
+  ) {
     this.active++;
     const controller = new AbortController();
     this.controllers.add(controller);
@@ -65,7 +70,7 @@ export class ProviderRegistry implements ModelProvider {
     const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const operation = (async () => {
       try {
-        return await selectedProvider.generate(pkg, onDraft, combined);
+        return await selectedProvider.generate(pkg, onDraft, combined, tools);
       } finally {
         this.active--;
         this.controllers.delete(controller);

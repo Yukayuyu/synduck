@@ -8,6 +8,7 @@ export default defineConfig({
     'thoughts-mobile.spec.ts',
     'canvases-mobile.spec.ts',
     'developer-flow-mobile.spec.ts',
+    'automatic-tools.spec.ts',
   ],
   use: {
     ...base.use,

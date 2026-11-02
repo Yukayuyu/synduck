@@ -149,6 +149,22 @@ export function registerRuntime(
       : [],
     busy: local?.busy || false,
   }));
+  app.get('/api/local/turns/:id', async (request) => {
+    const { id } = z.object({ id: z.string().min(1).max(200) }).parse(request.params);
+    if (
+      !store.db
+        .prepare(
+          "SELECT 1 FROM turns WHERE id = ? AND json_extract(payload, '$.actor') = 'assistant'",
+        )
+        .get(id)
+    )
+      throw new DomainError('missing_turn', '找不到這段回答。', 404);
+    return {
+      tasks: (local ? await local.tasksForTurn(id) : []).filter(
+        (task) => !canvases || canvases.taskOwner(task.id) === canvases.currentId,
+      ),
+    };
+  });
   if (local) {
     app.get('/api/local/tasks/:id', async (request) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);

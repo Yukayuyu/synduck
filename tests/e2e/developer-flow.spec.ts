@@ -156,53 +156,6 @@ test('renders Markdown while picks, original highlights and sealed input retain 
   await expect(block.locator('strong')).toHaveText('粗体🙂');
 });
 
-test('hands a draft and its inspected context to local tasks without starting an operation', async ({
-  page,
-  request,
-}) => {
-  const root = await conversation(request, '画布到开发任务', '原始需求：检查项目结构。', -33000);
-  let localStarts = 0;
-  let normalSends = 0;
-  page.on('request', (request) => {
-    if (request.method() !== 'POST') return;
-    if (request.url().endsWith('/api/local/tasks')) localStarts++;
-    if (request.url().endsWith('/api/send')) normalSends++;
-  });
-  await page.goto('/');
-  const card = page.locator('.react-flow__node[data-id="' + root.node.id + '"]');
-  await card.locator('.card-title').click();
-  const editor = card.getByLabel('你的问题', { exact: true });
-  const draft = '请阅读 package.json 并检查测试命令，不修改任何文件。';
-  await editor.fill(draft);
-  await card.getByRole('button', { name: '交给本地任务', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '本地任務', exact: true });
-  await expect(dialog.getByLabel('本地 AI 任務')).toHaveValue(draft);
-  await expect(dialog.getByLabel('附上目前已預覽的畫布上下文')).toBeChecked();
-  await expect(dialog.getByText('当前问题和选定上下文已带入', { exact: false })).toBeVisible();
-  expect(localStarts).toBe(0);
-  expect(normalSends).toBe(0);
-  const localRequest = page.waitForRequest(
-    (request) => request.method() === 'POST' && request.url().endsWith('/api/local/tasks'),
-  );
-  await dialog.getByRole('button', { name: '開始 AI 任務', exact: true }).click();
-  const submitted = (await localRequest).postDataJSON();
-  expect(submitted.prompt).toBe(draft);
-  const state = await (await request.get('/api/state')).json();
-  expect(
-    state.packages.find(
-      (pkg: { context_set_id: string }) => pkg.context_set_id === submitted.context_set_id,
-    ).current_prompt,
-  ).toBe(draft);
-  // This isolated server uses Demo, so a paid Codex task cannot start.
-  await expect(dialog.getByRole('alert')).toContainText('請先選擇 ChatGPT / Codex 模型');
-  await dialog.getByRole('button', { name: '關閉本地任務', exact: true }).click();
-  await expect(editor).toHaveValue(draft);
-  await editor.fill('');
-  await card.getByRole('button', { name: '交给本地任务', exact: true }).click();
-  await expect(dialog.getByLabel('本地 AI 任務')).toHaveValue('原始需求：检查项目结构。');
-  expect(normalSends).toBe(0);
-});
-
 test('keeps options out of the layout and persists pointer and numeric conversation resizing', async ({
   page,
   request,

@@ -2,11 +2,12 @@ import { z } from 'zod';
 import {
   AnswerSchema,
   ANSWER_INSTRUCTIONS,
+  CONTEXT_ANSWER_INSTRUCTIONS,
   DomainError,
   modelInput,
   type ContextPackage,
 } from '@acc/domain';
-import { validateAnswer, partialAnswer, type ModelProvider } from './index';
+import { validateAnswer, partialAnswer, type ModelProvider, type GenerationTools } from './index';
 import { CODEX_CONFIG, type CodexConnection } from './codex-rpc';
 import { codexError } from './codex-errors';
 
@@ -251,7 +252,12 @@ export class CodexProvider implements ModelProvider {
     if (this.generating)
       throw new DomainError('codex_busy', '回答正在生成，請完成後再變更登入。', 409);
   }
-  async generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
+  async generate(
+    pkg: ContextPackage,
+    onDraft?: (text: string) => void,
+    signal?: AbortSignal,
+    tools?: GenerationTools,
+  ) {
     if (this.closed) throw new DomainError('codex_unavailable', '模型連線已關閉。', 503);
     if (this.loginStarting || this.login.status === 'pending')
       throw new DomainError('login_busy', '請先完成帳號登入。', 409);
@@ -266,6 +272,8 @@ export class CodexProvider implements ModelProvider {
     const startedAt = Date.now();
     let stage = 'account/read';
     let unsubscribe = () => {};
+    let unregisterTools = () => {};
+    const allowedItems = new Set([...passiveItems, ...(tools ? ['dynamicToolCall'] : [])]);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let threadId = '';
     let turnId = '';
@@ -309,11 +317,12 @@ export class CodexProvider implements ModelProvider {
             approvalPolicy: 'never',
             sandbox: 'read-only',
             environments: [],
-            dynamicTools: [],
+            dynamicTools: tools?.definitions ?? [],
             selectedCapabilityRoots: [],
             config: CODEX_CONFIG,
-            baseInstructions: ANSWER_INSTRUCTIONS,
+            baseInstructions: tools ? CONTEXT_ANSWER_INSTRUCTIONS : ANSWER_INSTRUCTIONS,
             developerInstructions:
+              tools?.instructions ??
               'Use only the supplied context package. Do not use tools, files, memory, browsing, or other conversations. Return only the requested structured answer. Graph changes are proposals, never actions.',
           }),
         );
@@ -325,6 +334,18 @@ export class CodexProvider implements ModelProvider {
           502,
         );
       signal?.throwIfAborted();
+      if (tools) {
+        if (!this.rpc.registerTools)
+          throw new DomainError('codex_tools_unavailable', '目前模型連線不支援對話工具。', 503);
+        unregisterTools = this.rpc.registerTools(threadId, async (params) => {
+          if (signal?.aborted || completed || params.threadId !== threadId)
+            return {
+              success: false,
+              contentItems: [{ type: 'inputText', text: 'Conversation tools stopped.' }],
+            };
+          return tools.call(params);
+        });
+      }
       const answer = await new Promise<string>((resolve, reject) => {
         let finalText = '';
         let partial = '';
@@ -356,7 +377,7 @@ export class CodexProvider implements ModelProvider {
             return;
           }
           const items = turn.items || [];
-          if (items.some((item) => item.type && !passiveItems.has(item.type))) {
+          if (items.some((item) => item.type && !allowedItems.has(item.type))) {
             blocked();
             return;
           }
@@ -386,11 +407,11 @@ export class CodexProvider implements ModelProvider {
             fail(
               new DomainError(
                 'codex_generation_timeout',
-                `Codex 生成超過 3 分鐘，已停止本次回答。${retry ? `最近的重試原因：${retry.message}` : '請稍後重試或縮短問題。'}`,
+                `Codex 生成超過 ${tools ? 15 : 3} 分鐘，已停止本次回答。${retry ? `最近的重試原因：${retry.message}` : '請稍後重試或縮短問題。'}`,
                 504,
               ),
             ),
-          180_000,
+          tools ? 900_000 : 180_000,
         );
         unsubscribe = this.rpc.subscribe(({ method, params }) => {
           if (settled) return;
@@ -430,11 +451,11 @@ export class CodexProvider implements ModelProvider {
               return;
             }
             const draft = partialAnswer(partial);
-            if (draft !== null) onDraft?.(draft);
+            if (draft !== null && !partialIsCommentary) onDraft?.(draft);
           }
           if (method === 'item/started' || method === 'item/completed') {
             const item = params.item as AgentItem | undefined;
-            if (item?.type && !passiveItems.has(item.type)) {
+            if (item?.type && !allowedItems.has(item.type)) {
               blocked();
               return;
             }
@@ -468,7 +489,15 @@ export class CodexProvider implements ModelProvider {
           .request('turn/start', {
             threadId,
             ...(effort !== null ? { effort } : {}),
-            input: [{ type: 'text', text: modelInput(pkg), text_elements: [] }],
+            input: [
+              {
+                type: 'text',
+                text: tools
+                  ? JSON.stringify({ ...JSON.parse(modelInput(pkg)), execution: tools.input })
+                  : modelInput(pkg),
+                text_elements: [],
+              },
+            ],
             environments: [],
             outputSchema: z.toJSONSchema(AnswerSchema),
           })
@@ -503,6 +532,8 @@ export class CodexProvider implements ModelProvider {
       throw failure;
     } finally {
       clearTimeout(timer);
+      unregisterTools();
+      if (!completed) tools?.stop?.();
       unsubscribe();
       signal?.removeEventListener('abort', onAbort);
       needsStop = !completed;

@@ -7,6 +7,15 @@ import {
   type Answer,
   type ContextPackage,
 } from '@acc/domain';
+import type { HostToolHandler } from './codex-rpc';
+
+export interface GenerationTools {
+  definitions: { type: 'function'; name: string; description: string; inputSchema: unknown }[];
+  instructions: string;
+  input: Record<string, unknown>;
+  call: HostToolHandler;
+  stop?: () => void;
+}
 
 export interface ModelProvider {
   readonly name: string;
@@ -15,6 +24,7 @@ export interface ModelProvider {
     pkg: ContextPackage,
     onDraft?: (text: string) => void,
     signal?: AbortSignal,
+    tools?: GenerationTools,
   ): Promise<Answer>;
 }
 

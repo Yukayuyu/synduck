@@ -12,7 +12,6 @@ import {
   SlidersHorizontal,
   Plus,
   Minus,
-  Terminal,
 } from 'lucide-react';
 import {
   collectionSources,
@@ -24,6 +23,7 @@ import {
   type ExternalOrigin,
 } from '@acc/domain';
 import { threadStatus, type ClientState } from './api';
+import { ConversationTools } from './ConversationTools';
 import { MessageText } from './MessageText';
 import { selectionSource } from './source-ranges';
 
@@ -79,8 +79,6 @@ interface Props {
   onOpenNode: (node: CanvasNode) => void;
   onReference: (selection: SelectedText) => void;
   onExternalSource: (origin: ExternalOrigin) => void;
-  onLocalTask: () => void;
-  preparingLocal: boolean;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
@@ -484,6 +482,12 @@ export function Focus(props: Props) {
                           })}
                         </time>
                       </div>
+                      {turn.actor === 'assistant' && turn.model_provider === 'codex' && (
+                        <ConversationTools
+                          turnId={turn.id}
+                          streaming={turn.status === 'streaming'}
+                        />
+                      )}
                       {!generating &&
                         state.blocks
                           .filter((b) => b.turn_id === turn.id)
@@ -808,20 +812,6 @@ export function Focus(props: Props) {
                     </button>
                   </div>
                 </details>
-                <button
-                  type="button"
-                  className="composer-local"
-                  aria-label="交给本地任务"
-                  title="交给本地任务：读取源码、修改文件和运行命令"
-                  disabled={props.preparingLocal || locked || props.preparingForks}
-                  onClick={props.onLocalTask}
-                >
-                  {props.preparingLocal ? (
-                    <LoaderCircle className="spin" size={16} />
-                  ) : (
-                    <Terminal size={16} />
-                  )}
-                </button>
                 <details
                   className="composer-settings"
                   ref={optionsRef}

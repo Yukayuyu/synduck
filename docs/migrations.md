@@ -35,3 +35,7 @@ Optional Excerpt.external_origin and content-block structured_data.external_orig
 ## 0.8.0 optional presentation size (no SQL migration)
 
 Node.size_mode optionally selects automatic or manual display sizing and reuses the existing width/height fields. Existing nodes retain automatic sizing until explicitly resized. Geometry updates do not change semantic revision or mutate sealed input packages. Native format-1 validation retains the field; older versions reject unsupported fields. Markdown rendering uses immutable source offsets without changing stored text, hashes or excerpt ranges. See [operation and compatibility](developer-workflow.md).
+
+## 0.9.0 conversation tool linkage (no SQL migration)
+
+Local runtime task JSON optionally records conversation_turn_id, linking an automatic tool session to the existing assistant Turn and its sealed Context Package. Existing canvas_task_owners remains the authority for canvas ownership; a shared model RPC callback explicitly re-enters the originating request's canvas scope. Startup indexes all archived task files before limiting the recent-task list, so older conversation traces remain reachable. Old task files without the field remain valid and visible in the legacy task panel. Domain text, native canvas JSON, source IDs and historical packages are unchanged. A full data-directory backup includes traces and evidence; a single-canvas JSON export does not. See [automatic tool behavior and cancellation](developer-workflow.md).

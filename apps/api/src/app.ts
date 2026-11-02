@@ -349,17 +349,34 @@ export function createApp(
       if (!reply.raw.destroyed) reply.raw.write(`${JSON.stringify(event)}\n`);
     };
     emit({ type: 'started', turn_id: turn.id, context_set_id: pkg.context_set_id, package: pkg });
+    const session =
+      provider.name === 'codex' && options.local?.status().enabled
+        ? options.local.conversation(pkg, turn.id, controller.signal)
+        : undefined;
+    if (session) {
+      const owner = canvases.currentId;
+      const call = session.tools.call;
+      // A shared RPC process emits callbacks in its startup async scope. Bind
+      // operations to the originating canvas before persisting task ownership.
+      session.tools.call = (params) => canvases.run(owner, () => call(params));
+    }
     try {
       const answer = await provider.generate(
         pkg,
         (text) => emit({ type: 'draft', text }),
-        controller.signal,
+        session ? AbortSignal.any([controller.signal, session.signal]) : controller.signal,
+        session?.tools,
       );
       if (controller.signal.aborted)
         throw new DomainError('generation_cancelled', '已停止這段回答，可使用原上下文重試。', 499);
+      await session?.finish(answer.answer);
       store.finishAnswer(turn.id, answer);
       emit({ type: 'complete', turn_id: turn.id });
     } catch (error) {
+      await session?.finish(
+        undefined,
+        error instanceof DomainError ? error.message : '對話中斷；請檢查已執行的操作紀錄。',
+      );
       const cancelled = controller.signal.aborted;
       const message = cancelled
         ? '已停止這段回答，可使用原上下文重試。'
@@ -427,6 +444,20 @@ export function createApp(
   });
   app.post('/api/retry', async (request, reply) => {
     const { turn_id } = z.object({ turn_id: Id }).strict().parse(request.body);
+    if (
+      (await options.local?.tasksForTurn(turn_id))?.some(
+        (task) =>
+          canvases.taskOwner(task.id) === canvases.currentId &&
+          task.actions.some(
+            (action) => !['canvas_list_files', 'canvas_read_file'].includes(action.tool),
+          ),
+      )
+    )
+      throw new DomainError(
+        'tool_retry_requires_new_message',
+        '這段回答已有操作紀錄。請先查看實際結果，再用新問題繼續，避免重複執行。',
+        409,
+      );
     const { turn, pkg } = store.transaction(() => {
       const s = store.snapshot();
       const turn = s.turns.find((t) => t.id === turn_id);

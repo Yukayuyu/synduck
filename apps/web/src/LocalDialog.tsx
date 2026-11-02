@@ -52,13 +52,11 @@ export function LocalDialog({
   onUseResult,
   contextId,
   onShowTrace,
-  initialPrompt = '',
 }: {
   onClose: () => void;
   onUseResult: (text: string) => Promise<void>;
   contextId?: string;
   onShowTrace: (id: string) => Promise<void>;
-  initialPrompt?: string;
 }) {
   const api = useApi();
 
@@ -69,8 +67,8 @@ export function LocalDialog({
   const [tab, setTab] = useState<'codex' | 'manual' | 'integrations'>('codex');
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
   const refreshIntegrations = async () => setIntegrations(await api('/local/integrations'));
-  const [prompt, setPrompt] = useState(initialPrompt);
-  const [attachContext, setAttachContext] = useState(!!initialPrompt && !!contextId);
+  const [prompt, setPrompt] = useState('');
+  const [attachContext, setAttachContext] = useState(false);
   const [tool, setTool] = useState('canvas_list_files');
   const [path, setPath] = useState('.');
   const [content, setContent] = useState('');
@@ -158,9 +156,9 @@ export function LocalDialog({
           <Terminal size={22} /> 本地任務
         </h2>
         <p className="project-description">
-          操作在後端電腦執行。先選擇那台電腦上的專案資料夾；ChatGPT 任務使用已選模型與思考深度。
-          项目目录、MCP 与桌面设置在所有画布间共用。 尚未克隆源码时，可先选择已有的父目录，再让 AI
-          任务克隆并安装依赖。
+          先選擇後端電腦上的專案資料夾並啟用，然後使用已登入的 ChatGPT / Codex 模型。
+          普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。 專案、MCP
+          與桌面設定在所有畫布間共用；下方保留進階測試與舊任務紀錄。
         </p>
         {state?.other_canvas_busy && (
           <p role="status" className="quiet-note">
@@ -242,7 +240,6 @@ export function LocalDialog({
                 <p className="quiet-note">
                   此处可读取项目、修改文件和运行命令。先保存后端电脑上的源码目录，并选择已登录的
                   ChatGPT / Codex 模型。
-                  {initialPrompt && contextId ? ' 当前问题和选定上下文已带入。' : ''}
                 </p>
                 {prompt.length > 8000 && (
                   <p role="alert">
