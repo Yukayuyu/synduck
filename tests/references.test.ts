@@ -115,6 +115,33 @@ describe('canvas reference documents', () => {
     );
     restored.close();
   }, 15000);
+  it('places references at requested free coordinates and uses their full width to avoid existing cards', async () => {
+    const { post, store } = await fixture();
+    const obstacle = (
+      await post('/conversations', { title: 'Keep this position', position: { x: 400, y: 100 } })
+    ).json().node;
+    const ref = (
+      await post('/references', {
+        request_id: crypto.randomUUID(),
+        title: 'Nearby reference',
+        text: 'No overlap.',
+        position: { x: 0, y: 100 },
+      })
+    ).json().node;
+    expect(ref.width).toBe(420);
+    expect(ref.x).toBe(0);
+    expect(ref.y).toBeGreaterThanOrEqual(obstacle.y + obstacle.height);
+    expect(store.snapshot().nodes.find((node) => node.id === obstacle.id)).toEqual(obstacle);
+    const free = (
+      await post('/references', {
+        request_id: crypto.randomUUID(),
+        title: 'Free location',
+        text: 'Exact coordinates.',
+        position: { x: -2100.5, y: -1400.25 },
+      })
+    ).json().node;
+    expect({ x: free.x, y: free.y }).toEqual({ x: -2100.5, y: -1400.25 });
+  });
   it('extracts real PDF and DOCX locally with original file identity and keeps invalid documents atomic', async () => {
     const { post, store } = await fixture();
     for (const [name, bytes, expected] of [

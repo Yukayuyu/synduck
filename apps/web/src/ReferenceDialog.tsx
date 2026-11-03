@@ -5,8 +5,10 @@ import { useApi } from './api';
 export function ReferenceDialog({
   onClose,
   onImported,
+  position,
 }: {
   onClose: () => void;
+  position?: { x: number; y: number };
   onImported: (node: CanvasNode) => Promise<void>;
 }) {
   const api = useApi();
@@ -43,6 +45,7 @@ export function ReferenceDialog({
             }
             const result = await api<{ node: CanvasNode }>('/references', {
               request_id: requestId.current,
+              ...(position ? { position } : {}),
               title: title.trim() || file?.name.slice(0, 160) || '文字參考',
               ...(file ? { file: { name: file.name, data: encoded } } : { text }),
             });

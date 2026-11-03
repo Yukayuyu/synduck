@@ -99,6 +99,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const runningConversations = new Set([...Object.keys(jobs), ...streamingConversations]);
   const busy = runningConversations.size > 0 || preparingForks.length > 0;
   const [referenceDialog, setReferenceDialog] = useState(false);
+  const [referencePosition, setReferencePosition] = useState<{ x: number; y: number }>();
   const dirty =
     referenceDialog ||
     Object.values(prompts).some((text) => text.trim()) ||
@@ -889,6 +890,10 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             onCreateAt={(position) => {
               void create('新的提問', position);
             }}
+            onImportAt={(position) => {
+              setReferencePosition(position);
+              setReferenceDialog(true);
+            }}
             onMove={(id, x, y) => {
               void api(`/nodes/${id}`, { x, y }, 'PATCH')
                 .then(() => refresh())
@@ -1038,7 +1043,10 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
         <button
           aria-label="匯入參考"
           title="匯入文件或貼上文字"
-          onClick={() => setReferenceDialog(true)}
+          onClick={() => {
+            setReferencePosition(undefined);
+            setReferenceDialog(true);
+          }}
         >
           <FilePlus2 size={18} />
           <span>參考</span>
@@ -1312,6 +1320,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
       )}
       {referenceDialog && (
         <ReferenceDialog
+          position={referencePosition}
           onClose={() => setReferenceDialog(false)}
           onImported={async (node) => {
             await refresh();

@@ -45,6 +45,7 @@ import {
   ChevronUp,
   MoveDiagonal2,
   FileText,
+  FilePlus2,
 } from 'lucide-react';
 import { referenceBlock, sourceNodeForTurn, collectionSources, type CanvasNode } from '@acc/domain';
 import { SourceHandles, type SourceAnchor } from './SourceHandles';
@@ -221,6 +222,7 @@ interface Props {
   renderContent: (node: CanvasNode, ready: boolean) => ReactNode;
   tool: 'select' | 'hand';
   onCreateAt: (position: { x: number; y: number }) => void;
+  onImportAt: (position: { x: number; y: number }) => void;
   onOpenTrace: (id: string) => void;
   traceEpoch: number;
   onTraceCount: (count: number) => void;
@@ -250,6 +252,7 @@ export function Canvas({
   renderContent,
   tool,
   onCreateAt,
+  onImportAt,
   onOpenTrace,
   traceEpoch,
   onTraceCount,
@@ -746,6 +749,14 @@ export function Canvas({
             disabled: locked,
             run: () => {
               if (menu?.point) onCreateAt(menu.point);
+            },
+          },
+          {
+            label: '在這裡匯入參考',
+            icon: <FilePlus2 size={16} />,
+            disabled: locked,
+            run: () => {
+              if (menu?.point) onImportAt(menu.point);
             },
           },
           {

@@ -280,10 +280,9 @@ export class Store {
         request.title,
         request.position?.x ?? 100,
         request.position?.y ?? 100,
+        { width: 420, height: 520 },
       );
       node.context_state = 'reference';
-      node.width = 420;
-      node.height = 520;
       node.representation.summary = request.text.slice(0, 240);
       this.saveNode(node);
       if (!state.workspace.root_node_id)
@@ -447,9 +446,16 @@ export class Store {
     }
     return { x, y };
   }
-  private createNode(type: CanvasNode['type'], refId: string, title: string, x: number, y: number) {
-    const height = type === 'conversation' ? 650 : 420;
-    const width = type === 'conversation' ? 420 : 280;
+  private createNode(
+    type: CanvasNode['type'],
+    refId: string,
+    title: string,
+    x: number,
+    y: number,
+    dimensions?: { width: number; height: number },
+  ) {
+    const height = dimensions?.height ?? (type === 'conversation' ? 650 : 420);
+    const width = dimensions?.width ?? (type === 'conversation' ? 420 : 280);
     ({ x, y } = this.vacantPosition(x, y, width, height));
     const at = now();
     const n: CanvasNode = {
