@@ -16,6 +16,7 @@ export function ReferenceDialog({
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(crypto.randomUUID());
+  const picker = useRef<HTMLInputElement>(null);
   return (
     <div className="modal-backdrop" onClick={() => !working && onClose()}>
       <form
@@ -83,6 +84,7 @@ export function ReferenceDialog({
         <label>
           選擇文件
           <input
+            ref={picker}
             type="file"
             accept=".txt,.md,.markdown,.pdf,.docx"
             disabled={working}
@@ -100,6 +102,7 @@ export function ReferenceDialog({
               disabled={working}
               onClick={() => {
                 setFile(null);
+                if (picker.current) picker.current.value = '';
                 requestId.current = crypto.randomUUID();
               }}
             >

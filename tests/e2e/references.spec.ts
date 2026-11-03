@@ -45,6 +45,15 @@ test('imports Markdown and picks exact source with a branch and source highlight
     mimeType: 'text/markdown',
     buffer: Buffer.from('# 來源文件\n\n**必要來源🙂** 不可遺忘。\n'),
   });
+  await dialog.getByRole('button', { name: '改用貼上文字' }).click();
+  await expect(dialog.getByLabel('選擇文件')).toHaveValue('');
+  await dialog
+    .getByLabel('選擇文件')
+    .setInputFiles({
+      name: 'Reference.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# 來源文件\n\n**必要來源🙂** 不可遺忘。\n'),
+    });
   await dialog.getByRole('button', { name: '匯入畫布' }).click();
   const ref = page.locator('.canvas-card.reference.active');
   await expect(ref.getByRole('heading', { name: '來源文件' })).toBeVisible();
