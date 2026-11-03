@@ -17,6 +17,8 @@ import {
   CreateExcerptSchema,
   CreateForksSchema,
   ExternalOriginSchema,
+  CreateReferenceSchema,
+  sourceNodeForTurn,
   DomainError,
   type Workspace,
   type Conversation,
@@ -193,7 +195,102 @@ export class Store {
   }
   saveBlock(value: ContentBlock) {
     const v = ContentBlockSchema.parse(value);
+    const previous = this.db.prepare('SELECT payload FROM content_blocks WHERE id = ?').get(v.id);
+    if (previous) {
+      const stored = ContentBlockSchema.parse(JSON.parse(previous.payload as string));
+      if (stored.structured_data?.reference && JSON.stringify(stored) !== JSON.stringify(v))
+        throw new DomainError('immutable_reference', '參考原文不可覆寫；請匯入為新的參考。', 409);
+    }
     this.put('content_blocks', v, { turn_id: v.turn_id });
+  }
+  createReference(input: z.input<typeof CreateReferenceSchema>) {
+    const request = CreateReferenceSchema.parse(input);
+    if (
+      !request.text.trim() ||
+      Buffer.byteLength(request.text) > 1024 * 1024 ||
+      request.text.includes('\0')
+    )
+      throw new DomainError('reference_text_invalid', '參考文字須為非空文字，且不超過 1 MiB。');
+    return this.transaction(() => {
+      const state = this.snapshot();
+      const prior = state.blocks.find(
+        (b) => b.structured_data?.reference_request_id === request.request_id,
+      );
+      if (prior) {
+        if (
+          prior.text_content !== request.text ||
+          JSON.stringify(prior.structured_data?.reference) !== JSON.stringify(request.metadata)
+        )
+          throw new DomainError(
+            'reference_request_reused',
+            '匯入請求已用於不同內容，請重新匯入。',
+            409,
+          );
+        return {
+          node: state.nodes.find((n) => n.ref_type === 'turn' && n.ref_id === prior.turn_id)!,
+          block: prior,
+        };
+      }
+      const at = now(),
+        conversationId = id(),
+        turnId = id();
+      this.saveConversation({
+        id: conversationId,
+        workspace_id: state.workspace.id,
+        title: request.title,
+        status: 'active',
+        root_turn_id: turnId,
+        summary_block_id: null,
+        branch_origin_excerpt_id: null,
+        created_at: at,
+        updated_at: at,
+      });
+      this.saveTurn({
+        id: turnId,
+        conversation_id: conversationId,
+        parent_turn_id: null,
+        actor: 'tool',
+        sequence: 1,
+        model_provider: null,
+        model_id: null,
+        input_context_set_id: null,
+        status: 'complete',
+        created_at: at,
+        used_source_ids: [],
+        suggested_graph_updates: [],
+        error: null,
+      });
+      const block: ContentBlock = {
+        id: id(),
+        turn_id: turnId,
+        block_type: request.metadata.format === 'markdown' ? 'markdown' : 'text',
+        ordinal: 0,
+        mime_type: 'text/plain',
+        text_content: request.text,
+        asset_id: null,
+        structured_data: { reference: request.metadata, reference_request_id: request.request_id },
+        content_hash: contentHash(request.text),
+        created_at: at,
+        updated_at: at,
+      };
+      this.saveBlock(block);
+      const node = this.createNode(
+        'turn',
+        turnId,
+        request.title,
+        request.position?.x ?? 100,
+        request.position?.y ?? 100,
+      );
+      node.context_state = 'reference';
+      node.width = 420;
+      node.height = 520;
+      node.representation.summary = request.text.slice(0, 240);
+      this.saveNode(node);
+      if (!state.workspace.root_node_id)
+        this.saveWorkspace({ ...this.workspace(), root_node_id: node.id });
+      this.bump();
+      return { node, block };
+    });
   }
   saveExcerpt(value: Excerpt) {
     const v = ExcerptSchema.parse(value);
@@ -446,9 +543,7 @@ export class Store {
       )
         throw new DomainError('stale_source', '来源已变化，请重新选择文字', 409);
       const turn = s.turns.find((t) => t.id === block.turn_id);
-      const sourceNode = s.nodes.find(
-        (n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id,
-      );
+      const sourceNode = sourceNodeForTurn(s.nodes, turn);
       if (!sourceNode) throw new DomainError('missing_source', '来源对话不存在', 404);
       if (sourceNode.visibility === 'hidden')
         throw new DomainError('deleted_node', '請先還原來源卡片，再建立摘錄。', 409);

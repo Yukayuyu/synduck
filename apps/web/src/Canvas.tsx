@@ -44,8 +44,9 @@ import {
   ChevronDown,
   ChevronUp,
   MoveDiagonal2,
+  FileText,
 } from 'lucide-react';
-import { collectionSources, type CanvasNode } from '@acc/domain';
+import { referenceBlock, sourceNodeForTurn, collectionSources, type CanvasNode } from '@acc/domain';
 import { SourceHandles, type SourceAnchor } from './SourceHandles';
 import { useApi, type ClientState } from './api';
 import { TraceCardContent, type CanvasTrace } from './TaskTrace';
@@ -57,6 +58,7 @@ type CardData = {
   preview: string;
   type: CanvasNode['type'];
   branch: boolean;
+  reference: boolean;
   displayTitle: string;
   count: number;
   active: boolean;
@@ -91,15 +93,25 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
     <article
       ref={card}
       data-manual-size={resizing || data.node.size_mode === 'manual'}
-      className={`canvas-card ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
+      className={`canvas-card ${data.reference ? 'reference' : ''} ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
     >
       <Handle type="target" position={Position.Left} />
       <div className="card-eyebrow">
         <span
           className="node-kind"
-          aria-label={data.type === 'excerpt' ? '摘录' : data.branch ? '分支对话' : '对话'}
+          aria-label={
+            data.reference
+              ? '參考文件'
+              : data.type === 'excerpt'
+                ? '摘录'
+                : data.branch
+                  ? '分支对话'
+                  : '对话'
+          }
         >
-          {data.type === 'excerpt' ? (
+          {data.reference ? (
+            <FileText size={15} />
+          ) : data.type === 'excerpt' ? (
             <Quote size={15} />
           ) : data.branch ? (
             <GitBranch size={15} />
@@ -326,9 +338,7 @@ export function Canvas({
     for (const excerpt of state.excerpts) {
       const block = state.blocks.find((b) => b.id === excerpt.source_block_id);
       const turn = state.turns.find((t) => t.id === block?.turn_id);
-      const source = state.nodes.find(
-        (n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id,
-      );
+      const source = sourceNodeForTurn(state.nodes, turn);
       if (!source) continue;
       const items = result.get(source.id) ?? [];
       items.push({
@@ -370,7 +380,7 @@ export function Canvas({
         .map((n) => ({
           id: n.id,
           type: 'card',
-          className: `node-${n.ref_type}`,
+          className: `node-${n.ref_type} ${referenceBlock(state, n) ? 'node-reference' : ''}`,
           dragHandle: '.card-eyebrow',
           zIndex: activeNode === n.id ? 10 : 0,
           position: { x: n.x, y: n.y },
@@ -389,6 +399,7 @@ export function Canvas({
                   : n.title.slice(0, 24)
                 : n.title,
             type: n.type,
+            reference: Boolean(referenceBlock(state, n)),
             branch:
               !!state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id ||
               !!state.conversations.find((c) => c.id === n.ref_id)?.fork_origin,
@@ -410,7 +421,8 @@ export function Canvas({
             preview:
               n.ref_type === 'excerpt'
                 ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
-                : n.representation.summary,
+                : (referenceBlock(state, n)?.text_content?.slice(0, 240) ??
+                  n.representation.summary),
             count: state.turns.filter((t) => t.conversation_id === n.ref_id).length,
             active: activeNode === n.id,
             context: selected.includes(n.id),
@@ -589,7 +601,11 @@ export function Canvas({
   const actions: MenuAction[] = menuNode
     ? [
         {
-          label: menuNode.ref_type === 'excerpt' ? '檢視摘錄' : '繼續提問',
+          label: referenceBlock(state, menuNode)
+            ? '檢視參考'
+            : menuNode.ref_type === 'excerpt'
+              ? '檢視摘錄'
+              : '繼續提問',
           icon: <MessageSquare size={16} />,
           run: () => onOpen(menuNode),
         },

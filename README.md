@@ -16,6 +16,8 @@
 
 **发布方案：** 源码、Windows 安装包和更新清单统一放在 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。普通用户从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`，完整解压后运行 `Start-ContextCanvas.cmd`；安装和更新不需要 GitHub 账号或 token。首次 Release 附件就绪前可按下面的源码步骤运行。发布流程自动检查仓库公开状态、主分支 CI、版本和校验和，详见[发布说明](docs/github-updates.md#当前状态)。
 
+文件与文字可从画布底部「參考」导入，按需加入对话。支持 TXT、Markdown、PDF 与 DOCX，详见[参考文件说明](docs/references.md)。
+
 ## 从源码快速启动
 
 需要 Git、Node.js **24.19.0** 和 pnpm **11.19.0**。公开仓库可匿名克隆；尚未公开时需要仓库访问权限。首次在 Windows PowerShell 中执行：

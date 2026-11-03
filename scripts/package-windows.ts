@@ -26,6 +26,7 @@ for (const name of ['pnpm-lock.yaml', 'pnpm-workspace.yaml'])
 for (const [entry, outputPath] of [
   ['scripts/local-launcher.ts', 'scripts/local-launcher.mjs'],
   ['apps/api/src/server.ts', 'apps/api/server.mjs'],
+  ['apps/api/src/document-worker.ts', 'apps/api/document-worker.mjs'],
 ] as const) {
   const outfile = join(root, outputPath);
   const result = await build({
@@ -101,6 +102,7 @@ for (const name of [
   'thought-islands.md',
   'multiple-canvases.md',
   'developer-workflow.md',
+  'references.md',
   'ui-previews/developer-workflow.png',
   'ui-previews/multiple-canvases.png',
   'ui-previews/thought-islands.png',

@@ -81,7 +81,9 @@ export function TrashDialog({
                 <div className={'trash-entry ' + (current === n.id ? 'current' : '')} key={n.id}>
                   <button onClick={() => setCurrent(n.id)}>
                     <span>{n.title}</span>
-                    <small>{n.ref_type === 'excerpt' ? '摘錄' : '對話'}</small>
+                    <small>
+                      {n.ref_type === 'turn' ? '參考' : n.ref_type === 'excerpt' ? '摘錄' : '對話'}
+                    </small>
                   </button>
                   <button
                     className="icon-button"

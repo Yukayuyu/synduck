@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   DomainError,
   ExternalOriginSchema,
+  ReferenceMetadataSchema,
   MAX_PROJECT_BYTES,
   ProjectFileSchema,
   type AppSnapshot,
@@ -145,6 +146,17 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
   }
   const ordinals = new Set<string>();
   for (const b of s.blocks) {
+    if (b.structured_data?.reference) {
+      const metadata = ReferenceMetadataSchema.safeParse(b.structured_data.reference);
+      if (
+        !metadata.success ||
+        !b.turn_id ||
+        turns.get(b.turn_id)?.actor !== 'tool' ||
+        b.text_content === null ||
+        !s.nodes.some((n) => n.ref_type === 'turn' && n.ref_id === b.turn_id)
+      )
+        invalid('參考文件的中繼資料或來源節點無效。');
+    }
     if (b.structured_data?.external_origin) {
       const origin = ExternalOriginSchema.safeParse(b.structured_data.external_origin);
       if (!origin.success || origin.data.selector.exact !== b.text_content)

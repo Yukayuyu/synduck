@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { documentPdf, documentDocx } from '../tests/helpers/references';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { createServer } from 'node:net';
@@ -275,10 +276,23 @@ try {
   await request('/answer?canvas=' + otherCanvas.id, {
     context_set_id: otherCompiled.context_set.id,
   });
+  const portableReference = await request('/references?canvas=' + otherCanvas.id, {
+    request_id: randomUUID(),
+    title: 'Portable PDF reference',
+    file: { name: 'portable.pdf', data: documentPdf().toString('base64') },
+  });
+  assert.ok(portableReference.block.text_content.includes('Reference file evidence.'));
+  const portableWord = await request('/references?canvas=' + otherCanvas.id, {
+    request_id: randomUUID(),
+    title: 'Portable Word reference',
+    file: { name: 'portable.docx', data: documentDocx().toString('base64') },
+  });
+  assert.ok(portableWord.block.text_content.includes('Word 文件🙂'));
   const otherOriginal = await request('/state?canvas=' + otherCanvas.id);
   const assertOtherCanvas = async () => {
     const current = await request('/state?canvas=' + otherCanvas.id);
     assert.deepEqual(current.nodes, otherOriginal.nodes);
+    assert.deepEqual(current.blocks, otherOriginal.blocks);
     assert.deepEqual(current.turns, otherOriginal.turns);
     assert.deepEqual(current.packages, otherOriginal.packages);
     assert.ok(

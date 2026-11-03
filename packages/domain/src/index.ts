@@ -105,6 +105,42 @@ export const ContentBlockSchema = z.object({
   content_hash: Hash,
   ...timestamps,
 });
+export const ReferenceMetadataSchema = z
+  .object({
+    kind: z.enum(['paste', 'file']),
+    format: z.enum(['text', 'markdown', 'pdf', 'docx']),
+    filename: z.string().min(1).max(240).nullable(),
+    original_bytes: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(5 * 1024 * 1024),
+    original_sha256: Hash,
+  })
+  .strict();
+export const CreateReferenceSchema = z
+  .object({
+    request_id: z.string().uuid(),
+    title: z.string().trim().min(1).max(160),
+    text: z
+      .string()
+      .min(1)
+      .max(1024 * 1024),
+    metadata: ReferenceMetadataSchema,
+    position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict().optional(),
+  })
+  .strict();
+export function referenceBlock(snapshot: Pick<GraphSnapshot, 'blocks'>, node: CanvasNode) {
+  return node.ref_type === 'turn'
+    ? snapshot.blocks.find((b) => b.turn_id === node.ref_id && b.structured_data?.reference)
+    : undefined;
+}
+export function sourceNodeForTurn(nodes: CanvasNode[], turn?: Turn) {
+  return (
+    nodes.find((n) => n.ref_type === 'turn' && n.ref_id === turn?.id) ??
+    nodes.find((n) => n.ref_type === 'conversation' && n.ref_id === turn?.conversation_id)
+  );
+}
 export const TextSelectorSchema = z
   .object({
     type: z.literal('text_range'),

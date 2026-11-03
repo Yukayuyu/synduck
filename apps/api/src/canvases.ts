@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { sourceNodeForTurn } from '@acc/domain';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -157,9 +158,7 @@ export class CanvasRegistry {
     const block = source.blocks.find((b) => b.id === input.source_block_id);
     const turn = source.turns.find((t) => t.id === block?.turn_id);
     const conversation = source.conversations.find((c) => c.id === turn?.conversation_id);
-    const sourceNode = source.nodes.find(
-      (n) => n.ref_type === 'conversation' && n.ref_id === conversation?.id,
-    );
+    const sourceNode = sourceNodeForTurn(source.nodes, turn);
     if (
       !block?.text_content ||
       !turn ||

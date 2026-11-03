@@ -510,3 +510,51 @@
     display: none;
   }
 }
+
+.canvas-first .react-flow__node-card.node-reference {
+  width: 420px;
+}
+.canvas-first .canvas-card.reference {
+  border-radius: 24px;
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  border-left: 4px solid var(--accent);
+}
+.canvas-first .reference-panel .reference-scroll {
+  max-height: 440px;
+  min-height: 80px;
+  overflow: auto;
+}
+.reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+}
+.reference-origin {
+  font-size: 11px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+.reference-origin pre {
+  white-space: pre-wrap;
+}
+.reference-dialog textarea {
+  width: 100%;
+  resize: vertical;
+  max-height: 40vh;
+}
+.reference-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  padding: 6px 0;
+}
+.reference-pages input {
+  min-width: 0;
+  max-width: 160px;
+}

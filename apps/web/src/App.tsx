@@ -17,14 +17,17 @@ import {
   RotateCcw,
   Palette,
   MoreHorizontal,
+  FilePlus2,
 } from 'lucide-react';
 import {
   DEFAULT_BUDGET,
+  sourceNodeForTurn,
   type CanvasNode,
   type ContextPackage,
   type Excerpt,
   type Conversation,
 } from '@acc/domain';
+import { ReferenceDialog } from './ReferenceDialog';
 import { useApi, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
@@ -95,7 +98,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const streamingTurnIds = new Set(streamingTurns.map((turn) => turn.id));
   const runningConversations = new Set([...Object.keys(jobs), ...streamingConversations]);
   const busy = runningConversations.size > 0 || preparingForks.length > 0;
+  const [referenceDialog, setReferenceDialog] = useState(false);
   const dirty =
+    referenceDialog ||
     Object.values(prompts).some((text) => text.trim()) ||
     Object.values(forkDrafts).some((drafts) => drafts.length > 0);
   const lastSavedDrafts = useRef(JSON.stringify(initialDrafts));
@@ -189,6 +194,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     setAppearanceOpen(false);
     setHelp(false);
     setNewDialog(false);
+    setReferenceDialog(false);
     setRenameTarget(null);
     setPendingDelete(null);
     setTrashOpen(false);
@@ -416,9 +422,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     if (!state) return;
     const b = state.blocks.find((b) => b.id === e.source_block_id);
     const t = state.turns.find((t) => t.id === b?.turn_id);
-    const n = state.nodes.find(
-      (n) => n.ref_type === 'conversation' && n.ref_id === t?.conversation_id,
-    );
+    const n = sourceNodeForTurn(state.nodes, t);
     if (n) {
       if (n.visibility === 'hidden') {
         setTrashTarget({
@@ -462,9 +466,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           const origin = navigation.origin;
           const block = fresh.blocks.find((b) => b.id === origin.source_block_id);
           const turn = fresh.turns.find((t) => t.id === block?.turn_id);
-          const node = fresh.nodes.find(
-            (n) => n.ref_type === 'conversation' && n.ref_id === origin.conversation_id,
-          );
+          const node = sourceNodeForTurn(fresh.nodes, turn);
           if (
             fresh.workspace.id !== origin.workspace_id ||
             !node ||
@@ -963,6 +965,20 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
                 onSource={source}
                 onReference={canvas.onReference}
                 onExternalSource={canvas.onSourceJump}
+                referenceSelected={selected.includes(node.id)}
+                onSelectReference={() => select(node.id)}
+                onAskReference={() => {
+                  void api<{ node: CanvasNode }>('/conversations', {
+                    title: ('關於 ' + node.title).slice(0, 160),
+                    position: { x: node.x + 480, y: node.y },
+                  })
+                    .then(async (result) => {
+                      await refresh();
+                      setSelected([node.id]);
+                      openOnCanvas(result.node);
+                    })
+                    .catch(fail);
+                }}
                 onInspect={(pkg) => {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
@@ -1019,6 +1035,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           <span>提問</span>
         </button>
         <span className="tool-divider" />
+        <button
+          aria-label="匯入參考"
+          title="匯入文件或貼上文字"
+          onClick={() => setReferenceDialog(true)}
+        >
+          <FilePlus2 size={18} />
+          <span>參考</span>
+        </button>
         <button
           aria-label="畫布"
           aria-pressed={panel === null}
@@ -1285,6 +1309,17 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <X size={16} />
           </button>
         </div>
+      )}
+      {referenceDialog && (
+        <ReferenceDialog
+          onClose={() => setReferenceDialog(false)}
+          onImported={async (node) => {
+            await refresh();
+            setReferenceDialog(false);
+            openOnCanvas(node);
+            invalidate();
+          }}
+        />
       )}
       {newDialog && (
         <div className="modal-backdrop" onClick={() => setNewDialog(false)}>

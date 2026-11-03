@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   collectionSources,
+  referenceBlock,
   type CanvasNode,
   type ContentBlock,
   type ContextPackage,
@@ -24,6 +25,7 @@ import {
 } from '@acc/domain';
 import { threadStatus, type ClientState } from './api';
 import { ConversationTools } from './ConversationTools';
+import { ReferenceText } from './ReferenceText';
 import { MessageText } from './MessageText';
 import { selectionSource } from './source-ranges';
 
@@ -79,6 +81,9 @@ interface Props {
   onOpenNode: (node: CanvasNode) => void;
   onReference: (selection: SelectedText) => void;
   onExternalSource: (origin: ExternalOrigin) => void;
+  referenceSelected: boolean;
+  onSelectReference: () => void;
+  onAskReference: () => void;
 }
 export function Focus(props: Props) {
   const { state, node, busy, draft, preview, highlight, active, locked } = props;
@@ -102,6 +107,7 @@ export function Focus(props: Props) {
   const [selectionPosition, setSelectionPosition] = useState({ left: 0, top: 0 });
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
+  const reference = referenceBlock(state, node);
   const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
   const sources = excerpt ? collectionSources(state, excerpt) : [];
   const forks = state.conversations.filter(
@@ -231,6 +237,108 @@ export function Focus(props: Props) {
     document.addEventListener('selectionchange', changed);
     return () => document.removeEventListener('selectionchange', changed);
   }, [state.blocks, node.id]);
+  const selectionToolbar =
+    selection &&
+    createPortal(
+      <div
+        className="selection-toolbar canvas-selection-toolbar"
+        role="toolbar"
+        aria-label="文字选区操作"
+        style={{ left: selectionPosition.left, top: selectionPosition.top }}
+      >
+        <span>{selection.selector.exact.length} 字</span>
+        <button
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            props.onExcerpt(selection, false);
+            setSelection(null);
+          }}
+        >
+          <Quote size={14} />
+          摘录
+        </button>
+        <button
+          aria-label="摘录并分支"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            props.onExcerpt(selection, true);
+            setSelection(null);
+          }}
+        >
+          <GitBranch size={14} />
+          延伸提問
+        </button>
+        {props.collectingId && (
+          <button
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              props.onCollect(selection);
+              setSelection(null);
+            }}
+          >
+            <Plus size={14} />
+            加入汇合点
+          </button>
+        )}
+        <button
+          aria-label="引用到其他画布"
+          title="引用到其他画布"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            props.onReference(selection);
+            setSelection(null);
+          }}
+        >
+          <CornerUpRight size={14} />
+        </button>
+        <button aria-label="取消文字選取" onClick={() => setSelection(null)}>
+          <X size={14} />
+        </button>
+      </div>,
+      document.body,
+    );
+  if (reference)
+    return (
+      <section className="focus-panel reference-panel" data-node-id={node.id} aria-label="參考文件">
+        <div className="reference-actions">
+          <button
+            className={props.referenceSelected ? 'primary' : 'secondary'}
+            aria-pressed={props.referenceSelected}
+            onClick={props.onSelectReference}
+          >
+            {props.referenceSelected ? '移出本輪上下文' : '加入本輪上下文'}
+          </button>
+          <button onClick={props.onAskReference}>以此提問</button>
+        </div>
+        <div ref={scrollRef} className="focus-content conversation-scroll reference-scroll">
+          <div
+            id={'block-' + reference.id}
+            data-testid="content-block"
+            className="message-text"
+            onMouseUp={(event) => capture(event.currentTarget, reference)}
+          >
+            <ReferenceText
+              block={reference}
+              focused={!!highlight}
+              ranges={
+                highlight
+                  ? [{ start: highlight.start, end: highlight.end }]
+                  : state.excerpts
+                      .filter((e) => e.source_block_id === reference.id)
+                      .map((e) => ({ start: e.selector.start_char, end: e.selector.end_char }))
+              }
+            />
+          </div>
+        </div>
+        <details className="reference-origin">
+          <summary>文件來源與匯入資訊</summary>
+          <p>保存擷取文字。原始 PDF／DOCX 與版面未封存；長文件可 Pick 一小段再提問。</p>
+          <pre>{JSON.stringify(reference.structured_data?.reference, null, 2)}</pre>
+          <p>文字 SHA-256：{reference.content_hash}</p>
+        </details>
+        {selectionToolbar}
+      </section>
+    );
   return (
     <section
       className={`focus-panel ${active ? 'editing' : 'reading'} ${props.forkDrafts.length ? 'splitting-input' : ''} ${turns.length || busy ? 'has-turns' : 'empty-conversation'}`}
@@ -615,65 +723,7 @@ export function Focus(props: Props) {
               {props.requestError}
             </p>
           )}
-          {selection &&
-            createPortal(
-              <div
-                className="selection-toolbar canvas-selection-toolbar"
-                role="toolbar"
-                aria-label="文字选区操作"
-                style={{ left: selectionPosition.left, top: selectionPosition.top }}
-              >
-                <span>{selection.selector.exact.length} 字</span>
-                <button
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    props.onExcerpt(selection, false);
-                    setSelection(null);
-                  }}
-                >
-                  <Quote size={14} />
-                  摘录
-                </button>
-                <button
-                  aria-label="摘录并分支"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    props.onExcerpt(selection, true);
-                    setSelection(null);
-                  }}
-                >
-                  <GitBranch size={14} />
-                  延伸提問
-                </button>
-                {props.collectingId && (
-                  <button
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      props.onCollect(selection);
-                      setSelection(null);
-                    }}
-                  >
-                    <Plus size={14} />
-                    加入汇合点
-                  </button>
-                )}
-                <button
-                  aria-label="引用到其他画布"
-                  title="引用到其他画布"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    props.onReference(selection);
-                    setSelection(null);
-                  }}
-                >
-                  <CornerUpRight size={14} />
-                </button>
-                <button aria-label="取消文字選取" onClick={() => setSelection(null)}>
-                  <X size={14} />
-                </button>
-              </div>,
-              document.body,
-            )}
+          {selectionToolbar}
           {active ? (
             <form
               className="composer"

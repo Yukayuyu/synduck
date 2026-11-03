@@ -31,6 +31,7 @@ import { registerAccess, type AccessConfig } from './access';
 import { registerRuntime, type UpdateService } from './runtime';
 import type { LocalExecutor } from '../../../packages/local-runtime/src/executor';
 import packageJson from '../../../package.json';
+import { parseReference } from './references';
 import { CanvasRegistry } from './canvases';
 
 export function createApp(
@@ -184,6 +185,9 @@ export function createApp(
     const { title, position } = CreateConversationSchema.parse(request.body);
     return store.createConversation(title, undefined, position);
   });
+  app.post('/api/references', { bodyLimit: 8 * 1024 * 1024 }, async (request) =>
+    store.createReference(await parseReference(request.body)),
+  );
   app.post('/api/excerpts', async (request) =>
     store.createExcerpt(CreateExcerptSchema.parse(request.body)),
   );
