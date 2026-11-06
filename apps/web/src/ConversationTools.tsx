@@ -42,7 +42,7 @@ export function ConversationTools({ turnId, streaming }: { turnId: string; strea
           <details
             key={task.id}
             className="conversation-tools nodrag nopan nowheel"
-            open={waiting || undefined}
+            open={waiting || task.status === 'running' || undefined}
           >
             <summary>
               <Terminal size={13} /> 工具 · {taskStates[task.status]} · {task.actions.length} 步
@@ -50,8 +50,12 @@ export function ConversationTools({ turnId, streaming }: { turnId: string; strea
             <p className="quiet-note">{task.project_root}</p>
             <TraceSteps
               task={task}
-              onDecision={async (action, approved) => {
-                await api('/local/tasks/' + task.id + '/approve', { action_id: action, approved });
+              onDecision={async (action, approved, project_access) => {
+                await api('/local/tasks/' + task.id + '/approve', {
+                  action_id: action,
+                  approved,
+                  project_access,
+                });
                 const result = await api<{ tasks: LocalTask[] }>('/local/turns/' + turnId);
                 setTasks(result.tasks);
               }}

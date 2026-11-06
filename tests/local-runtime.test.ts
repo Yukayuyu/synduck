@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocalExecutor, type LocalTask } from '../packages/local-runtime/src/executor';
 import type {
   CodexConnection,
@@ -16,6 +16,7 @@ import { createApp } from '../apps/api/src/app';
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
+  vi.unstubAllEnvs();
 });
 const wait = async (condition: () => boolean, timeout = 5000) => {
   const deadline = Date.now() + timeout;
@@ -145,6 +146,24 @@ describe('local project executor', () => {
     expect(JSON.parse(result.actions[0].output)).toMatchObject({ exit_code: 0, timed_out: false });
     expect(JSON.parse(result.actions[0].output).stdout).toMatch(/^v24\./);
   }, 15_000);
+  it('keeps user auth configuration locations without forwarding backend tokens to commands', async () => {
+    const { executor, home } = await fixture();
+    const config = join(home, 'github-config');
+    vi.stubEnv('GH_CONFIG_DIR', config);
+    vi.stubEnv('OPENAI_API_KEY', 'fixture-model-credential');
+    vi.stubEnv('GH_TOKEN', 'fixture-github-credential');
+    const task = await executor.manual('canvas_run_command', {
+      command:
+        'node -e "console.log(JSON.stringify({config:process.env.GH_CONFIG_DIR,modelKey:!!process.env.OPENAI_API_KEY,githubToken:!!process.env.GH_TOKEN}))"',
+      timeout_seconds: 10,
+    });
+    const action = await waiting(executor, task);
+    await executor.approve(task.id, action.id, true);
+    const result = await finished(executor, task, 12000);
+    const output = JSON.parse(result.actions[0].output);
+    expect(output.exit_code).toBe(0);
+    expect(JSON.parse(output.stdout)).toEqual({ config, modelKey: false, githubToken: false });
+  }, 15000);
   it('rejection and cancellation perform no pending write', async () => {
     const { executor, project } = await fixture();
     for (const approve of [false, null]) {
@@ -304,6 +323,7 @@ describe('local project executor', () => {
     expect(calls[0].params).toMatchObject({ environments: [], sandbox: 'read-only' });
     expect((calls[0].params.dynamicTools as { name: string }[]).map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
+        'canvas_connect_project',
         'canvas_list_files',
         'canvas_read_file',
         'canvas_write_file',

@@ -1,6 +1,6 @@
 # 安装与配置指南
 
-适用版本：0.10.0；0.5.3—0.9.0 的安装与登录步骤相同。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
+适用版本：0.11.0；安装与模型登录步骤与旧版相同，本版新增对话内项目授权。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
 
 ## 需要准备什么
 
@@ -119,7 +119,8 @@ ChatGPT 账号登录与 API key 是两种独立接入方式。直接 API 模式�
 | `DATABASE_PATH`、`ASSET_PATH`           | `data/context-canvas.sqlite`、`data/assets` | 源码部署有自定义数据目录时       |
 | `MODEL_SETTINGS_PATH`、`APP_CODEX_HOME` | `data/model-settings.json`、`data/codex`    | 源码部署有自定义目录时           |
 | `LOCAL_RUNTIME_PATH`                    | `data/local-runtime`，保存任务和操作证据    | 源码部署有自定义目录时           |
-| `LOCAL_PROJECT_ROOT`                    | 可选的首次项目目录                          | 通常在「本地任務」保存           |
+| `LOCAL_PROJECT_ROOT`                    | 可选的首次项目目录                          | 也可直接在画布提供目录并授权     |
+| `LOCAL_EXECUTOR_DISABLED`               | `1` 时不创建本地执行器                     | 后端拥有者希望关闭工具执行时     |
 | `MCP_*`                                 | 外部 MCP 服务需要的后端凭证变量             | 对应 MCP 服务要求授权时          |
 
 Windows 管理式安装需要把画布、模型设置、认证和本地任务保留在安装根目录的 `data/` 中，以支持完整回退。不要把这些路径移到 `versions/`。完整目录和恢复流程见[版本更新说明](local-runtime-updates.md)。
@@ -138,13 +139,13 @@ Windows 管理式安装需要把画布、模型设置、认证和本地任务保
 
 ## 可选：项目工具、MCP 和桌面控制
 
-先打开「本地任務」，填入**后端电脑**上的项目目录，启用并保存。可先用手动读取文件确认路径，再提出命令或写入操作；操作需要在界面确认。
+选择 ChatGPT / Codex 后，在普通画布直接提供**后端电脑**上的项目目录及需求，例如“连接 `G:\Projects\ContextCanvas-Windows\synduck-dev`，检查 Git 并继续开发”。模型会在同一回答中提出目录授权；确认后验证并启用，接着处理原需求，无需先去设置填路径。「授權並繼續」保留写入与命令逐次确认；「授權並自動執行本次任務」只允许当前轮自动读写与运行命令。目录会保存，自动执行权限不会延续到下一轮或重启。顶部「本地任务」仍可手动调整设置。
 
 在「整合設定」中可以添加 stdio／Streamable HTTP MCP，或选择 Windows 应用窗口。MCP 的启动／探索和每次调用均需确认；需要凭证时，只保存 `MCP_` 环境变量名称，值留在后端。桌面控制需要后端运行于 Windows 的交互式桌面，重启后重新选择窗口。
 
 完整操作、浏览器 MCP 预设和记录导出见 [MCP 与桌面控制](mcp-desktop-traces.md)。ChatGPT 登录不会自动授权 MCP 服务；iPhone 页面控制的是后端窗口。
 
-0.9.0 起，启用项目并选择 ChatGPT / Codex 模型后，直接在普通画布提问即可。模型自动决定是否使用项目工具，确认和操作记录直接显示在该回答中；不再需要「交给本地任务」。详见[在 Synduck 内开发项目、Markdown 与尺寸调整](developer-workflow.md)。
+项目命令按后端系统用户权限运行；目录是工作目录，不是系统沙盒。MCP／桌面仍需逐次批准。GitHub 私有仓库与推送需要后端的 GitHub 授权，可由模型发起官方浏览器／设备登录，卡片实时显示输出，但本人认证仍需你完成；不要在聊天发送密码或 token。详见[在 Synduck 内开发项目、Markdown 与尺寸调整](developer-workflow.md)。
 
 ## 保存数据与升级
 

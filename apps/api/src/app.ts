@@ -354,7 +354,7 @@ export function createApp(
     };
     emit({ type: 'started', turn_id: turn.id, context_set_id: pkg.context_set_id, package: pkg });
     const session =
-      provider.name === 'codex' && options.local?.status().enabled
+      provider.name === 'codex' && options.local
         ? options.local.conversation(pkg, turn.id, controller.signal)
         : undefined;
     if (session) {

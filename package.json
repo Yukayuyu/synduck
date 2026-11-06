@@ -1,7 +1,7 @@
 {
   "name": "ai-context-canvas",
   "private": true,
-  "version": "0.10.1",
+  "version": "0.11.0",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "engines": {

@@ -55,17 +55,39 @@ export class ConversationCodex implements CodexConnection {
   }
   async respond(threadId: string, params: Record<string, unknown>) {
     const input = JSON.parse((params.input as { text: string }[])[0].text);
-    const writing = input.current_prompt.includes('确认写入');
+    const project = input.current_prompt.match(/^授權專案:(.+)$/m)?.[1];
+    const writing = !!project || input.current_prompt.includes('确认写入');
     const reading = writing || input.current_prompt.includes('读取项目');
     let text = '## 文字回答\n\n这段对话没有使用工具。';
     if (reading) {
       for (const [tool, args] of [
+        ...(project
+          ? [
+              [
+                'canvas_connect_project',
+                { root: project, create_if_missing: input.current_prompt.includes('建立目錄') },
+              ],
+            ]
+          : []),
         ['canvas_read_file', { path: 'spec.txt' }],
         ...(writing
           ? [
               [
                 'canvas_write_file',
                 { path: 'result.txt', content: 'Verified canvas tool write.\n' },
+              ],
+            ]
+          : []),
+        ...(input.current_prompt.includes('命令測試')
+          ? [
+              [
+                'canvas_run_command',
+                {
+                  command:
+                    "node -e \"process.stdin.once('data',()=>{console.log('12345');setTimeout(()=>{},2200)})\"",
+                  timeout_seconds: 30,
+                  stdin: '\n',
+                },
               ],
             ]
           : []),

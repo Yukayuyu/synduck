@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   X,
@@ -33,6 +33,7 @@ const operations: Record<string, string> = {
   scroll: '捲動',
 };
 export function actionLabel(action: Pick<LocalAction, 'tool' | 'arguments'>) {
+  if (action.tool === 'canvas_connect_project') return '授權本地專案';
   if (action.tool === 'canvas_desktop')
     return operations[String(action.arguments.operation)] || '桌面操作';
   if (action.tool === 'canvas_mcp_tools') return '探索 MCP 工具';
@@ -108,28 +109,55 @@ export function FrameImage({
     </figure>
   );
 }
+function commandText(value: string) {
+  try {
+    const data = JSON.parse(value);
+    return [data.stdout, data.stderr].filter(Boolean).join('\n');
+  } catch {
+    return value;
+  }
+}
 export function TraceSteps({
   task,
   onDecision,
 }: {
   task: LocalTask;
-  onDecision?: (action: string, approved: boolean) => Promise<void>;
+  onDecision?: (
+    action: string,
+    approved: boolean,
+    projectAccess?: 'review' | 'task',
+  ) => Promise<void>;
 }) {
   const [index, setIndex] = useState(0);
   const [view, setView] = useState<'compare' | 'before' | 'after'>('compare');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
+  const pendingRef = useRef<HTMLDivElement>(null);
   const entry = task.actions[Math.min(index, Math.max(0, task.actions.length - 1))];
   const pending = task.actions.findIndex((action) => action.status === 'waiting');
+  const pendingId = task.actions[pending]?.id;
+  const running = task.actions.findIndex((action) => action.status === 'running');
   useEffect(() => {
     if (pending >= 0) setIndex(pending);
-  }, [pending]);
-  const decide = async (approved: boolean) => {
+    else if (running >= 0) setIndex(running);
+  }, [pending, running]);
+  useEffect(() => {
+    const panel = pendingRef.current;
+    const scroll = panel?.closest<HTMLElement>('.conversation-scroll');
+    if (!pendingId || !panel || !scroll) return;
+    // Reveal a new approval within its own transcript, without focusing controls
+    // or scrolling/panning the surrounding canvas. Polls do not repeat this.
+    const bounds = scroll.getBoundingClientRect();
+    const scale = bounds.height / scroll.offsetHeight;
+    if (scale > 0 && panel.getBoundingClientRect().bottom > bounds.bottom)
+      scroll.scrollTop += (panel.getBoundingClientRect().bottom - bounds.bottom) / scale + 8;
+  }, [pendingId, entry?.id]);
+  const decide = async (approved: boolean, projectAccess?: 'review' | 'task') => {
     if (!entry || !onDecision) return;
     setWorking(true);
     setError('');
     try {
-      await onDecision(entry.id, approved);
+      await onDecision(entry.id, approved, projectAccess);
     } catch (e) {
       setError(e instanceof Error ? e.message : '確認失敗');
     } finally {
@@ -139,32 +167,41 @@ export function TraceSteps({
   if (!entry) return <p className="quiet-note">正在建立任務路徑…</p>;
   const before = entry.desktop?.before || entry.desktop?.reference;
   const after = entry.desktop?.after;
+  const hostPlatform = (entry.destination as { platform?: string } | undefined)?.platform;
+  const initialConnection =
+    task.actions.length === 1 &&
+    entry.tool === 'canvas_connect_project' &&
+    entry.status === 'waiting';
   const point = ['click', 'double_click', 'scroll'].includes(String(entry.arguments.operation))
     ? { x: Number(entry.arguments.x), y: Number(entry.arguments.y) }
     : undefined;
   return (
     <div className="trace-review">
-      <nav className="trace-path" aria-label="操作路徑">
-        {task.actions.map((action, i) => (
-          <button
-            key={action.id}
-            aria-label={'步驟 ' + (i + 1) + ' ' + actionLabel(action)}
-            aria-current={i === index ? 'step' : undefined}
-            className={'trace-step ' + (i === index ? 'selected ' : '') + action.status}
-            onClick={() => setIndex(i)}
-          >
-            <span>{i + 1}</span>
-            {actionLabel(action)}
-            <small>{taskStates[action.status]}</small>
-          </button>
-        ))}
-      </nav>
-      <div className="trace-step-heading">
-        <strong>
-          {index + 1}. {actionLabel(entry)}
-        </strong>
-        <span className={'trace-status ' + entry.status}>{taskStates[entry.status]}</span>
-      </div>
+      {!initialConnection && (
+        <nav className="trace-path" aria-label="操作路徑">
+          {task.actions.map((action, i) => (
+            <button
+              key={action.id}
+              aria-label={'步驟 ' + (i + 1) + ' ' + actionLabel(action)}
+              aria-current={i === index ? 'step' : undefined}
+              className={'trace-step ' + (i === index ? 'selected ' : '') + action.status}
+              onClick={() => setIndex(i)}
+            >
+              <span>{i + 1}</span>
+              {actionLabel(action)}
+              <small>{taskStates[action.status]}</small>
+            </button>
+          ))}
+        </nav>
+      )}
+      {!initialConnection && (
+        <div className="trace-step-heading">
+          <strong>
+            {index + 1}. {actionLabel(entry)}
+          </strong>
+          <span className={'trace-status ' + entry.status}>{taskStates[entry.status]}</span>
+        </div>
+      )}
       {entry.desktop && (
         <p className="trace-target">
           <Monitor size={14} />
@@ -177,16 +214,27 @@ export function TraceSteps({
         </p>
       )}
       {entry.status === 'waiting' && (
-        <div className="trace-pending">
-          <strong>等待確認這一次操作</strong>
+        <div className="trace-pending" ref={pendingRef}>
+          <strong>
+            {entry.tool === 'canvas_connect_project' ? '授權本地專案' : '等待確認這一次操作'}
+          </strong>
           <p>
-            {entry.tool === 'canvas_desktop'
-              ? '將切換到你選定的視窗；點擊與輸入會操作那個應用。'
-              : entry.tool.startsWith('canvas_mcp')
-                ? 'MCP 服務以後端帳戶／授權執行，可能修改本機或外部服務。'
-                : '請核對實際參數。'}
+            {entry.tool === 'canvas_connect_project'
+              ? '確認後連接此後端目錄並繼續需求；專案設定由所有畫布共用。'
+              : entry.tool === 'canvas_desktop'
+                ? '將切換到你選定的視窗；點擊與輸入會操作那個應用。'
+                : entry.tool.startsWith('canvas_mcp')
+                  ? 'MCP 服務以後端帳戶／授權執行，可能修改本機或外部服務。'
+                  : '請核對實際參數。'}
           </p>
-          <pre className="trace-proposal">{JSON.stringify(entry.arguments, null, 2)}</pre>
+          <pre className="trace-proposal">
+            {entry.tool === 'canvas_connect_project'
+              ? String(entry.arguments.root)
+              : JSON.stringify(entry.arguments, null, 2)}
+          </pre>
+          {entry.tool === 'canvas_connect_project' && hostPlatform && (
+            <p className="quiet-note">後端系統：{hostPlatform}</p>
+          )}
           {entry.tool === 'canvas_mcp_tools' && (
             <pre>{JSON.stringify(entry.destination, null, 2)}</pre>
           )}
@@ -196,18 +244,51 @@ export function TraceSteps({
               <pre>{entry.before ?? '尚不存在'}</pre>
             </details>
           )}
+          {entry.tool === 'canvas_connect_project' && (
+            <p className="quiet-note">
+              {entry.arguments.create_if_missing
+                ? '目錄不存在時，將依這次授權建立。'
+                : '只連接已存在的目錄。'}{' '}
+              本次自動執行允許本輪寫檔及系統命令，權限同後端帳戶，並非系統沙盒；MCP／桌面仍逐次確認。
+            </p>
+          )}
           {onDecision && (
             <div className="runtime-approval">
-              <button className="primary" disabled={working} onClick={() => void decide(true)}>
+              <button
+                className="primary"
+                disabled={working}
+                onClick={() =>
+                  void decide(true, entry.tool === 'canvas_connect_project' ? 'review' : undefined)
+                }
+              >
                 <Check size={14} />
-                確認這次操作
+                {entry.tool === 'canvas_connect_project' ? '授權並繼續' : '確認這次操作'}
               </button>
+              {entry.tool === 'canvas_connect_project' && (
+                <button disabled={working} onClick={() => void decide(true, 'task')}>
+                  授權並自動執行本次任務
+                </button>
+              )}
               <button disabled={working} onClick={() => void decide(false)}>
                 拒絕
               </button>
             </div>
           )}
         </div>
+      )}
+      {entry.authorized_by && (
+        <p className="quiet-note">依本次任務授權自動執行 · {entry.authorized_by}</p>
+      )}
+      {entry.tool === 'canvas_run_command' && entry.output && (
+        <details open={entry.status === 'running' || undefined}>
+          <summary>命令即時輸出</summary>
+          <pre>{commandText(entry.output)}</pre>
+          {entry.status === 'running' && entry.output.includes('github.com/login/device') && (
+            <a href="https://github.com/login/device" target="_blank" rel="noopener noreferrer">
+              開啟 GitHub 裝置登入
+            </a>
+          )}
+        </details>
       )}
       {error && <p role="alert">{error}</p>}
       {(before || after) && (
@@ -368,8 +449,12 @@ export function TraceDialog({
             </div>
             <TraceSteps
               task={task}
-              onDecision={async (action, approved) => {
-                await api('/local/tasks/' + id + '/approve', { action_id: action, approved });
+              onDecision={async (action, approved, project_access) => {
+                await api('/local/tasks/' + id + '/approve', {
+                  action_id: action,
+                  approved,
+                  project_access,
+                });
                 setTask(await api('/local/tasks/' + id));
               }}
             />

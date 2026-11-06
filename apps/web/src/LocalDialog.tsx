@@ -14,6 +14,7 @@ type LocalState = {
   tasks: LocalTask[];
 };
 const toolNames: Record<string, string> = {
+  canvas_connect_project: '授權本地專案',
   canvas_list_files: '列出目錄',
   canvas_read_file: '讀取檔案',
   canvas_write_file: '寫入檔案',
@@ -156,7 +157,8 @@ export function LocalDialog({
           <Terminal size={22} /> 本地任務
         </h2>
         <p className="project-description">
-          先選擇後端電腦上的專案資料夾並啟用，然後使用已登入的 ChatGPT / Codex 模型。
+          使用已登入的 ChatGPT / Codex
+          模型，在畫布問題中提供後端電腦上的專案目錄，即可在原卡片授權並繼續。
           普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。 專案、MCP
           與桌面設定在所有畫布間共用；下方保留進階測試與舊任務紀錄。
         </p>
@@ -281,7 +283,12 @@ export function LocalDialog({
                     {Object.entries(toolNames)
                       .filter(
                         ([id]) =>
-                          !['canvas_mcp_tools', 'canvas_mcp_call', 'canvas_desktop'].includes(id),
+                          ![
+                            'canvas_connect_project',
+                            'canvas_mcp_tools',
+                            'canvas_mcp_call',
+                            'canvas_desktop',
+                          ].includes(id),
                       )
                       .map(([id, name]) => (
                         <option key={id} value={id}>
@@ -388,14 +395,17 @@ export function LocalDialog({
                   </button>
                   {selected.actions.some(
                     (entry) =>
-                      entry.tool === 'canvas_desktop' || entry.tool.startsWith('canvas_mcp'),
+                      entry.tool === 'canvas_connect_project' ||
+                      entry.tool === 'canvas_desktop' ||
+                      entry.tool.startsWith('canvas_mcp'),
                   ) && (
                     <TraceSteps
                       task={selected}
-                      onDecision={async (action_id, approved) => {
+                      onDecision={async (action_id, approved, project_access) => {
                         await api('/local/tasks/' + selected.id + '/approve', {
                           action_id,
                           approved,
+                          project_access,
                         });
                         setSelected(await api('/local/tasks/' + selected.id));
                       }}

@@ -1878,3 +1878,17 @@ small {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.board-menu .local-control {
+  width: auto;
+  gap: 6px;
+}
+.local-status-label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .local-status-label {
+    display: none;
+  }
+}

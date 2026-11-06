@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, readFile, access, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, access, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
-async function fixture() {
+async function fixture(enabled = true) {
   const home = await mkdtemp(join(tmpdir(), 'canvas-auto-tools-'));
   const project = join(home, 'project');
   await mkdir(project);
@@ -26,7 +26,7 @@ async function fixture() {
     connected: async () => true,
   }));
   await local.initialize();
-  await local.configure(true, project);
+  if (enabled) await local.configure(true, project);
   const store = new Store(join(home, 'canvas.sqlite'));
   const rpc = new ConversationCodex();
   const provider = new CodexProvider(rpc, 'test-model', 'high');
@@ -89,7 +89,7 @@ it('automatically reads from a normal send, validates the answer and retains too
   expect(JSON.parse(tasks[0].actions[0].output).content).toBe('Original project evidence.');
   expect(tasks[0].actions[0].model_output).toContain(tasks[0].actions[0].id);
   const start = rpc.calls.find((call) => call.method === 'thread/start')!.params;
-  expect((start.dynamicTools as unknown[]).length).toBe(7);
+  expect((start.dynamicTools as unknown[]).length).toBe(8);
   expect(start.baseInstructions).not.toContain('has no filesystem');
   expect(rpc.calls.find((call) => call.method === 'turn/start')!.params.effort).toBe('high');
   expect(rpc.handlers.size).toBe(0);
@@ -255,3 +255,184 @@ it('withdraws pending approval immediately when the model fails without executin
   ).toBe(409);
   await expect(access(join(project, 'result.txt'))).rejects.toThrow();
 });
+
+it('attaches bootstrap tools before project enablement and continues the same answer after a single task grant', async () => {
+  const { send, app, local, project, rpc } = await fixture(false);
+  const { response } = await send('授權專案:' + project + '\n命令測試');
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  const task = local.snapshot().tasks[0];
+  const action = task.actions[0];
+  expect(action.tool).toBe('canvas_connect_project');
+  expect(local.status().enabled).toBe(false);
+  expect(task.actions).toHaveLength(1);
+  await expect(access(join(project, 'result.txt'))).rejects.toThrow();
+  const turn = rpc.calls.find((call) => call.method === 'turn/start')!.params;
+  expect(JSON.parse((turn.input as { text: string }[])[0].text).execution.project_enabled).toBe(
+    false,
+  );
+  const other = (
+    await app.inject({
+      method: 'POST',
+      url: '/api/canvases',
+      payload: { name: '不可授權其他畫布' },
+    })
+  ).json();
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url: `/api/local/tasks/${task.id}/approve`,
+        headers: { 'x-canvas-id': other.id },
+        payload: { action_id: action.id, approved: true, project_access: 'task' },
+      })
+    ).statusCode,
+  ).toBe(404);
+  expect(local.status().enabled).toBe(false);
+  const decision = await app.inject({
+    method: 'POST',
+    url: `/api/local/tasks/${task.id}/approve`,
+    payload: { action_id: action.id, approved: true, project_access: 'task' },
+  });
+  expect(decision.statusCode).toBe(200);
+  expect((await response).body).toContain('"type":"complete"');
+  expect(local.snapshot()).toMatchObject({ enabled: true, root: project, busy: false });
+  expect(await readFile(join(project, 'result.txt'), 'utf8')).toBe('Verified canvas tool write.\n');
+  expect(
+    task.actions
+      .filter(
+        (action) => action.tool === 'canvas_write_file' || action.tool === 'canvas_run_command',
+      )
+      .map((entry) => entry.authorized_by),
+  ).toEqual([action.id, action.id]);
+  expect(task.actions.at(-1)?.output).toContain('12345');
+  // A later answer gets no inherited automatic write permission.
+  const next = await send('确认写入');
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  const pending = local.snapshot().tasks[0];
+  expect(pending.actions.at(-1)?.tool).toBe('canvas_write_file');
+  await local.approve(pending.id, pending.actions.at(-1)!.id, false);
+  await next.response;
+}, 15000);
+
+it('persists an approved project across restart while review mode still prompts before writing', async () => {
+  const { send, local, project, runtime } = await fixture(false);
+  const { response } = await send('授權專案:' + project);
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  const task = local.snapshot().tasks[0];
+  await local.approve(task.id, task.actions[0].id, true, 'review');
+  await vi.waitFor(() => expect(task.actions.at(-1)?.tool).toBe('canvas_write_file'));
+  expect(task.actions.at(-1)?.status).toBe('waiting');
+  expect(task.actions.at(-1)?.authorized_by).toBeUndefined();
+  await expect(access(join(project, 'result.txt'))).rejects.toThrow();
+  await local.approve(task.id, task.actions.at(-1)!.id, false);
+  await response;
+  await local.close();
+  const restored = new LocalExecutor(runtime);
+  await restored.initialize();
+  cleanup.push(() => restored.close());
+  expect(restored.snapshot()).toMatchObject({ enabled: true, root: project, busy: false });
+  const next = await restored.manual('canvas_write_file', { path: 'restart.txt', content: 'wait' });
+  await vi.waitFor(() => expect(restored.status().waiting).toBe(1));
+  await expect(access(join(project, 'restart.txt'))).rejects.toThrow();
+  await restored.approve(next.id, next.actions[0].id, false);
+  await vi.waitFor(() => expect(restored.busy).toBe(false));
+});
+
+it('does not create a project through a symlink into protected runtime data', async () => {
+  const { local, home, runtime } = await fixture(false);
+  const link = join(home, 'runtime-link');
+  await symlink(runtime, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const task = await local.manual('canvas_connect_project', {
+    root: join(link, 'must-not-create'),
+    create_if_missing: true,
+  });
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await local.approve(task.id, task.actions[0].id, true, 'task');
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  expect(task.actions[0].success).toBe(false);
+  expect(local.status().enabled).toBe(false);
+  await expect(access(join(runtime, 'must-not-create'))).rejects.toThrow();
+});
+
+it('does not enable or create a directory when bootstrap authorization is rejected or the answer is stopped', async () => {
+  const { send, app, local, home } = await fixture(false);
+  for (const cancel of [false, true]) {
+    const root = join(home, cancel ? 'cancelled-project' : 'rejected-project');
+    const { response } = await send('授權專案:' + root + '\n建立目錄');
+    await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+    const task = local.snapshot().tasks[0];
+    if (cancel)
+      await app.inject({
+        method: 'POST',
+        url: `/api/answers/${task.conversation_turn_id}/cancel`,
+        payload: {},
+      });
+    else await local.approve(task.id, task.actions[0].id, false, 'task');
+    await response;
+    expect(local.status().enabled).toBe(false);
+    await expect(access(root)).rejects.toThrow();
+  }
+});
+
+it('creates a requested project only after approval and keeps root permission separate from GitHub authentication', async () => {
+  const { local, home } = await fixture(false);
+  const root = join(home, 'new', 'source');
+  const task = await local.manual('canvas_connect_project', { root, create_if_missing: true });
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await expect(access(root)).rejects.toThrow();
+  await local.approve(task.id, task.actions[0].id, true, 'task');
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  await access(root);
+  expect(task.actions[0].output).toContain('GitHub');
+  // An archived manual task cannot carry automatic permission into continuation.
+  const continued = await local.manual(
+    'canvas_write_file',
+    { path: 'later.txt', content: 'review required' },
+    task.id,
+  );
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await expect(access(join(root, 'later.txt'))).rejects.toThrow();
+  await local.approve(continued.id, continued.actions.at(-1)!.id, false);
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+});
+
+it('rejects protected roots and a rejected project switch cannot fall back to the previous project', async () => {
+  const { local, project, runtime, home } = await fixture();
+  const bad = await local.manual('canvas_connect_project', { root: runtime });
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  expect(bad.actions[0].status).toBe('failed');
+  expect(local.snapshot().root).toBe(project);
+  const other = join(home, 'other');
+  await mkdir(other);
+  const task = await local.manual('canvas_connect_project', { root: other });
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await local.approve(task.id, task.actions[0].id, false);
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  const next = await local.manual(
+    'canvas_write_file',
+    { path: 'wrong-root.txt', content: 'must not write' },
+    task.id,
+  );
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  expect(next.actions.at(-1)?.success).toBe(false);
+  await expect(access(join(project, 'wrong-root.txt'))).rejects.toThrow();
+});
+
+it('publishes command output while the process is still running and supports nonsecret prompt input', async () => {
+  const { local } = await fixture();
+  const command =
+    "node -e \"process.stdin.once('data',()=>{console.log('device authentication ready');setTimeout(()=>{},2200)})\"";
+  const task = await local.manual('canvas_run_command', {
+    command,
+    timeout_seconds: 15,
+    stdin: '\n',
+  });
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await local.approve(task.id, task.actions[0].id, true);
+  await vi.waitFor(() => expect(task.actions[0].output).toContain('device authentication ready'), {
+    timeout: 5000,
+  });
+  expect(task.actions[0].status).toBe('running');
+  await vi.waitFor(() => expect(local.busy).toBe(false), { timeout: 5000 });
+  expect(task.actions[0].success).toBe(true);
+}, 15000);

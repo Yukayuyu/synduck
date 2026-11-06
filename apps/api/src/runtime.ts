@@ -138,8 +138,19 @@ export function registerRuntime(
   );
   app.get('/api/local/status', async () =>
     local
-      ? { ...local.status(), ...(otherCanvasBusy() ? { waiting: 0, other_canvas_busy: true } : {}) }
-      : { enabled: false, busy: false, waiting: 0 },
+      ? {
+          available: true,
+          host_platform: process.platform,
+          ...local.status(),
+          ...(otherCanvasBusy() ? { waiting: 0, other_canvas_busy: true } : {}),
+        }
+      : {
+          available: false,
+          host_platform: process.platform,
+          enabled: false,
+          busy: false,
+          waiting: 0,
+        },
   );
   app.get('/api/local/canvas', async () => ({
     traces: local
@@ -275,11 +286,15 @@ export function registerRuntime(
     app.post('/api/local/tasks/:id/approve', async (request) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       canvases?.assertTask(id);
-      const { action_id, approved } = z
-        .object({ action_id: z.string().uuid(), approved: z.boolean() })
+      const { action_id, approved, project_access } = z
+        .object({
+          action_id: z.string().uuid(),
+          approved: z.boolean(),
+          project_access: z.enum(['review', 'task']).optional(),
+        })
         .strict()
         .parse(request.body);
-      return local.approve(id, action_id, approved);
+      return local.approve(id, action_id, approved, project_access);
     });
     app.post('/api/local/tasks/:id/cancel', async (request) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
