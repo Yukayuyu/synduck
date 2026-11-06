@@ -1,4 +1,13 @@
-import { mkdtemp, mkdir, writeFile, readFile, access, rm, symlink } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  access,
+  rm,
+  symlink,
+  realpath,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -15,7 +24,7 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 async function fixture(enabled = true) {
-  const home = await mkdtemp(join(tmpdir(), 'canvas-auto-tools-'));
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'canvas-auto-tools-')));
   const project = join(home, 'project');
   await mkdir(project);
   await writeFile(join(project, 'spec.txt'), 'Original project evidence.');
@@ -352,6 +361,45 @@ it('does not create a project through a symlink into protected runtime data', as
   expect(task.actions[0].success).toBe(false);
   expect(local.status().enabled).toBe(false);
   await expect(access(join(runtime, 'must-not-create'))).rejects.toThrow();
+});
+
+it('protects runtime and future login locations when their configured parent is an alias', async () => {
+  const { home } = await fixture(false);
+  const alias = join(home, 'home-link');
+  await symlink(home, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const executor = new LocalExecutor(join(alias, 'protected-runtime'), undefined, undefined, [
+    join(alias, 'future-login'),
+  ]);
+  await executor.initialize();
+  cleanup.push(() => executor.close());
+  await expect(executor.configure(true, join(home, 'protected-runtime'))).rejects.toMatchObject({
+    code: 'local_root_invalid',
+  });
+  const creation = await executor.manual('canvas_connect_project', {
+    root: join(home, 'future-login', 'nested'),
+    create_if_missing: true,
+  });
+  await vi.waitFor(() => expect(executor.busy).toBe(false));
+  expect(creation.actions[0].success).toBe(false);
+  await expect(access(join(home, 'future-login'))).rejects.toThrow();
+  await executor.configure(true, home);
+  const reading = await executor.manual('canvas_list_files', { path: 'protected-runtime' });
+  await vi.waitFor(() => expect(executor.busy).toBe(false));
+  expect(reading.actions[0].success).toBe(false);
+});
+
+it('recognizes a project alias as the same root when requesting authorization after an existing read', async () => {
+  const { local, project, home } = await fixture();
+  const alias = join(home, 'project-link');
+  await symlink(project, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const task = await local.manual('canvas_read_file', { path: 'spec.txt' });
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  await local.manual('canvas_connect_project', { root: alias }, task.id);
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  await local.approve(task.id, task.actions.at(-1)!.id, true, 'review');
+  await vi.waitFor(() => expect(local.busy).toBe(false));
+  expect(task.actions.at(-1)?.success).toBe(true);
+  expect(task.project_root).toBe(project);
 });
 
 it('does not enable or create a directory when bootstrap authorization is rejected or the answer is stopped', async () => {

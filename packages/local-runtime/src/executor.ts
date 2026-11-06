@@ -157,6 +157,7 @@ export class LocalExecutor {
   private approvals = new Map<string, (approved: boolean) => void>();
   private persistQueue: Promise<void> = Promise.resolve();
   private toolQueue: Promise<unknown> = Promise.resolve();
+  private protectedRoots: string[];
   readonly evidence: EvidenceStore;
   readonly mcp: McpManager;
   readonly desktop: DesktopManager;
@@ -166,15 +167,24 @@ export class LocalExecutor {
     private readonly selection?: () => ModelSelection,
     private readonly rpcFactory: RpcFactory = (handler) =>
       new CodexRpc(process.env.APP_CODEX_HOME || './data/codex', handler),
-    private readonly protectedPaths: string[] = [],
+    protectedPaths: string[] = [],
     options: { desktop?: DesktopDriver } = {},
   ) {
+    this.protectedRoots = [directory, ...protectedPaths];
     this.evidence = new EvidenceStore(join(directory, 'evidence'));
     this.mcp = new McpManager(directory);
     this.desktop = new DesktopManager(directory, this.evidence, options.desktop);
   }
   async initialize() {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
+    // Windows short names and symlinked parents must identify the same denied
+    // location as its real path, including protected paths not created yet.
+    this.protectedRoots = [
+      ...new Set([
+        ...this.protectedRoots,
+        ...(await Promise.all(this.protectedRoots.map((path) => this.canonicalTarget(path)))),
+      ]),
+    ];
     await this.mcp.initialize();
     await this.desktop.initialize();
     try {
@@ -195,7 +205,8 @@ export class LocalExecutor {
         .object({ enabled: z.boolean(), root: z.string() })
         .strict()
         .parse(JSON.parse(await fs.readFile(join(this.directory, 'settings.json'), 'utf8')));
-      if (this.settings.enabled) this.settings.root = await fs.realpath(this.settings.root);
+      if (this.settings.enabled)
+        this.settings.root = await this.resolveProjectRoot(this.settings.root);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         this.settings = { enabled: false, root: '' };
@@ -419,7 +430,7 @@ export class LocalExecutor {
         'local_root_invalid',
         `此後端為 ${process.platform}；請提供這台電腦上的完整專案路徑。`,
       );
-    for (const path of [this.directory, ...this.protectedPaths])
+    for (const path of this.protectedRoots)
       if (resolve(root) === resolve(path) || this.inside(path, root))
         throw fail('local_root_invalid', '不能選擇應用資料或登入目錄。');
   }
@@ -431,18 +442,7 @@ export class LocalExecutor {
     } catch (error) {
       if (!create || (error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw fail('local_root_invalid', '找不到這個專案資料夾；可明確授權建立目錄後再試。');
-      let parent = resolve(root);
-      while (true) {
-        try {
-          const existing = await fs.realpath(parent);
-          canonical = resolve(existing, relative(parent, resolve(root)));
-          break;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(parent) === parent)
-            throw fail('local_root_invalid', '無法解析這個專案路徑。');
-          parent = dirname(parent);
-        }
-      }
+      canonical = await this.canonicalTarget(root);
       this.assertProjectRoot(canonical);
       signal?.throwIfAborted();
       await fs.mkdir(canonical, { recursive: true });
@@ -453,6 +453,19 @@ export class LocalExecutor {
       throw fail('local_root_invalid', '專案路徑必須是資料夾。');
     signal?.throwIfAborted();
     return canonical;
+  }
+  private async canonicalTarget(path: string) {
+    const target = resolve(path);
+    let parent = target;
+    while (true) {
+      try {
+        return resolve(await fs.realpath(parent), relative(parent, target));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || dirname(parent) === parent)
+          throw fail('local_root_invalid', '無法解析這個專案路徑。');
+        parent = dirname(parent);
+      }
+    }
   }
   private inside(root: string, path: string) {
     const rel = relative(resolve(root), resolve(path));
@@ -478,7 +491,7 @@ export class LocalExecutor {
       throw fail('local_root_changed', '專案路徑已變更，請重新設定。', 409);
     const target = resolve(root, path);
     if (!this.inside(root, target)) throw fail('local_path_rejected', '路徑超出專案範圍。');
-    for (const denied of [this.directory, ...this.protectedPaths])
+    for (const denied of this.protectedRoots)
       if (this.inside(denied, target))
         throw fail('local_path_rejected', '不能讀寫應用資料或登入目錄。');
     let current = root;
@@ -1027,7 +1040,7 @@ export class LocalExecutor {
           task.actions.some(
             (entry) => entry !== action && entry.tool !== 'canvas_connect_project',
           ) &&
-          resolve(String(args.root)) !== resolve(task.project_root)
+          (await this.canonicalTarget(String(args.root))) !== task.project_root
         )
           throw fail(
             'local_root_task_changed',
