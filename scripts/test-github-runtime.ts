@@ -52,8 +52,14 @@ try {
   );
 } catch (error) {
   if (process.env.GITHUB_ACTIONS === 'true') {
+    const cause =
+      error instanceof Error &&
+      error.cause instanceof Error &&
+      /^Download HTTP \d+$/.test(error.cause.message)
+        ? ' (' + error.cause.message + ')'
+        : '';
     const message =
-      `${phase}: ${error instanceof Error ? error.stack || error.message : String(error)}`
+      `${phase}${cause}: ${error instanceof Error ? error.stack || error.message : String(error)}`
         .replaceAll('github-runtime-fixture', '[fixture]')
         .replaceAll('%', '%25')
         .replaceAll('\r', '%0D')

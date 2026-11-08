@@ -3,6 +3,7 @@ import { dirname, join, delimiter } from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { unzipSync } from 'fflate';
+import { setTimeout as delay } from 'node:timers/promises';
 import { DomainError } from '@acc/domain';
 
 const version = '2.103.3';
@@ -13,6 +14,14 @@ const hashes: Record<string, string> = {
   'macOS_arm64.zip': 'd700207eae9ae98fe2b89535c2c087c07823d4628c56364695a5a07ef311c062',
   'windows_amd64.zip': '98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0',
   'windows_arm64.zip': '197211c98687d7770ac331fe8a3b6c198c389108c1536cdbedf659fe4703e484',
+};
+const assetIds: Record<string, number> = {
+  'linux_amd64.tar.gz': 679195621,
+  'linux_arm64.tar.gz': 679195636,
+  'macOS_amd64.zip': 679195693,
+  'macOS_arm64.zip': 679195704,
+  'windows_amd64.zip': 679195750,
+  'windows_arm64.zip': 679195799,
 };
 export type GitHubStatus = {
   phase: 'disconnected' | 'preparing' | 'waiting' | 'connected' | 'error';
@@ -127,16 +136,20 @@ export class GitHubConnection {
     const expected = hashes[suffix];
     if (!expected) throw fail('这台电脑暂时不支持 GitHub 网页登录。');
     let response: Response | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const sources = [
+      `https://github.com/cli/cli/releases/download/v${version}/gh_${version}_${suffix}`,
+      `https://api.github.com/repos/cli/cli/releases/assets/${assetIds[suffix]}`,
+    ];
+    for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        response = await (this.options.fetch || fetch)(
-          `https://github.com/cli/cli/releases/download/v${version}/gh_${version}_${suffix}`,
-          { signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]) },
-        );
-        if (response.ok) break;
-        const retry = response.status === 429 || response.status >= 500;
+        response = await (this.options.fetch || fetch)(sources[attempt % sources.length], {
+          headers: { Accept: 'application/octet-stream', 'User-Agent': 'Synduck' },
+          signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]),
+        });
+        if (response.ok && !response.headers.get('content-type')?.includes('application/json'))
+          break;
         await response.body?.cancel();
-        if (!retry || attempt === 2) {
+        if (attempt === 4) {
           const error = fail('无法下载 GitHub 登录组件，请检查网络后重试。');
           Object.defineProperty(error, 'cause', {
             value: new Error('Download HTTP ' + response.status),
@@ -144,15 +157,17 @@ export class GitHubConnection {
           throw error;
         }
       } catch (error) {
-        if (error instanceof DomainError || signal.aborted || attempt === 2) throw error;
+        if (error instanceof DomainError || signal.aborted || attempt === 4) throw error;
       }
-      await new Promise((done) =>
-        setTimeout(
-          done,
-          Math.min(30000, Math.max(1000, Number(response?.headers.get('retry-after') || 0) * 1000)),
+      const retryAfter = Number(response?.headers.get('retry-after') || 0) * 1000;
+      await delay(
+        Math.min(
+          30000,
+          Math.max(1000 * 2 ** attempt, Number.isFinite(retryAfter) ? retryAfter : 0),
         ),
+        undefined,
+        { signal },
       );
-      signal.throwIfAborted();
     }
     if (!response?.ok || Number(response.headers.get('content-length')) > 40 * 1024 * 1024)
       throw fail('无法下载 GitHub 登录组件，请检查网络后重试。');

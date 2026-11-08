@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { afterEach, it, expect, vi } from 'vitest';
 import { testGitHub } from './helpers/github';
+import { GitHubConnection } from '../packages/local-runtime/src/github';
 import { oauthMcpFixture } from './helpers/oauth-mcp';
 import { McpManager } from '../packages/local-runtime/src/mcp';
 import { McpAuthorization } from '../packages/local-runtime/src/mcp-oauth';
@@ -61,6 +62,26 @@ it('does not save a GitHub login when it is cancelled', async () => {
   await github.disconnect();
   expect(github.status().phase).toBe('disconnected');
   expect(await readdir(join(root, 'github'))).toEqual([]);
+});
+it('falls back to the official anonymous asset endpoint and refuses an invalid component before execution', async () => {
+  const root = await directory();
+  const urls: string[] = [];
+  const github = new GitHubConnection(join(root, 'github'), {
+    fetch: async (input, options) => {
+      urls.push(String(input));
+      expect(new Headers(options?.headers).get('authorization')).toBeNull();
+      return urls.length === 1
+        ? new Response('', { status: 503 })
+        : new Response('tampered component', {
+            status: 200,
+            headers: { 'content-type': 'application/octet-stream' },
+          });
+    },
+  });
+  await expect(github.prepareRuntime()).rejects.toThrow('校验失败');
+  expect(new URL(urls[0]).hostname).toBe('github.com');
+  expect(new URL(urls[1]).hostname).toBe('api.github.com');
+  await expect(readdir(join(root, 'tools'))).rejects.toThrow();
 });
 it('runs a real MCP OAuth PKCE roundtrip, keeps credentials out of status and reuses the login after restart', async () => {
   const root = await directory();
