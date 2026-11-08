@@ -18,6 +18,10 @@
 
 文件与文字可从画布底部「參考」导入，按需加入对话。支持 TXT、Markdown、PDF 与 DOCX，详见[参考文件说明](docs/references.md)。
 
+## macOS 安裝包
+
+Apple Silicon 和 Intel Mac 可下載 [Releases](https://github.com/Yukayuyu/synduck/releases) 中的 `ContextCanvas-macOS-<版本>.zip`，完整解壓後雙擊 `Start-Synduck.command`。首次啟動會自動準備並校驗 Node.js 與依賴，無需 Homebrew。最低 macOS 13.5，詳見[Mac 啟動、資料與更新](docs/macos.md)。
+
 ## 从源码快速启动
 
 需要 Git、Node.js **24.19.0** 和 pnpm **11.19.0**。公开仓库可匿名克隆；尚未公开时需要仓库访问权限。首次在 Windows PowerShell 中执行：
@@ -60,6 +64,7 @@ pnpm test:e2e
 
 ```sh
 pnpm package:windows
+# 在 Mac 上改用 pnpm package:macos
 pnpm test:portable
 ```
 
@@ -78,7 +83,7 @@ pnpm test:portable
 
 ## 平台与数据
 
-- Windows 可运行完整后端和目标窗口控制；Linux／macOS 可从源码运行画布、模型和本地工具，当前桌面驱动仅支持 Windows。
+- Windows 可运行完整后端和目标窗口控制；macOS 可使用可攜式 ZIP 或從原始碼運行畫布、模型、本地檔案／終端與 MCP；Linux 可從原始碼運行。桌面視窗擷取與輸入驅動目前只支援 Windows。
 - iOS 通过 Safari 访问持续运行的后端，需要配置可信 HTTPS 和工作区密码。它不能独立运行后端或控制手机其他 App。
 - 数据保存在后端的 `data/`，包括 SQLite、模型设置、ChatGPT 登录和本地任务记录。密钥只放后端 `.env` 或安全环境设置，不能放到前端 `VITE_*` 变量。
 - 这是单一拥有者的工作区；同一后端连接的设备共享画布和模型账号。

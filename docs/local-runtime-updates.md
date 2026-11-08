@@ -1,6 +1,6 @@
 # 本地执行器、升级与恢复
 
-适用版本：0.11.0。首次安装、模型接入和常用环境变量见[安装与配置指南](setup.md)。本页说明项目工具权限、数据保存位置，以及 Windows 管理式安装的升级与回退。
+适用版本：0.12.0。首次安装、模型接入和常用环境变量见[安装与配置指南](setup.md)。本页说明项目工具权限、数据保存位置，以及 Windows 管理式安装的升级与回退。
 
 ## 启用本地项目工具
 
@@ -16,9 +16,13 @@
 
 MCP、浏览器 MCP 和 Windows 目标窗口操作也可由普通画布对话自动调用，配置及证据回看见 [MCP 与桌面控制](mcp-desktop-traces.md)。普通对话仍使用已编译的画布输入包，工具证据额外受 100 KB 文本／8 张图片限制；工具记录不会自动修改画布、变成引用 source_id 或进入后续轮次的上下文。停止回答会撤销待确认的动作；有外部操作记录的失败回答需用新问题继续，不能直接重试重放。
 
+## macOS 安裝包
+
+Mac 0.12.0 起也使用管理式安裝、升級、備份與失敗回復。下載 `ContextCanvas-macOS-<版本>.zip`，啟動 `Start-Synduck.command`；首次啟動會準備原生 Node.js。Apple Silicon 與 Intel 共用一包。Mac 使用 `context-canvas-update-macos.json`，Windows 繼續使用 `context-canvas-update.json`，兩者不會互相安裝；完整說明見 [macOS 指南](macos.md)。
+
 ## 数据放在哪里
 
-Windows 管理式安装保持如下结构：
+管理式安裝保持如下結構；Mac 根啟動檔是 `Start-Synduck.command`，Windows 是 `Start-ContextCanvas.cmd`：
 
 ```text
 安装根目录/

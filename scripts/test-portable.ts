@@ -10,9 +10,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { unzipSync, zipSync } from 'fflate';
 import { unpackRelease } from '../packages/local-runtime/src/updates';
+import { releaseLayout, releaseTarget } from '../packages/local-runtime/src/release-target';
+const target = releaseTarget();
+const prefix = releaseLayout(target).prefix;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const version = JSON.parse(await fs.readFile(join(root, 'package.json'), 'utf8')).version as string;
-const archivePath = join(root, 'release-output', `ContextCanvas-Windows-${version}.zip`);
+const archivePath = join(root, 'release-output', `${prefix}-${version}.zip`);
 const files = unzipSync(new Uint8Array(await fs.readFile(archivePath)));
 const home = await fs.mkdtemp(join(tmpdir(), 'canvas-portable-smoke-'));
 const testStore = process.env.CANVAS_PNPM_STORE || join(home, '.runtime', 'pnpm-store');
@@ -55,19 +58,18 @@ const newVersion = (minor: number) => {
 };
 function newerArchive(next: string, broken = false) {
   const updated = { ...files };
-  const pkgPath = 'ContextCanvas-Windows/app/package.json';
+  const pkgPath = `${prefix}/app/package.json`;
   const pkg = JSON.parse(Buffer.from(updated[pkgPath]).toString('utf8'));
   pkg.version = next;
   updated[pkgPath] = new TextEncoder().encode(JSON.stringify(pkg));
   if (broken)
-    updated['ContextCanvas-Windows/app/apps/api/server.mjs'] = new TextEncoder().encode(
+    updated[`${prefix}/app/apps/api/server.mjs`] = new TextEncoder().encode(
       'throw new Error("Expected startup failure in portable smoke");\nexport {};',
     );
-  const manifestPath = 'ContextCanvas-Windows/package-files.json';
+  const manifestPath = `${prefix}/package-files.json`;
   const manifest = JSON.parse(Buffer.from(updated[manifestPath]).toString('utf8'));
   manifest.version = next;
-  for (const entry of manifest.files)
-    entry.sha256 = sha(updated[`ContextCanvas-Windows/${entry.path}`]);
+  for (const entry of manifest.files) entry.sha256 = sha(updated[`${prefix}/${entry.path}`]);
   updated[manifestPath] = new TextEncoder().encode(JSON.stringify(manifest));
   return zipSync(updated);
 }
@@ -205,11 +207,15 @@ try {
   await fs.writeFile(join(application, 'data', 'model-settings.json'), savedSettings);
   // All dependencies come from the pinned lockfile, not a copied Linux node_modules tree.
   const windows = process.platform === 'win32';
-  const npxCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+  const bundledNpm = windows || process.platform === 'darwin';
+  const npxCli =
+    process.platform === 'darwin'
+      ? resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npx-cli.js')
+      : join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
   phase = 'install initial dependencies';
   execFileSync(
-    windows ? process.execPath : 'pnpm',
-    windows
+    bundledNpm ? process.execPath : 'pnpm',
+    bundledNpm
       ? [
           npxCli,
           '--yes',

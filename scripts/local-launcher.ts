@@ -227,7 +227,7 @@ const startServer = async (directory: string, expectedVersion: string) => {
     };
     if (action === 'apply') {
       if (replacing || !portable || updates.state.phase !== 'ready')
-        return reply(undefined, '請先準備新版，並使用 Windows 啟動器。');
+        return reply(undefined, '請先準備新版，並使用安裝包啟動器。');
       replacing = true;
       reply({ ok: true, restarting: true });
       void installUpdate().finally(() => {
@@ -327,10 +327,13 @@ const stopServer = async (processChild: ChildProcess, graceful = true) => {
   });
 };
 const installDependencies = async (directory: string) => {
-  const windows = process.platform === 'win32';
-  const npxCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
-  const command = windows ? process.execPath : 'pnpm';
-  const args = windows
+  const bundledNpm = process.platform === 'win32' || (portable && process.platform === 'darwin');
+  const npxCli =
+    process.platform === 'darwin'
+      ? resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npx-cli.js')
+      : join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+  const command = bundledNpm ? process.execPath : 'pnpm';
+  const args = bundledNpm
     ? [
         npxCli,
         '--yes',
@@ -341,7 +344,7 @@ const installDependencies = async (directory: string) => {
         'install',
         '--frozen-lockfile',
         '--store-dir',
-        join(runtime, 'pnpm-store'),
+        process.env.CANVAS_PNPM_STORE || join(runtime, 'pnpm-store'),
       ]
     : [
         'install',
@@ -349,7 +352,7 @@ const installDependencies = async (directory: string) => {
         '--store-dir',
         process.env.CANVAS_PNPM_STORE || join(runtime, 'pnpm-store'),
       ];
-  if (windows && !existsSync(npxCli))
+  if (bundledNpm && !existsSync(npxCli))
     throw new Error('The portable Node installation is missing npm.');
   await new Promise<void>((done, reject) => {
     const installer = spawn(command, args, {
@@ -454,11 +457,14 @@ try {
   if (portable) await writeJson(join(runtime, 'install.json'), record);
   if (process.env.UPDATES_DISABLED !== '1') updates.start();
   console.log('Context Canvas is ready. Keep this launcher open.');
-  if (process.platform === 'win32' && !process.argv.includes('--no-browser')) {
-    const browser = spawn('cmd.exe', ['/d', '/c', 'start', '""', address], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
+  if (['win32', 'darwin'].includes(process.platform) && !process.argv.includes('--no-browser')) {
+    const browser =
+      process.platform === 'darwin'
+        ? spawn('/usr/bin/open', [address], { stdio: 'ignore' })
+        : spawn('cmd.exe', ['/d', '/c', 'start', '""', address], {
+            stdio: 'ignore',
+            windowsHide: true,
+          });
     browser.on('error', () => {});
     browser.unref();
   }

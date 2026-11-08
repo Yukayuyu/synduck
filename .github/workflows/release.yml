@@ -64,7 +64,13 @@ jobs:
           exit 1
   package:
     needs: preflight
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows }
+          - { os: macos-15, target: macos }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -77,7 +83,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm package:windows
+      - run: pnpm package:${{ matrix.target }}
+      - run: pnpm test:macos-bootstrap
+        if: runner.os == 'macOS'
       - run: pnpm test:portable
       - name: Check compatibility with the previous bootstrap
         run: pnpm test:portable
@@ -85,11 +93,11 @@ jobs:
           CANVAS_TEST_LEGACY_BOOTSTRAP: '1'
       - uses: actions/upload-artifact@v4
         with:
-          name: context-canvas-release
+          name: context-canvas-release-${{ matrix.target }}
           path: |
-            release-output/ContextCanvas-Windows-*.zip
-            release-output/ContextCanvas-Windows-*.zip.sha256
-            release-output/context-canvas-update.json
+            release-output/*.zip
+            release-output/*.zip.sha256
+            release-output/context-canvas-update*.json
   publish:
     needs: package
     runs-on: ubuntu-latest
@@ -101,7 +109,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          name: context-canvas-release
+          pattern: context-canvas-release-*
+          merge-multiple: true
           path: release-output
       - name: Verify and publish this repository's release
         env:
@@ -116,16 +125,20 @@ jobs:
             const repo = JSON.parse(process.env.REPO_METADATA);
             const config = JSON.parse(readFileSync("release.config.json", "utf8"));
             const pkg = JSON.parse(readFileSync("package.json", "utf8"));
-            const feed = JSON.parse(readFileSync("release-output/context-canvas-update.json", "utf8"));
             if (repo.private !== false || repo.archived || config.repository !== process.env.GH_REPO) throw new Error("Release target must be this public repository.");
-            if (feed.version !== pkg.version || process.env.RELEASE_TAG !== `canvas-v${feed.version}`) throw new Error("Release version mismatch.");
-            const name = `ContextCanvas-Windows-${feed.version}.zip`;
-            if (feed.archive.name !== name) throw new Error("Unexpected archive name.");
-            const archive = readFileSync(`release-output/${name}`);
-            const digest = createHash("sha256").update(archive).digest("hex");
-            const sidecar = readFileSync(`release-output/${name}.sha256`, "utf8");
-            if (archive.length !== feed.archive.bytes || digest !== feed.archive.sha256 || sidecar !== `${digest}  ${name}\n`) throw new Error("Release archive checksum/size mismatch.");
-            writeFileSync("release-output/notes.txt", feed.notes + "\n\nDownload and extract the Windows ZIP, then run Start-ContextCanvas.cmd. No GitHub token is required.\n");'
+            let notes;
+            for (const [prefix, feedName] of [["ContextCanvas-Windows", "context-canvas-update.json"], ["ContextCanvas-macOS", "context-canvas-update-macos.json"]]) {
+              const feed = JSON.parse(readFileSync(`release-output/${feedName}`, "utf8"));
+              if (feed.version !== pkg.version || process.env.RELEASE_TAG !== `canvas-v${feed.version}`) throw new Error("Release version mismatch.");
+              const name = `${prefix}-${feed.version}.zip`;
+              if (feed.archive.name !== name) throw new Error("Unexpected archive name.");
+              const archive = readFileSync(`release-output/${name}`);
+              const digest = createHash("sha256").update(archive).digest("hex");
+              const sidecar = readFileSync(`release-output/${name}.sha256`, "utf8");
+              if (archive.length !== feed.archive.bytes || digest !== feed.archive.sha256 || sidecar !== `${digest}  ${name}\n`) throw new Error("Release archive checksum/size mismatch.");
+              notes ??= feed.notes;
+            }
+            writeFileSync("release-output/notes.txt", notes + "\n\nDownload the ZIP for your platform: Windows uses Start-ContextCanvas.cmd; macOS uses Start-Synduck.command. No GitHub token is required.\n");'
           tag_sha=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
           if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
             echo '::error::The release tag changed after verification.'
@@ -137,6 +150,9 @@ jobs:
           gh release create "$RELEASE_TAG" \
             "release-output/ContextCanvas-Windows-$release_version.zip" \
             "release-output/ContextCanvas-Windows-$release_version.zip.sha256" \
+            "release-output/ContextCanvas-macOS-$release_version.zip" \
+            "release-output/ContextCanvas-macOS-$release_version.zip.sha256" \
             release-output/context-canvas-update.json \
+            release-output/context-canvas-update-macos.json \
             --verify-tag --title "Context Canvas $release_version" \
             --notes-file release-output/notes.txt "${prerelease[@]}"

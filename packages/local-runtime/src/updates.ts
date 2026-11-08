@@ -5,6 +5,7 @@ import { unzipSync } from 'fflate';
 import { z } from 'zod';
 import { DomainError } from '@acc/domain';
 import releaseConfig from '../../../release.config.json';
+import { releaseLayout, releaseTarget, type ReleaseTarget } from './release-target';
 
 export const UPDATE_REPOSITORY = releaseConfig.repository;
 if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(UPDATE_REPOSITORY))
@@ -38,12 +39,13 @@ export const PackageManifest = z
               'Update-Existing.cmd',
               'Update-Existing.ps1',
               'launch.mjs',
+              'Start-Synduck.command',
             ]),
             sha256: z.string().regex(/^[a-f0-9]{64}$/),
           })
           .strict(),
       )
-      .max(5)
+      .max(6)
       .default([]),
   })
   .strict();
@@ -106,7 +108,7 @@ export function compareVersions(a: string, b: string) {
   }
   return 0;
 }
-export function unpackRelease(archive: Uint8Array) {
+export function unpackRelease(archive: Uint8Array, expectedTarget?: ReleaseTarget) {
   if (archive.byteLength > 32 * 1024 * 1024) throw invalid('更新包超過 32 MiB。');
   let total = 0,
     count = 0;
@@ -124,10 +126,31 @@ export function unpackRelease(archive: Uint8Array) {
       return !entry.name.endsWith('/');
     },
   });
-  const prefix = files['ContextCanvas-Windows/package-files.json'] ? 'ContextCanvas-Windows/' : '';
+  const prefixes = ['', 'ContextCanvas-Windows/', 'ContextCanvas-macOS/'].filter(
+    (prefix) => files[`${prefix}package-files.json`],
+  );
+  if (prefixes.length !== 1) throw invalid('找不到唯一的更新包資訊。');
+  const prefix = prefixes[0];
   const bytes = files[`${prefix}package-files.json`];
   if (!bytes || bytes.byteLength > 1024 * 1024) throw invalid('找不到有效的更新包資訊。');
   const manifest = PackageManifest.parse(JSON.parse(Buffer.from(bytes).toString('utf8')));
+  const mac = manifest.bootstrap_files.some((entry) => entry.path === 'Start-Synduck.command');
+  const windows = manifest.bootstrap_files.some(
+    (entry) => entry.path.endsWith('.cmd') || entry.path.endsWith('.ps1'),
+  );
+  const target =
+    prefix === 'ContextCanvas-macOS/' || mac
+      ? 'macos'
+      : prefix === 'ContextCanvas-Windows/' || windows
+        ? 'windows'
+        : undefined;
+  if (
+    (mac && windows) ||
+    (prefix === 'ContextCanvas-Windows/' && mac) ||
+    (prefix === 'ContextCanvas-macOS/' && windows) ||
+    (expectedTarget && target && expectedTarget !== target)
+  )
+    throw invalid('更新包不適用於此作業系統。');
   const paths = new Set<string>();
   const application = new Map<string, Uint8Array>();
   for (const entry of manifest.bootstrap_files)
@@ -168,7 +191,7 @@ export function unpackRelease(archive: Uint8Array) {
     !application.has('apps/api/src/server.ts')
   )
     throw invalid('更新包不完整或版本不一致。');
-  return { manifest, application };
+  return { manifest, application, target };
 }
 
 export class UpdateManager {
@@ -182,6 +205,7 @@ export class UpdateManager {
     currentVersion: string,
     managed: boolean,
     private readonly transport: typeof fetch = fetch,
+    private readonly target: ReleaseTarget = releaseTarget(),
   ) {
     this.state = {
       current_version: currentVersion,
@@ -227,7 +251,10 @@ export class UpdateManager {
       const staged = saved.version;
       if (compareVersions(staged, this.state.current_version) > 0) {
         const bytes = new Uint8Array(await fs.readFile(this.archivePath(staged)));
-        if (checksum(bytes) !== saved.sha256 || unpackRelease(bytes).manifest.version !== staged)
+        if (
+          checksum(bytes) !== saved.sha256 ||
+          unpackRelease(bytes, this.target).manifest.version !== staged
+        )
           throw invalid('已下載的新版校驗失敗。');
         this.state.staged_version = staged;
         this.state.phase = 'ready';
@@ -382,7 +409,9 @@ export class UpdateManager {
         .sort((a, b) => compareVersions(b.tag_name.slice(8), a.tag_name.slice(8)));
       this.state.latest = null;
       for (const release of candidates) {
-        const asset = release.assets.find((entry) => entry.name === 'context-canvas-update.json');
+        const asset = release.assets.find(
+          (entry) => entry.name === releaseLayout(this.target).feed,
+        );
         if (!asset) continue;
         const manifest = FeedManifest.parse(
           JSON.parse((await this.bytes(this.assetUrl(asset), 64000)).toString('utf8')),
@@ -393,7 +422,10 @@ export class UpdateManager {
         )
           throw invalid('版本資訊與發佈標籤不符。');
         const archive = release.assets.find((entry) => entry.name === manifest.archive.name);
-        if (!archive || manifest.archive.name !== `ContextCanvas-Windows-${manifest.version}.zip`)
+        if (
+          !archive ||
+          manifest.archive.name !== `${releaseLayout(this.target).prefix}-${manifest.version}.zip`
+        )
           throw invalid('版本缺少對應更新包。');
         if (compareVersions(manifest.version, this.state.current_version) > 0)
           this.state.latest = {
@@ -450,7 +482,7 @@ export class UpdateManager {
       throw new DomainError('update_busy', '更新正在處理。', 409);
     this.operation = true;
     try {
-      const { manifest } = unpackRelease(bytes);
+      const { manifest } = unpackRelease(bytes, this.target);
       await this.stage(bytes, manifest.version);
       this.state.latest = {
         format: 'context-canvas-update',
@@ -460,7 +492,7 @@ export class UpdateManager {
         data_schema_version: 2,
         minimum_launcher: 1,
         archive: {
-          name: `ContextCanvas-Windows-${manifest.version}.zip`,
+          name: `${releaseLayout(this.target).prefix}-${manifest.version}.zip`,
           bytes: bytes.byteLength,
           sha256: checksum(bytes),
         },
@@ -476,7 +508,7 @@ export class UpdateManager {
     }
   }
   private async stage(bytes: Uint8Array, version: string) {
-    const { manifest } = unpackRelease(bytes);
+    const { manifest } = unpackRelease(bytes, this.target);
     if (manifest.version !== version || compareVersions(version, this.state.current_version) <= 0)
       throw invalid('更新包必須比目前版本新。');
     const temporary = `${this.archivePath(version)}.partial`;
@@ -497,7 +529,7 @@ export class UpdateManager {
       !this.state.staged_version ||
       this.state.phase !== 'ready'
     )
-      throw new DomainError('update_not_ready', '請使用 Windows 啟動器，並先準備新版。', 409);
+      throw new DomainError('update_not_ready', '請使用安裝包啟動器，並先準備新版。', 409);
     this.operation = true;
     this.state.phase = 'installing';
     this.emit();
@@ -508,7 +540,7 @@ export class UpdateManager {
         .parse(JSON.parse(await fs.readFile(join(this.root, '.runtime', 'staged.json'), 'utf8')));
       if (saved.version !== this.state.staged_version || checksum(bytes) !== saved.sha256)
         throw invalid('已下載的新版校驗失敗。');
-      const { manifest, application } = unpackRelease(bytes);
+      const { manifest, application } = unpackRelease(bytes, this.target);
       const versionRoot = join(this.root, 'versions', `${manifest.version}-${randomUUID()}`);
       await fs.mkdir(versionRoot, { recursive: true });
       for (const [path, content] of application) {

@@ -12,7 +12,7 @@
 | 发布权限       | Actions 自动提供的 `GITHUB_TOKEN`，发布 job 单独申请 `contents: write`                                                    |
 | 用户端权限     | 匿名下载，无需 GitHub 账号或 token                                                                                        |
 | 许可证         | MIT，根目录和 Windows 包均包含 LICENSE                                                                                    |
-| 线上发布前提   | 仓库必须是 Public，主分支 CI 和 Windows 打包测试成功，Release 包含三个必要附件                                            |
+| 线上发布前提   | 仓库必须是 Public，主分支 CI 和 Windows 打包测试成功，Release 包含兩個平台的六個必要附件                                            |
 
 首次发布是否已经完成，请以 Releases 中实际出现的版本和附件为准。没有正式附件时，可使用源码或维护者提供的测试 ZIP；不能把草稿 Release、Actions artifact 或 Source code ZIP 当作 Windows 安装包。
 
@@ -21,6 +21,8 @@ synduck/main → 版本标签 → 公开状态／main CI 检查 → Windows 构�
                                                         ↓ 内置 GITHUB_TOKEN
 同仓库 Releases → Windows ZIP、SHA-256、更新清单 → 客户端匿名检查／下载
 ```
+
+0.12.0 起每個 Release 同時包含 Windows 與 macOS ZIP、各自 SHA-256，以及兩份平台更新清單（共六個必要附件）。Windows 清單仍名為 `context-canvas-update.json`，保留舊客戶端相容性；Mac 使用 `context-canvas-update-macos.json`。Mac 會跳過只有 Windows 附件的舊 Release，並拒絕安裝 Windows 包。macOS CI 同時驗證 Apple Silicon 與 Intel，包括不使用預裝 Node／pnpm 的首次啟動。
 
 ## 首次设置
 

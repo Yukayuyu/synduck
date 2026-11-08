@@ -205,7 +205,7 @@ export function UpdateControl({ canInstall }: { canInstall: boolean }) {
             )}
             {!state?.managed && (
               <p className="project-description">
-                自動安裝需要 Windows 啟動器。原始碼啟動可檢查版本與準備更新包。
+                自動安裝需要 Windows 或 macOS 安裝包啟動器。原始碼啟動可檢查版本與準備更新包。
               </p>
             )}
             <label className="update-import">

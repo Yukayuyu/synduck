@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { zipSync } from 'fflate';
+import { zipSync, unzipSync } from 'fflate';
+import { releaseLayout, type ReleaseTarget } from '../packages/local-runtime/src/release-target';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   UpdateManager,
@@ -46,12 +47,114 @@ function archive(
 async function manager(transport?: typeof fetch) {
   const root = await mkdtemp(join(tmpdir(), 'canvas-update-test-'));
   directories.push(root);
-  const updates = new UpdateManager(root, '0.2.0', true, transport);
+  const updates = new UpdateManager(root, '0.2.0', true, transport, 'windows');
   await updates.initialize();
   return { root, updates };
 }
 
+function platformArchive(target: ReleaseTarget) {
+  const files = unzipSync(archive());
+  const script = target === 'macos' ? 'Start-Synduck.command' : 'Start-ContextCanvas.cmd';
+  files[script] = enc('platform bootstrap');
+  const manifest = JSON.parse(Buffer.from(files['package-files.json']).toString());
+  manifest.bootstrap_files = [{ path: script, sha256: sha(files[script]) }];
+  files['package-files.json'] = enc(JSON.stringify(manifest));
+  return zipSync(
+    Object.fromEntries(
+      Object.entries(files).map(([path, bytes]) => [
+        releaseLayout(target).prefix + '/' + path,
+        bytes,
+      ]),
+    ),
+  );
+}
+
 describe('version updates', () => {
+  it('isolates Mac and Windows packages and rejects ambiguous roots before staging or restoring', async () => {
+    const mac = platformArchive('macos');
+    const windows = platformArchive('windows');
+    expect(unpackRelease(mac, 'macos').target).toBe('macos');
+    expect(() => unpackRelease(mac, 'windows')).toThrow('作業系統');
+    expect(() => unpackRelease(windows, 'macos')).toThrow('作業系統');
+    expect(() => unpackRelease(zipSync({ ...unzipSync(mac), ...unzipSync(windows) }))).toThrow(
+      '唯一',
+    );
+    const { root, updates } = await manager();
+    await expect(updates.importArchive(mac)).rejects.toThrow('作業系統');
+    expect(updates.snapshot().staged_version).toBeNull();
+    await updates.importArchive(windows);
+    const restored = new UpdateManager(root, '0.2.0', true, undefined, 'macos');
+    await restored.initialize();
+    expect(restored.snapshot().staged_version).toBeNull();
+    expect(restored.snapshot().phase).toBe('idle');
+  });
+
+  it('uses the Mac feed anonymously, skips Windows-only releases and prepares a real Mac archive', async () => {
+    const bytes = platformArchive('macos');
+    const assets = [
+      'context-canvas-update.json',
+      'ContextCanvas-Windows-0.2.1.zip',
+      'context-canvas-update-macos.json',
+      'ContextCanvas-macOS-0.2.1.zip',
+    ].map((name, index) => ({
+      name,
+      url: `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/assets/${index}`,
+      browser_download_url: `https://github.com/${UPDATE_REPOSITORY}/releases/download/canvas-v0.2.1/${name}`,
+    }));
+    const requested: string[] = [];
+    const transport: typeof fetch = async (input, init) => {
+      const url = String(input);
+      expect(new Headers(init?.headers).has('authorization')).toBe(false);
+      requested.push(url);
+      if (url.includes('?per_page='))
+        return Response.json([
+          {
+            draft: false,
+            prerelease: false,
+            tag_name: 'canvas-v0.2.2',
+            assets: assets.slice(0, 2),
+          },
+          { draft: false, prerelease: false, tag_name: 'canvas-v0.2.1', assets },
+        ]);
+      if (url.endsWith('context-canvas-update-macos.json'))
+        return Response.json({
+          format: 'context-canvas-update',
+          format_version: 1,
+          version: '0.2.1',
+          channel: 'stable',
+          data_schema_version: 2,
+          minimum_launcher: 1,
+          archive: {
+            name: 'ContextCanvas-macOS-0.2.1.zip',
+            sha256: sha(bytes),
+            bytes: bytes.length,
+          },
+          notes: 'Mac',
+          published_at: '2026-11-08T00:00:00Z',
+        });
+      if (!url.endsWith('ContextCanvas-macOS-0.2.1.zip')) throw new Error('Wrong platform request');
+      return new Response(new Uint8Array(bytes).buffer);
+    };
+    const { root } = await manager();
+    const updates = new UpdateManager(root, '0.2.0', true, transport, 'macos');
+    await updates.initialize();
+    await updates.check();
+    expect(updates.snapshot()).toMatchObject({
+      phase: 'ready',
+      staged_version: '0.2.1',
+      error: null,
+    });
+    expect(requested).toHaveLength(3);
+    expect(
+      requested
+        .slice(1)
+        .every((url) => !url.includes('Windows') && !url.endsWith('context-canvas-update.json')),
+    ).toBe(true);
+    const prepared = await updates.prepare();
+    expect(await readFile(join(prepared.directory, 'apps/web/dist/index.html'), 'utf8')).toContain(
+      'New version',
+    );
+  });
   it('orders numeric and prerelease versions without confusing preview 10 with preview 2', () => {
     expect(compareVersions('0.10.0', '0.2.0')).toBeGreaterThan(0);
     expect(compareVersions('0.2.0-preview.10', '0.2.0-preview.2')).toBeGreaterThan(0);
@@ -103,7 +206,7 @@ describe('version updates', () => {
     const { root, updates } = await manager();
     await updates.configure('stable', false);
     await updates.importArchive(archive());
-    const restarted = new UpdateManager(root, '0.2.0', true);
+    const restarted = new UpdateManager(root, '0.2.0', true, undefined, 'windows');
     await restarted.initialize();
     expect(restarted.snapshot()).toMatchObject({
       staged_version: '0.2.1',
@@ -170,7 +273,7 @@ describe('version updates', () => {
     const { root } = await manager();
     vi.stubEnv('UPDATE_GITHUB_TOKEN', 'a-private-test-token');
     vi.stubEnv('GH_TOKEN', 'publisher-token-must-not-leave');
-    const updates = new UpdateManager(root, '0.2.0', true, transport);
+    const updates = new UpdateManager(root, '0.2.0', true, transport, 'windows');
     await updates.initialize();
     await updates.check();
     expect(calls[0].url).toBe(

@@ -10,7 +10,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest, target: windows }
+          - { os: windows-latest, target: windows }
+          - { os: macos-15, target: macos }
+          - { os: macos-15-intel, target: macos }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +28,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm package:windows
+      - run: pnpm package:${{ matrix.target }}
+      - run: pnpm test:macos-bootstrap
+        if: runner.os == 'macOS'
       - run: pnpm test:portable
       - name: Check compatibility with the previous bootstrap
         run: pnpm test:portable

@@ -1,6 +1,6 @@
 # 安装与配置指南
 
-适用版本：0.11.0；安装与模型登录步骤与旧版相同，本版新增对话内项目授权。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
+适用版本：0.12.0；本版新增 macOS 可攜式安裝包，模型登入與專案授權流程相同。先完成“启动程序”，再从 Demo、ChatGPT 登录、直接 API 三种模型模式中选一种。MCP、桌面控制和 iOS 都是可选配置。
 
 ## 需要准备什么
 
@@ -13,6 +13,8 @@
 | iPhone／iPad    | 持续运行的后端、可访问它的可信 HTTPS 地址、独立工作区密码             |
 
 Windows 安装包与源码统一位于 [Yukayuyu/synduck](https://github.com/Yukayuyu/synduck)。从 [Releases](https://github.com/Yukayuyu/synduck/releases) 下载 `ContextCanvas-Windows-<版本>.zip`；如果首次发布尚未完成、暂时没有附件，可先从源码运行或使用维护者提供的完整测试 ZIP。更新器从同一个公开仓库匿名下载，不需要用户填写 GitHub token。
+
+Mac 使用者可直接下載 `ContextCanvas-macOS-<版本>.zip`，最低 macOS 13.5，Apple Silicon 和 Intel 共用同一 ZIP。完整解壓後雙擊 `Start-Synduck.command`，不需先安裝 Node.js 或 Homebrew。首次啟動需網路；詳細步驟與系統開啟提示見 [macOS 指南](macos.md)。
 
 ## 启动程序
 
