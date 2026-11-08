@@ -6,9 +6,11 @@ import assert from 'node:assert/strict';
 import { GitHubConnection } from '../packages/local-runtime/src/github';
 const root = await mkdtemp(join(tmpdir(), 'synduck github runtime '));
 const connection = new GitHubConnection(join(root, 'connections', 'github'));
+let phase = 'download and verify official component';
 try {
   await connection.initialize();
   const binary = await connection.prepareRuntime();
+  phase = 'execute official component';
   const output = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 15000 });
   assert(output.includes('gh version 2.103.3'));
   assert.equal(connection.status().phase, 'disconnected');
@@ -24,6 +26,7 @@ try {
     { mode: 0o600 },
   );
   await connection.initialize();
+  phase = 'resolve HTTPS Git credentials';
   const env: NodeJS.ProcessEnv = { ...connection.commandEnvironment() };
   for (const key of [
     'HOME',
@@ -47,6 +50,17 @@ try {
   console.log(
     `PASS: verified pinned GitHub login component on ${process.platform}/${process.arch}, without starting account authorization.`,
   );
+} catch (error) {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    const message =
+      `${phase}: ${error instanceof Error ? error.stack || error.message : String(error)}`
+        .replaceAll('github-runtime-fixture', '[fixture]')
+        .replaceAll('%', '%25')
+        .replaceAll('\r', '%0D')
+        .replaceAll('\n', '%0A');
+    console.error(`::error title=GitHub native component::${message}`);
+  }
+  throw error;
 } finally {
   await connection.close();
   await rm(root, { recursive: true, force: true });

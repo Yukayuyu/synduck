@@ -236,3 +236,87 @@ it('preserves simultaneous service additions and unrelated login state', async (
   expect(mcp.connections().some((entry) => entry.id === ids[1])).toBe(false);
   expect(JSON.stringify(mcp.connections())).not.toContain('private-key');
 });
+
+it('completes only an approved OAuth callback without a workspace cookie and keeps every other connection route private', async () => {
+  const root = await directory();
+  const server = await oauthMcpFixture();
+  cleanup.push(() => server.close());
+  const origin = 'https://canvas.example.test';
+  const password = 'test-only-workspace-password';
+  const authorization = new McpAuthorization(
+    join(root, 'credentials'),
+    origin + '/api/connections/callback',
+  );
+  const mcp = new McpManager(join(root, 'runtime'), { authorization });
+  const local = new LocalExecutor(join(root, 'runtime'), undefined, undefined, [], { mcp });
+  await local.initialize();
+  const store = new Store(':memory:');
+  const app = createApp(store, new DemoProvider(), {
+    local,
+    access: { publicOrigin: origin, password },
+  });
+  await app.ready();
+  cleanup.push(async () => {
+    await local.close();
+    await app.close();
+    store.close();
+  });
+  const host = { host: 'canvas.example.test' };
+  expect((await app.inject({ url: '/api/connections', headers: host })).statusCode).toBe(401);
+  expect(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/connections/github/start',
+        headers: host,
+        payload: {},
+      })
+    ).statusCode,
+  ).toBe(401);
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/session/login',
+    headers: { ...host, origin },
+    payload: { password },
+  });
+  const cookie = (login.headers['set-cookie'] as string).split(';')[0];
+  expect(login.headers['set-cookie']).toContain('SameSite=Strict');
+  const added = await app.inject({
+    method: 'POST',
+    url: '/api/connections/add',
+    headers: { ...host, origin, cookie },
+    payload: { name: '知识库', url: server.url },
+  });
+  const id = added.json().id;
+  await app.inject({
+    method: 'POST',
+    url: '/api/connections/' + id + '/start',
+    headers: { ...host, origin, cookie },
+    payload: {},
+  });
+  await vi.waitFor(
+    () => expect(mcp.connections().find((entry) => entry.id === id)?.phase).toBe('waiting'),
+    { timeout: 5000 },
+  );
+  const auth = new URL(mcp.connections().find((entry) => entry.id === id)!.authorization_url!);
+  const consent = await fetch(new URL('/allow?' + auth.searchParams, server.url), {
+    redirect: 'manual',
+  });
+  const callback = new URL(consent.headers.get('location')!);
+  const url = callback.pathname + callback.search;
+  const completed = await app.inject({ url, headers: host });
+  expect(completed.statusCode).toBe(200);
+  expect(completed.headers['set-cookie']).toBeUndefined();
+  expect(completed.body).not.toContain(server.token());
+  expect(mcp.connections().find((entry) => entry.id === id)?.phase).toBe('connected');
+  expect((await app.inject({ url, headers: host })).statusCode).toBe(409);
+  expect(
+    (await app.inject({ url: '/api/connections/callback?state=forged&code=forged', headers: host }))
+      .statusCode,
+  ).toBe(409);
+  expect((await app.inject({ url: '/api/connections', headers: host })).statusCode).toBe(401);
+  expect((await app.inject({ url: '/api/state', headers: host })).statusCode).toBe(401);
+  expect((await app.inject({ url: '/api/session', headers: host })).json().authenticated).toBe(
+    false,
+  );
+});

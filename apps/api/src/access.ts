@@ -70,8 +70,13 @@ export function registerAccess(app: FastifyInstance, config: AccessConfig = {}) 
     const path = request.url.split('?')[0];
     if (path.startsWith('/api/')) {
       reply.header('Cache-Control', 'no-store');
+      // Provider redirects omit SameSite=Strict cookies. This one GET is
+      // authenticated by the approved, one-use OAuth state plus PKCE instead;
+      // it never creates a workspace session or returns account data.
+      const oauthCallback = request.method === 'GET' && path === '/api/connections/callback';
       if (
         !['/api/health', '/api/session', '/api/session/login'].includes(path) &&
+        !oauthCallback &&
         !valid(request.headers.cookie)
       )
         return reply.code(401).send({ error: 'login_required', message: '請先登入工作區。' });
