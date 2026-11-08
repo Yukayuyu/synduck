@@ -18,22 +18,30 @@ import { LocalExecutor } from '../packages/local-runtime/src/executor';
 import { CodexProvider } from '../packages/model-gateway/src/codex';
 import { CodexRpc } from '../packages/model-gateway/src/codex-rpc';
 import { ConversationCodex } from './helpers/conversation-codex';
+import { testGitHub } from './helpers/github';
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
-async function fixture(enabled = true) {
+async function fixture(enabled = true, withGitHub = false) {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'canvas-auto-tools-')));
   const project = join(home, 'project');
   await mkdir(project);
   await writeFile(join(project, 'spec.txt'), 'Original project evidence.');
   const runtime = join(home, 'runtime');
-  const local = new LocalExecutor(runtime, () => ({
-    model: 'test-model',
-    effort: 'high',
-    connected: async () => true,
-  }));
+  const auth = withGitHub ? testGitHub(join(runtime, 'connections', 'github')) : undefined;
+  const local = new LocalExecutor(
+    runtime,
+    () => ({
+      model: 'test-model',
+      effort: 'high',
+      connected: async () => true,
+    }),
+    undefined,
+    [],
+    { github: auth?.github },
+  );
   await local.initialize();
   if (enabled) await local.configure(true, project);
   const store = new Store(join(home, 'canvas.sqlite'));
@@ -74,7 +82,7 @@ async function fixture(enabled = true) {
       .then((r) => r);
     return { root, response };
   };
-  return { home, project, runtime, local, store, rpc, app, send, canvases };
+  return { home, project, runtime, local, store, rpc, app, send, canvases, auth };
 }
 it('automatically reads from a normal send, validates the answer and retains tool provenance across restart', async () => {
   const { send, app, rpc, local, store, runtime } = await fixture();
@@ -98,7 +106,7 @@ it('automatically reads from a normal send, validates the answer and retains too
   expect(JSON.parse(tasks[0].actions[0].output).content).toBe('Original project evidence.');
   expect(tasks[0].actions[0].model_output).toContain(tasks[0].actions[0].id);
   const start = rpc.calls.find((call) => call.method === 'thread/start')!.params;
-  expect((start.dynamicTools as unknown[]).length).toBe(8);
+  expect((start.dynamicTools as unknown[]).length).toBe(9);
   expect(start.baseInstructions).not.toContain('has no filesystem');
   expect(rpc.calls.find((call) => call.method === 'turn/start')!.params.effort).toBe('high');
   expect(rpc.handlers.size).toBe(0);
@@ -484,3 +492,26 @@ it('publishes command output while the process is still running and supports non
   await vi.waitFor(() => expect(local.busy).toBe(false), { timeout: 5000 });
   expect(task.actions[0].success).toBe(true);
 }, 15000);
+
+it('offers GitHub login in the originating conversation before a project is enabled and continues after authorization', async () => {
+  const { send, local, auth, app } = await fixture(false, true);
+  const { response } = await send('帮我连接GitHub');
+  await vi.waitFor(() => expect(local.status().waiting).toBe(1));
+  const task = local.snapshot().tasks[0];
+  expect(task.actions[0].tool).toBe('canvas_connect_service');
+  expect(auth!.github.status().phase).toBe('disconnected');
+  await local.approve(task.id, task.actions[0].id, true);
+  await vi.waitFor(() => expect(auth!.github.status().phase).toBe('waiting'));
+  expect(local.status().enabled).toBe(false);
+  auth!.finish();
+  expect((await response).body).toContain('"type":"complete"');
+  expect(task.actions[0].success).toBe(true);
+  expect(JSON.stringify(task)).not.toMatch(/fixture-private|ABCD-1234/);
+  const other = (
+    await app.inject({ method: 'POST', url: '/api/canvases', payload: { name: '后续项目' } })
+  ).json();
+  expect(
+    (await app.inject({ url: '/api/connections', headers: { 'x-canvas-id': other.id } })).json()
+      .github.login,
+  ).toBe('canvas-user');
+});

@@ -94,10 +94,11 @@ test('configures and discovers a real MCP server through the interface', async (
   await page.getByRole('button', { name: '本地任務', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '本地任務', exact: true });
   await dialog.getByRole('tab', { name: '整合設定' }).click();
+  await dialog.getByText('高级连接设置', { exact: true }).click();
   await dialog.getByRole('button', { name: '新增 MCP', exact: true }).click();
   await dialog.getByLabel('MCP 服務名稱 1').fill('瀏覽器測試 MCP');
   await dialog.getByLabel('MCP 啟動程式 1').fill(process.execPath);
-  await dialog.getByLabel('MCP 啟動參數 1').fill(JSON.stringify(args));
+  await dialog.getByLabel('MCP 啟動參數 1').fill(args.join('\n'));
   await dialog.locator('.mcp-server').first().getByRole('checkbox').check();
   await dialog.getByRole('button', { name: '保存 MCP 設定', exact: true }).click();
   await expect
@@ -118,7 +119,7 @@ test('configures and discovers a real MCP server through the interface', async (
   await dialog.getByRole('button', { name: 'MCP', exact: true }).click();
   await dialog.getByLabel('MCP 測試服務').selectOption(service.id);
   await dialog.getByLabel('MCP 測試工具').selectOption('echo');
-  await dialog.getByLabel('MCP 工具參數').fill('{"text":"Browser MCP round trip"}');
+  await dialog.getByLabel('文字内容', { exact: true }).fill('Browser MCP round trip');
   await dialog.getByRole('button', { name: '提出 MCP 呼叫' }).click();
   await dialog.getByRole('button', { name: '確認這次操作', exact: true }).click();
   await expect(dialog.locator('.trace-step-heading')).toContainText('已完成');

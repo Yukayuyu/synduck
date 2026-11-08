@@ -11,6 +11,7 @@
 | 用 iPhone／iPad 访问电脑上的画布     | [Windows 与 iOS 访问](docs/windows-ios.md)                  |
 | 连接 MCP、使用桌面控制、回看操作     | [MCP 与桌面控制](docs/mcp-desktop-traces.md)                |
 | 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md)       |
+| 连接 GitHub、笔记与设计服务          | [账号与服务连接](docs/connections.md)                       |
 | 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)                   |
 | 在 Synduck 界面中开发项目或自身      | [开发任务、Markdown 与尺寸调整](docs/developer-workflow.md) |
 
@@ -76,7 +77,7 @@ pnpm test:portable
 2. 输入问题，可直接「傳送」，或先预览上下文再发送。不同对话可同时生成，分别停止、重试；切换卡片即可继续提问。详见[并行对话](docs/concurrent-conversations.md)。
 3. 选中已保存的文字，选择「摘录」或「延伸提問」，创建保留来源的分支。
 4. 拖动卡片标题移动位置；在正文中拖动用于选择文字。右键／卡片菜单提供复制、删除、恢复等操作。
-5. 选择 ChatGPT / Codex，在普通画布提供后端项目目录和需求，直接在卡片授权连接。可逐次确认写入／命令，或授权本轮自动执行；MCP 和桌面仍逐次批准。确认、实时输出与操作记录都在原回答中，无需转交任务。详见[开发流程](docs/developer-workflow.md)。
+5. 选择 ChatGPT / Codex，在普通画布提供后端项目目录和需求，直接在卡片授权连接。可逐次确认写入／命令，或授权本轮自动执行；MCP 和桌面仍逐次批准。确认、实时输出与操作记录都在原回答中，无需转交任务。详见[开发流程](docs/developer-workflow.md)。连接 GitHub 时直接在画布提出需求，或点顶部插头图标，在官方页面登录一次，后续画布共用；不需要填写 JSON 或手动配置 MCP，见[连接指南](docs/connections.md)。
 6. 右上角「⋯」→「备份与恢复」可导出画布项目；完整数据与登录备份请见[配置指南](docs/setup.md#保存数据与升级)。
 
 画布是视图，领域数据和来源记录是事实依据。每个 AI 回答保留对应的不可变输入上下文包；摘录保留原文、范围和内容 hash。普通画布回答可按需执行本地工具，操作独立追溯；工具结果不会悄悄写入已封存的上下文。

@@ -176,7 +176,66 @@ export function registerRuntime(
       ),
     };
   });
+  app.get('/api/connections', async () =>
+    local
+      ? { available: true, ...local.connections() }
+      : { available: false, github: { phase: 'disconnected' }, services: [] },
+  );
   if (local) {
+    app.post('/api/connections/add', async (request) => {
+      if (local.busy)
+        throw new DomainError('runtime_busy', '请先完成当前操作，再添加新的连接。', 409);
+      const { name, url } = z
+        .object({ name: z.string().trim().min(1).max(100), url: z.string().url().max(2000) })
+        .strict()
+        .parse(request.body);
+      return { id: await local.mcp.addRemote(name, url) };
+    });
+    app.post('/api/connections/:id/start', async (request) => {
+      const { id } = z
+        .object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,40}$/) })
+        .parse(request.params);
+      z.object({}).strict().parse(request.body);
+      return local.connectService(id);
+    });
+    app.post('/api/connections/:id/disconnect', async (request) => {
+      const { id } = z
+        .object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,40}$/) })
+        .parse(request.params);
+      z.object({}).strict().parse(request.body);
+      if (id === 'github') await local.github.disconnect();
+      else await local.mcp.disconnect(id);
+      return { ok: true };
+    });
+    app.post('/api/connections/:id/key', async (request) => {
+      const { id } = z
+        .object({ id: z.string().regex(/^[a-zA-Z0-9_-]{1,40}$/) })
+        .parse(request.params);
+      const { key } = z
+        .object({ key: z.string().trim().min(1).max(8000) })
+        .strict()
+        .parse(request.body);
+      await local.mcp.setKey(id, key);
+      await local.connectService(id);
+      return { ok: true };
+    });
+    app.get('/api/connections/callback', async (request, reply) => {
+      const { state, code, error } = z
+        .object({
+          state: z.string().min(1).max(500),
+          code: z.string().max(2000).optional(),
+          error: z.string().max(500).optional(),
+        })
+        .parse(request.query);
+      await local.mcp.authorization.callback(state, code, error);
+      return reply
+        .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
+        .header('Referrer-Policy', 'no-referrer')
+        .type('text/html')
+        .send(
+          '<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>返回 Synduck</title><body style="font:18px system-ui;padding:48px;line-height:1.8">授权步骤已结束。请返回 Synduck 原来的画布查看连接结果，你可以关闭这个页面。</body></html>',
+        );
+    });
     app.get('/api/local/tasks/:id', async (request) => {
       const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
       canvases?.assertTask(id);
@@ -341,6 +400,8 @@ export function registerRuntime(
       return updates.importArchive(Buffer.from(archive, 'base64'));
     });
     app.post('/api/updates/apply', async () => {
+      if (local?.connectionsBusy)
+        throw new DomainError('connection_active', '请先完成或取消账号连接，再安装更新。', 409);
       idle();
       return updates.apply();
     });

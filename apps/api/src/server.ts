@@ -102,7 +102,7 @@ console.log('Context Canvas API started.');
 if (managedParent && !process.connected) void stopApp().then(() => process.exit(0));
 process.on('message', (message) => {
   if ((message as { kind?: string })?.kind === 'runtime-quiesce') {
-    if (local?.busy || canvases.busy) {
+    if (local?.busy || local?.connectionsBusy || canvases.busy) {
       process.send?.({ kind: 'runtime-quiesce-rejected' });
     } else void stopApp().then(() => process.exit(0));
   }

@@ -14,6 +14,7 @@ type LocalState = {
   tasks: LocalTask[];
 };
 const toolNames: Record<string, string> = {
+  canvas_connect_service: '连接账号与服务',
   canvas_connect_project: '授權本地專案',
   canvas_list_files: '列出目錄',
   canvas_read_file: '讀取檔案',
@@ -159,8 +160,8 @@ export function LocalDialog({
         <p className="project-description">
           使用已登入的 ChatGPT / Codex
           模型，在畫布問題中提供後端電腦上的專案目錄，即可在原卡片授權並繼續。
-          普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。 專案、MCP
-          與桌面設定在所有畫布間共用；下方保留進階測試與舊任務紀錄。
+          普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。
+          项目、账号连接与桌面设置在所有画布间共用；下方保留進階測試與舊任務紀錄。
         </p>
         {state?.other_canvas_busy && (
           <p role="status" className="quiet-note">
@@ -173,7 +174,7 @@ export function LocalDialog({
           </p>
         )}
         {state?.available === false ? (
-          <p>此啟動方式未啟用本地執行器。</p>
+          <p>此启动方式尚未开启本机工具。</p>
         ) : (
           <>
             <div className="runtime-settings">
@@ -285,6 +286,7 @@ export function LocalDialog({
                         ([id]) =>
                           ![
                             'canvas_connect_project',
+                            'canvas_connect_service',
                             'canvas_mcp_tools',
                             'canvas_mcp_call',
                             'canvas_desktop',
@@ -396,6 +398,7 @@ export function LocalDialog({
                   {selected.actions.some(
                     (entry) =>
                       entry.tool === 'canvas_connect_project' ||
+                      entry.tool === 'canvas_connect_service' ||
                       entry.tool === 'canvas_desktop' ||
                       entry.tool.startsWith('canvas_mcp'),
                   ) && (

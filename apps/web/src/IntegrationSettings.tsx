@@ -5,6 +5,8 @@ import type { McpServer } from '../../../packages/local-runtime/src/mcp';
 import type { DesktopWindow } from '../../../packages/local-runtime/src/desktop';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
 import { FrameImage } from './TaskTrace';
+import { ConnectionsPanel } from './Connections';
+import { ToolFields } from './ToolFields';
 export type Integrations = {
   mcp: (McpServer & {
     connected: boolean;
@@ -52,203 +54,197 @@ export function IntegrationSettings({
   return (
     <div className="integration-settings">
       {error && <p role="alert">{error}</p>}
-      <section>
-        <h3>
-          <Plug size={17} />
-          MCP 服務
-        </h3>
-        <p className="quiet-note">
-          啟用可信的服務。stdio 程式以後端帳戶執行；密鑰只在後端 .env，以 MCP_ 開頭的變數引用。
-        </p>
-        {servers.map((server, index) => (
-          <div className="mcp-server" key={server.id}>
-            <div className="mcp-server-heading">
-              <input
-                aria-label={'MCP 服務名稱 ' + (index + 1)}
-                value={server.name}
-                disabled={busy}
-                onChange={(e) => patch(index, { name: e.target.value })}
-              />
-              <label className="runtime-check">
+      <ConnectionsPanel />
+      <details className="connection-advanced">
+        <summary>高级连接设置</summary>
+        <section>
+          <h3>
+            <Plug size={17} />
+            MCP 服務
+          </h3>
+          <p className="quiet-note">
+            啟用可信的服務。stdio 程式以後端帳戶執行；密鑰只在後端 .env，以 MCP_ 開頭的變數引用。
+          </p>
+          {servers.map((server, index) => (
+            <div className="mcp-server" key={server.id}>
+              <div className="mcp-server-heading">
                 <input
-                  type="checkbox"
-                  checked={server.enabled}
+                  aria-label={'MCP 服務名稱 ' + (index + 1)}
+                  value={server.name}
                   disabled={busy}
-                  onChange={(e) => patch(index, { enabled: e.target.checked })}
+                  onChange={(e) => patch(index, { name: e.target.value })}
                 />
-                啟用
+                <label className="runtime-check">
+                  <input
+                    type="checkbox"
+                    checked={server.enabled}
+                    disabled={busy}
+                    onChange={(e) => patch(index, { enabled: e.target.checked })}
+                  />
+                  啟用
+                </label>
+                <button
+                  aria-label={'移除 MCP ' + server.name}
+                  disabled={busy}
+                  onClick={() => setServers((previous) => previous.filter((_, i) => i !== index))}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <label>
+                連接方式
+                <select
+                  aria-label={'MCP 連接方式 ' + (index + 1)}
+                  value={server.transport}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const base = { id: server.id, name: server.name, enabled: server.enabled };
+                    setServers((previous) =>
+                      previous.map((entry, i) =>
+                        i !== index
+                          ? entry
+                          : e.target.value === 'stdio'
+                            ? { ...base, transport: 'stdio', command: '', args: [], env_keys: [] }
+                            : { ...base, transport: 'http', url: '' },
+                      ),
+                    );
+                  }}
+                >
+                  <option value="stdio">本机程序</option>
+                  <option value="http">在线服务</option>
+                </select>
               </label>
+              {server.transport === 'stdio' ? (
+                <>
+                  <label>
+                    啟動程式
+                    <input
+                      aria-label={'MCP 啟動程式 ' + (index + 1)}
+                      value={server.command}
+                      disabled={busy}
+                      onChange={(e) => patch(index, { command: e.target.value })}
+                      placeholder="npx"
+                    />
+                  </label>
+                  <label>
+                    启动选项（每行一项）
+                    <textarea
+                      aria-label={'MCP 啟動參數 ' + (index + 1)}
+                      value={server.args.join('\n')}
+                      disabled={busy}
+                      onChange={(e) => patch(index, { args: e.target.value.split('\n') })}
+                    />
+                  </label>
+                  <label>
+                    環境變數名稱（逗號分隔）
+                    <input
+                      value={server.env_keys.join(', ')}
+                      disabled={busy}
+                      onChange={(e) =>
+                        patch(index, {
+                          env_keys: e.target.value
+                            .split(',')
+                            .map((value) => value.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      placeholder="MCP_SERVICE_TOKEN"
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    MCP 網址
+                    <input
+                      aria-label={'MCP 網址 ' + (index + 1)}
+                      value={server.url}
+                      disabled={busy}
+                      onChange={(e) => patch(index, { url: e.target.value })}
+                      placeholder="https://example.com/mcp"
+                    />
+                  </label>
+                  <label>
+                    Bearer token 的後端變數名称
+                    <input
+                      value={server.token_env || ''}
+                      disabled={busy}
+                      onChange={(e) => patch(index, { token_env: e.target.value || undefined })}
+                      placeholder="MCP_SERVICE_TOKEN"
+                    />
+                  </label>
+                </>
+              )}
+              <small>服務 ID：{server.id}</small>
               <button
-                aria-label={'移除 MCP ' + server.name}
-                disabled={busy}
-                onClick={() => setServers((previous) => previous.filter((_, i) => i !== index))}
+                disabled={
+                  working ||
+                  busy ||
+                  !integrations.mcp.some((saved) => saved.id === server.id && saved.enabled)
+                }
+                onClick={() =>
+                  void run(async () => {
+                    const task = await api<LocalTask>('/local/actions', {
+                      tool: 'canvas_mcp_tools',
+                      arguments: { server_id: server.id },
+                    });
+                    await onTask(task.id);
+                  })
+                }
               >
-                <Trash2 size={14} />
+                提出連接與探索工具
               </button>
             </div>
-            <label>
-              連接方式
-              <select
-                aria-label={'MCP 連接方式 ' + (index + 1)}
-                value={server.transport}
-                disabled={busy}
-                onChange={(e) => {
-                  const base = { id: server.id, name: server.name, enabled: server.enabled };
-                  setServers((previous) =>
-                    previous.map((entry, i) =>
-                      i !== index
-                        ? entry
-                        : e.target.value === 'stdio'
-                          ? { ...base, transport: 'stdio', command: '', args: [], env_keys: [] }
-                          : { ...base, transport: 'http', url: '' },
-                    ),
-                  );
-                }}
-              >
-                <option value="stdio">本地 stdio</option>
-                <option value="http">遠端 Streamable HTTP</option>
-              </select>
-            </label>
-            {server.transport === 'stdio' ? (
-              <>
-                <label>
-                  啟動程式
-                  <input
-                    aria-label={'MCP 啟動程式 ' + (index + 1)}
-                    value={server.command}
-                    disabled={busy}
-                    onChange={(e) => patch(index, { command: e.target.value })}
-                    placeholder="npx"
-                  />
-                </label>
-                <label>
-                  參數（JSON 陣列）
-                  <input
-                    aria-label={'MCP 啟動參數 ' + (index + 1)}
-                    defaultValue={JSON.stringify(server.args)}
-                    disabled={busy}
-                    onBlur={(e) => {
-                      try {
-                        const args: unknown = JSON.parse(e.target.value);
-                        if (!Array.isArray(args) || args.some((item) => typeof item !== 'string'))
-                          throw new Error();
-                        patch(index, { args });
-                        setError('');
-                      } catch {
-                        setError('啟動參數需要 JSON 字串陣列，例如 ["--yes", "套件名稱"]。');
-                      }
-                    }}
-                  />
-                </label>
-                <label>
-                  環境變數名稱（逗號分隔）
-                  <input
-                    value={server.env_keys.join(', ')}
-                    disabled={busy}
-                    onChange={(e) =>
-                      patch(index, {
-                        env_keys: e.target.value
-                          .split(',')
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    placeholder="MCP_SERVICE_TOKEN"
-                  />
-                </label>
-              </>
-            ) : (
-              <>
-                <label>
-                  MCP 網址
-                  <input
-                    aria-label={'MCP 網址 ' + (index + 1)}
-                    value={server.url}
-                    disabled={busy}
-                    onChange={(e) => patch(index, { url: e.target.value })}
-                    placeholder="https://example.com/mcp"
-                  />
-                </label>
-                <label>
-                  Bearer token 的後端變數名称
-                  <input
-                    value={server.token_env || ''}
-                    disabled={busy}
-                    onChange={(e) => patch(index, { token_env: e.target.value || undefined })}
-                    placeholder="MCP_SERVICE_TOKEN"
-                  />
-                </label>
-              </>
-            )}
-            <small>服務 ID：{server.id}</small>
+          ))}
+          <div className="integration-actions">
             <button
-              disabled={
-                working ||
-                busy ||
-                !integrations.mcp.some((saved) => saved.id === server.id && saved.enabled)
-              }
+              disabled={busy || servers.length >= 10}
               onClick={() =>
-                void run(async () => {
-                  const task = await api<LocalTask>('/local/actions', {
-                    tool: 'canvas_mcp_tools',
-                    arguments: { server_id: server.id },
-                  });
-                  await onTask(task.id);
-                })
+                setServers((previous) => [
+                  ...previous,
+                  {
+                    id: 'mcp-' + crypto.randomUUID().slice(0, 8),
+                    name: 'MCP 服務',
+                    enabled: false,
+                    transport: 'stdio',
+                    command: 'npx',
+                    args: [],
+                    env_keys: [],
+                  },
+                ])
               }
             >
-              提出連接與探索工具
+              <Plus size={14} />
+              新增 MCP
+            </button>
+            <button
+              disabled={busy || servers.length >= 10}
+              onClick={() =>
+                setServers((previous) => [
+                  ...previous,
+                  {
+                    id: 'browser-' + crypto.randomUUID().slice(0, 8),
+                    name: 'Playwright 瀏覽器',
+                    enabled: false,
+                    transport: 'stdio',
+                    command: 'npx',
+                    args: ['--yes', '@playwright/mcp@0.0.83', '--browser', 'chrome'],
+                    env_keys: [],
+                  },
+                ])
+              }
+            >
+              新增瀏覽器 MCP 預設
+            </button>
+            <button
+              disabled={working || busy || !!error}
+              onClick={() => void run(() => api('/local/mcp/configure', { servers }))}
+            >
+              保存 MCP 設定
             </button>
           </div>
-        ))}
-        <div className="integration-actions">
-          <button
-            disabled={busy || servers.length >= 10}
-            onClick={() =>
-              setServers((previous) => [
-                ...previous,
-                {
-                  id: 'mcp-' + crypto.randomUUID().slice(0, 8),
-                  name: 'MCP 服務',
-                  enabled: false,
-                  transport: 'stdio',
-                  command: 'npx',
-                  args: [],
-                  env_keys: [],
-                },
-              ])
-            }
-          >
-            <Plus size={14} />
-            新增 MCP
-          </button>
-          <button
-            disabled={busy || servers.length >= 10}
-            onClick={() =>
-              setServers((previous) => [
-                ...previous,
-                {
-                  id: 'browser-' + crypto.randomUUID().slice(0, 8),
-                  name: 'Playwright 瀏覽器',
-                  enabled: false,
-                  transport: 'stdio',
-                  command: 'npx',
-                  args: ['--yes', '@playwright/mcp@0.0.83', '--browser', 'chrome'],
-                  env_keys: [],
-                },
-              ])
-            }
-          >
-            新增瀏覽器 MCP 預設
-          </button>
-          <button
-            disabled={working || busy || !!error}
-            onClick={() => void run(() => api('/local/mcp/configure', { servers }))}
-          >
-            保存 MCP 設定
-          </button>
-        </div>
-      </section>
+        </section>
+      </details>
       <section>
         <h3>
           <Monitor size={17} />
@@ -279,7 +275,7 @@ export function IntegrationSettings({
                 <option value="">選擇視窗</option>
                 {windows.map((window) => (
                   <option key={window.id} value={window.id}>
-                    {window.title} · PID {window.process_id}
+                    {window.title}
                   </option>
                 ))}
               </select>
@@ -323,7 +319,7 @@ export function ManualIntegrations({
   const [mode, setMode] = useState<'mcp' | 'desktop'>('desktop');
   const [serverId, setServerId] = useState(''),
     [tool, setTool] = useState(''),
-    [args, setArgs] = useState('{}');
+    [args, setArgs] = useState<Record<string, unknown>>({});
   const [operation, setOperation] = useState('capture'),
     [text, setText] = useState(''),
     [key, setKey] = useState('Enter');
@@ -346,7 +342,7 @@ export function ManualIntegrations({
         mode === 'mcp'
           ? {
               tool: 'canvas_mcp_call',
-              arguments: { server_id: serverId, tool, arguments: JSON.parse(args) },
+              arguments: { server_id: serverId, tool, arguments: args },
             }
           : {
               tool: 'canvas_desktop',
@@ -410,7 +406,7 @@ export function ManualIntegrations({
             <select
               aria-label="MCP 測試工具"
               value={tool}
-              onChange={(e) => setTool(e.target.value)}
+              onChange={(e) => (setTool(e.target.value), setArgs({}))}
             >
               <option value="">選擇工具</option>
               {server?.tools.map((tool) => (
@@ -421,27 +417,16 @@ export function ManualIntegrations({
             </select>
           </label>
           {tool && (
-            <details>
-              <summary>工具描述與參數格式</summary>
+            <>
               <p>{server?.tools.find((entry) => entry.name === tool)?.description}</p>
-              <pre>
-                {JSON.stringify(
-                  server?.tools.find((entry) => entry.name === tool)?.inputSchema,
-                  null,
-                  2,
-                )}
-              </pre>
-            </details>
+              <ToolFields
+                schema={server?.tools.find((entry) => entry.name === tool)?.inputSchema}
+                value={args}
+                onChange={setArgs}
+                disabled={busy}
+              />
+            </>
           )}
-          <label>
-            參數（JSON）
-            <textarea
-              aria-label="MCP 工具參數"
-              value={args}
-              onChange={(e) => setArgs(e.target.value)}
-              readOnly={busy}
-            />
-          </label>
         </>
       ) : (
         <>

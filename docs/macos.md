@@ -1,8 +1,8 @@
 # 在 macOS 啟動 Synduck
 
-適用版本：0.12.0。支援 Apple Silicon（M1 或更新）及 Intel Mac；使用官方 Node.js 24，最低 macOS 13.5。這是本地後端加瀏覽器的可攜式 ZIP，無需 Homebrew、預先安裝 Node.js 或 Git。
+適用版本：0.13.0。支援 Apple Silicon（M1 或更新）及 Intel Mac；使用官方 Node.js 24，最低 macOS 13.5。這是本地後端加瀏覽器的可攜式 ZIP，無需 Homebrew、預先安裝 Node.js 或 Git。
 
-1. 從本專案 Releases 下載 `ContextCanvas-macOS-0.12.0.zip`，不要下載 Source code ZIP。
+1. 從本專案 Releases 下載 `ContextCanvas-macOS-0.13.0.zip`，不要下載 Source code ZIP。
 2. 完整解壓，將 `ContextCanvas-macOS` 資料夾放到希望長期保留的位置。
 3. 雙擊 `Start-Synduck.command`。首次啟動需連上 nodejs.org 和 npm，會選擇原生架構、校驗固定 SHA-256，再準備固定版本依賴；不需管理員權限。
 4. 出現 `Context Canvas is ready` 後會自動開啟瀏覽器；也可開啟 <http://127.0.0.1:3001>。保持終端機視窗開啟，按 Control+C 停止。
@@ -19,3 +19,7 @@
 本地檔案、終端、ChatGPT / Codex 和已設定的 MCP 可在 Mac 使用。程式操作的是執行後端的 Mac，專案路徑例如 `/Users/你的名稱/Projects/synduck`。Windows 的 `G:\…` 路徑不能直接套用到 Mac；Git、建置工具及專案依賴按實際需求另外安裝。現有桌面視窗擷取／輸入驅動只支援 Windows，Mac 桌面控制尚未接入。
 
 若端口已被佔用，先關閉先前的 Synduck 終端機；需要改端口時，停止後在根 `.env` 設定 `API_PORT` 再啟動。不要同時開啟同一安裝的多個啟動器，也不要刪除更新中的恢復檔案。
+
+## GitHub 与在线服务
+
+点顶部插头图标，或在画布要求「连接 GitHub」。按卡片打开官方登录页面，完成后自动继续，同一安装的后续画布共用。Mac 不需要另外安装 GitHub 登录组件或填写 JSON；实际操作本地仓库仍需要安装 Git。在线服务的授权、保存方式和限制见[连接指南](connections.md)。

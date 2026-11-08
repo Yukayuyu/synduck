@@ -111,6 +111,7 @@ test('authorizes an unconfigured project in the card and continues the same requ
       animations: 'disabled',
     });
     await tools.getByRole('button', { name: '授權並自動執行本次任務', exact: true }).click();
+    await tools.getByText('命令即時輸出', { exact: true }).click();
     await expect(tools.getByText('12345', { exact: true })).toBeVisible();
     await expect(card.getByRole('button', { name: '停止這段回答' })).toBeVisible();
     await expect(card.getByRole('heading', { name: '项目结果' })).toBeVisible();

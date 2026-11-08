@@ -9,6 +9,7 @@ export default defineConfig({
     'canvases-mobile.spec.ts',
     'developer-flow-mobile.spec.ts',
     'automatic-tools.spec.ts',
+    'connections.spec.ts',
     'references.spec.ts',
   ],
   use: {

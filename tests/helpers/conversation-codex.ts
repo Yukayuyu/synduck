@@ -58,7 +58,24 @@ export class ConversationCodex implements CodexConnection {
     const project = input.current_prompt.match(/^授權專案:(.+)$/m)?.[1];
     const writing = !!project || input.current_prompt.includes('确认写入');
     const reading = writing || input.current_prompt.includes('读取项目');
+    const connecting = input.current_prompt.includes('连接GitHub');
     let text = '## 文字回答\n\n这段对话没有使用工具。';
+    if (connecting) {
+      this.emit('item/started', { threadId, item: { type: 'dynamicToolCall' } });
+      const result = await this.hostScope(() =>
+        this.handlers.get(threadId)!({
+          threadId,
+          tool: 'canvas_connect_service',
+          arguments: { service: 'github' },
+          callId: 'github-login',
+        }),
+      );
+      this.requests.push({ thread: threadId, result });
+      this.emit('item/completed', { threadId, item: { type: 'dynamicToolCall' } });
+      text = JSON.stringify(result).includes('"success":true')
+        ? '## 连接已完成\n\nGitHub 已连接，之后的画布可以继续使用。'
+        : '连接未完成，请查看连接卡片。';
+    }
     if (reading) {
       for (const [tool, args] of [
         ...(project
@@ -109,7 +126,7 @@ export class ConversationCodex implements CodexConnection {
           : '操作未执行或已拒绝，请查看工具记录。';
       }
     }
-    if (!this.handlers.has(threadId) && reading) return;
+    if (!this.handlers.has(threadId) && (reading || connecting)) return;
     const answer = { answer: text, used_source_ids: [], suggested_graph_updates: [] };
     this.emit('item/completed', {
       threadId,
@@ -121,7 +138,7 @@ export class ConversationCodex implements CodexConnection {
         status: 'completed',
         items: [
           { type: 'agentMessage', text: JSON.stringify(answer), phase: 'final_answer' },
-          ...(reading ? [{ type: 'dynamicToolCall' }] : []),
+          ...(reading || connecting ? [{ type: 'dynamicToolCall' }] : []),
         ],
       },
     });

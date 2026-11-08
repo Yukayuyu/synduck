@@ -109,6 +109,7 @@ export async function packagePortable(target: ReleaseTarget) {
     'thought-islands.md',
     'multiple-canvases.md',
     'developer-workflow.md',
+    'connections.md',
     'references.md',
     'ui-previews/developer-workflow.png',
     'ui-previews/multiple-canvases.png',

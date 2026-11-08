@@ -1,7 +1,7 @@
 {
   "name": "ai-context-canvas",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "engines": {
@@ -17,6 +17,7 @@
     "package:windows": "tsx scripts/package-windows.ts",
     "package:macos": "tsx scripts/package-macos.ts",
     "test:macos-bootstrap": "tsx scripts/test-macos-bootstrap.ts",
+    "test:github-runtime": "tsx scripts/test-github-runtime.ts",
     "test:portable": "tsx scripts/test-portable.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx packages/db/src/migrate.ts",
     "typecheck": "tsc --noEmit",

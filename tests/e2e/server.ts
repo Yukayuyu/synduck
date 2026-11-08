@@ -43,6 +43,10 @@ const models = new ProviderRegistry(
   process.env,
   new CodexProvider(new ConversationCodex(), 'test-model'),
 );
+const { testGitHub } = await import('../helpers/github');
+const auth = testGitHub(join(directory, 'local-runtime', 'connections', 'github'));
+const { oauthMcpFixture } = await import('../helpers/oauth-mcp');
+const oauth = await oauthMcpFixture();
 const local = new LocalExecutor(
   process.env.LOCAL_RUNTIME_PATH,
   () => ({
@@ -54,14 +58,21 @@ const local = new LocalExecutor(
   [],
   {
     desktop: new TestDesktopDriver(),
+    github: auth.github,
   },
 );
 await local.initialize();
 await local.configure(true, project);
 const app = createApp(store, models, { models, local, access: accessConfig() });
+app.post('/api/test/github/finish', async () => {
+  auth.finish();
+  return { ok: true };
+});
+app.get('/api/test/oauth', async () => ({ url: oauth.url }));
 await app.register(fastifyStatic, { root: resolve('apps/web/dist') });
 app.addHook('onClose', async () => {
   await local.close();
+  await oauth.close();
   await models.close();
   store.close();
 });

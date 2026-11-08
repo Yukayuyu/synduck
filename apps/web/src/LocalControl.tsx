@@ -39,7 +39,7 @@ export function LocalControl({ onOpen }: { onOpen: () => void }) {
         otherBusy
           ? '其他画布有本地任务正在进行'
           : ready?.available === false
-            ? '此後端未啟用本地執行器'
+            ? '这台电脑的本机工具尚未开启'
             : ready?.enabled
               ? '專案已連接，可直接在畫布提出開發需求'
               : '在畫布問題中提供專案目錄，確認授權即可連接'
@@ -49,7 +49,7 @@ export function LocalControl({ onOpen }: { onOpen: () => void }) {
       <Terminal size={18} />
       {ready && (
         <span className="local-status-label">
-          {!ready.available ? '執行器未啟用' : ready.enabled ? '專案已連接' : '待授權專案'}
+          {!ready.available ? '本机工具未开启' : ready.enabled ? '專案已連接' : '待授權專案'}
         </span>
       )}
       {waiting > 0 && <span className="update-dot" />}

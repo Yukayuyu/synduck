@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useApi, useCanvasUrl } from './api';
 import { MessageText } from './MessageText';
+import { ConnectionCard } from './Connections';
+import { OperationDetails } from './ToolFields';
 import type { LocalAction, LocalTask } from '../../../packages/local-runtime/src/executor';
 import type { Evidence } from '../../../packages/local-runtime/src/evidence';
 import type { Frame } from '../../../packages/local-runtime/src/desktop';
@@ -33,11 +35,23 @@ const operations: Record<string, string> = {
   scroll: '捲動',
 };
 export function actionLabel(action: Pick<LocalAction, 'tool' | 'arguments'>) {
+  if (typeof action.arguments.summary === 'string') return action.arguments.summary;
+  if (action.tool === 'canvas_connect_service')
+    return (
+      '连接' +
+      ({
+        github: ' GitHub',
+        notion: ' Notion',
+        linear: ' Linear',
+        figma: ' Figma',
+        browser: '网页浏览',
+      }[String(action.arguments.service)] || '账号与服务')
+    );
   if (action.tool === 'canvas_connect_project') return '授權本地專案';
   if (action.tool === 'canvas_desktop')
     return operations[String(action.arguments.operation)] || '桌面操作';
-  if (action.tool === 'canvas_mcp_tools') return '探索 MCP 工具';
-  if (action.tool === 'canvas_mcp_call') return 'MCP · ' + String(action.arguments.tool);
+  if (action.tool === 'canvas_mcp_tools') return '连接并读取可用操作';
+  if (action.tool === 'canvas_mcp_call') return '使用已连接的服务';
   return (
     (
       {
@@ -170,7 +184,7 @@ export function TraceSteps({
   const hostPlatform = (entry.destination as { platform?: string } | undefined)?.platform;
   const initialConnection =
     task.actions.length === 1 &&
-    entry.tool === 'canvas_connect_project' &&
+    ['canvas_connect_project', 'canvas_connect_service'].includes(entry.tool) &&
     entry.status === 'waiting';
   const point = ['click', 'double_click', 'scroll'].includes(String(entry.arguments.operation))
     ? { x: Number(entry.arguments.x), y: Number(entry.arguments.y) }
@@ -216,27 +230,36 @@ export function TraceSteps({
       {entry.status === 'waiting' && (
         <div className="trace-pending" ref={pendingRef}>
           <strong>
-            {entry.tool === 'canvas_connect_project' ? '授權本地專案' : '等待確認這一次操作'}
+            {entry.tool === 'canvas_connect_service'
+              ? actionLabel(entry)
+              : entry.tool === 'canvas_connect_project'
+                ? '授權本地專案'
+                : '等待確認這一次操作'}
           </strong>
           <p>
-            {entry.tool === 'canvas_connect_project'
-              ? '確認後連接此後端目錄並繼續需求；專案設定由所有畫布共用。'
-              : entry.tool === 'canvas_desktop'
-                ? '將切換到你選定的視窗；點擊與輸入會操作那個應用。'
-                : entry.tool.startsWith('canvas_mcp')
-                  ? 'MCP 服務以後端帳戶／授權執行，可能修改本機或外部服務。'
-                  : '請核對實際參數。'}
+            {entry.tool === 'canvas_connect_service'
+              ? '完成官方网页登录后，这份连接会保留，之后的画布不必再配置。密码只在服务方的页面输入。'
+              : entry.tool === 'canvas_connect_project'
+                ? '確認後連接此後端目錄並繼續需求；專案設定由所有畫布共用。'
+                : entry.tool === 'canvas_desktop'
+                  ? '將切換到你選定的視窗；點擊與輸入會操作那個應用。'
+                  : entry.tool.startsWith('canvas_mcp')
+                    ? '这个操作会使用已连接的服务，可能修改文件或外部内容。'
+                    : '請核對實際參數。'}
           </p>
-          <pre className="trace-proposal">
-            {entry.tool === 'canvas_connect_project'
-              ? String(entry.arguments.root)
-              : JSON.stringify(entry.arguments, null, 2)}
-          </pre>
+          {entry.tool === 'canvas_connect_project' ? (
+            <pre className="trace-proposal">{String(entry.arguments.root)}</pre>
+          ) : entry.tool !== 'canvas_connect_service' ? (
+            <OperationDetails
+              values={Object.fromEntries(
+                Object.entries(entry.arguments).filter(
+                  ([key]) => !['server_id', 'tool'].includes(key),
+                ),
+              )}
+            />
+          ) : null}
           {entry.tool === 'canvas_connect_project' && hostPlatform && (
             <p className="quiet-note">後端系統：{hostPlatform}</p>
-          )}
-          {entry.tool === 'canvas_mcp_tools' && (
-            <pre>{JSON.stringify(entry.destination, null, 2)}</pre>
           )}
           {entry.tool === 'canvas_write_file' && (
             <details open>
@@ -262,7 +285,11 @@ export function TraceSteps({
                 }
               >
                 <Check size={14} />
-                {entry.tool === 'canvas_connect_project' ? '授權並繼續' : '確認這次操作'}
+                {entry.tool === 'canvas_connect_service'
+                  ? actionLabel(entry)
+                  : entry.tool === 'canvas_connect_project'
+                    ? '授權並繼續'
+                    : '確認這次操作'}
               </button>
               {entry.tool === 'canvas_connect_project' && (
                 <button disabled={working} onClick={() => void decide(true, 'task')}>
@@ -276,11 +303,15 @@ export function TraceSteps({
           )}
         </div>
       )}
-      {entry.authorized_by && (
-        <p className="quiet-note">依本次任務授權自動執行 · {entry.authorized_by}</p>
+      {entry.tool === 'canvas_connect_service' && entry.status === 'running' && (
+        <ConnectionCard id={String(entry.arguments.service)} inline />
       )}
+      {entry.tool === 'canvas_connect_service' && entry.status === 'complete' && (
+        <p className="quiet-note">已连接，后续画布可直接使用。</p>
+      )}
+      {entry.authorized_by && <p className="quiet-note">已获本次任务授权，自动执行。</p>}
       {entry.tool === 'canvas_run_command' && entry.output && (
-        <details open={entry.status === 'running' || undefined}>
+        <details>
           <summary>命令即時輸出</summary>
           <pre>{commandText(entry.output)}</pre>
           {entry.status === 'running' && entry.output.includes('github.com/login/device') && (

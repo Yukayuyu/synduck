@@ -37,6 +37,7 @@ import { ProjectDialog } from './ProjectDialog';
 import { ModelDialog } from './ModelDialog';
 import { LocalDialog } from './LocalDialog';
 import { LocalControl } from './LocalControl';
+import { ConnectionsControl, ConnectionsDialog } from './Connections';
 import { UpdateControl } from './UpdateControl';
 import { TraceDialog } from './TaskTrace';
 import { TrashDialog } from './TrashDialog';
@@ -147,6 +148,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
   const [localDialog, setLocalDialog] = useState(false);
+  const [connectionsDialog, setConnectionsDialog] = useState(false);
   const [traceId, setTraceId] = useState('');
   const [traceEpoch, setTraceEpoch] = useState(0);
   const [traceCount, setTraceCount] = useState(0);
@@ -777,6 +779,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           )}
         </div>
         <div className="board-menu">
+          <ConnectionsControl onOpen={() => setConnectionsDialog(true)} />
           <LocalControl
             onOpen={() => {
               setLocalDialog(true);
@@ -1461,6 +1464,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           }}
         />
       )}
+      {connectionsDialog && <ConnectionsDialog onClose={() => setConnectionsDialog(false)} />}
       {localDialog && (
         <LocalDialog
           onShowTrace={async (id) => {
