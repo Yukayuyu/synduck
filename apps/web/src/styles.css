@@ -846,6 +846,77 @@ small {
   border-top: 1px solid #f0f3e9;
   padding-top: 7px;
 }
+.context-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-left: 2px solid #dfe7d3;
+}
+.context-chain li {
+  position: relative;
+  padding-left: 12px;
+}
+.context-chain li::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c7d3b6;
+}
+.context-chain li.current::before {
+  background: #7b9468;
+}
+.context-chain li.reference::before {
+  background: #fffefa;
+  border: 2px solid #c7d3b6;
+  box-sizing: border-box;
+}
+.context-chain button {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 7px 0;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+.context-chain button:disabled {
+  cursor: default;
+}
+.context-chain .chain-relation {
+  grid-column: 1 / -1;
+  font-size: 8px;
+  color: #a9b298;
+}
+.context-chain strong {
+  font-size: 11px;
+  font-weight: 550;
+  color: #6e815b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-chain small {
+  font-size: 8px;
+  color: #adb69c;
+  white-space: nowrap;
+}
+.chain-note {
+  font-size: 8px;
+  color: #a8af99;
+  line-height: 1.7;
+  margin-top: 8px;
+}
+.item-thread {
+  display: block;
+  font-size: 8px;
+  color: #a9b298;
+  margin-top: 3px;
+}
 .empty-note {
   font-size: 10px;
   color: #a2ad93;

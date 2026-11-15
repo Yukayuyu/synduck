@@ -4,7 +4,10 @@ import {
   ContextPackageSchema,
   ContextSetSchema,
   modelInput,
+  collectionSources,
   type GraphSnapshot,
+  type ContextThread,
+  type Conversation,
   type ContextSet,
   type ContextPackage,
   type ContextItem,
@@ -74,6 +77,108 @@ export function excludedSources(snapshot: GraphSnapshot, excludedNodeIds: string
     }
   }
   return { nodes, blocks, derivedBlocks, deletedNodes };
+}
+
+// Derives the context chain: which conversations contributed sources and how each
+// one relates to the conversation being answered. Uses only fork records, branch-origin
+// excerpts and collection membership; canvas coordinates and model output play no part.
+function contextThreads(
+  snapshot: GraphSnapshot,
+  current: Conversation | undefined,
+  blockedBlocks: Set<string>,
+  collectionRoots: Map<string, string>,
+) {
+  const conversations = new Map(snapshot.conversations.map((c) => [c.id, c]));
+  const turns = new Map(snapshot.turns.map((t) => [t.id, t]));
+  const blocks = new Map(snapshot.blocks.map((b) => [b.id, b]));
+  const excerpts = new Map(snapshot.excerpts.map((e) => [e.id, e]));
+  const threadOfBlock = (blockId: string) =>
+    turns.get(blocks.get(blockId)?.turn_id ?? '')?.conversation_id;
+  const parents = (conversation: Conversation) => {
+    const found: { id: string; via: NonNullable<ContextThread['via']> }[] = [];
+    if (conversation.fork_origin)
+      found.push({
+        id: conversation.fork_origin.conversation_id,
+        via: conversation.fork_origin.mode,
+      });
+    const origin = excerpts.get(conversation.branch_origin_excerpt_id ?? '');
+    for (const source of origin ? collectionSources(snapshot, origin) : []) {
+      const id = threadOfBlock(source.source_block_id);
+      if (id) found.push({ id, via: origin?.collection_source_ids ? 'merge' : 'excerpt' });
+    }
+    return found;
+  };
+  // Breadth-first, so a thread reachable by several routes keeps its nearest depth.
+  const ancestry = new Map<string, { depth: number; via: NonNullable<ContextThread['via']> }>();
+  let frontier = current ? [current] : [];
+  for (let depth = 1; frontier.length > 0; depth++) {
+    const next: Conversation[] = [];
+    for (const conversation of frontier)
+      for (const parent of parents(conversation)) {
+        if (parent.id === current?.id || ancestry.has(parent.id)) continue;
+        ancestry.set(parent.id, { depth, via: parent.via });
+        const found = conversations.get(parent.id);
+        if (found) next.push(found);
+      }
+    frontier = next;
+  }
+  // Titles are often derived from a quote or a first question. A thread is named only
+  // when its own messages are in the input, so a title can never carry unpicked,
+  // removed or excluded text into the model.
+  const title = (conversation: Conversation, quotedOnly: boolean) => {
+    if (quotedOnly || conversation.branch_origin_excerpt_id) return null;
+    const blocked = snapshot.blocks.some(
+      (b) =>
+        blockedBlocks.has(b.id) && turns.get(b.turn_id ?? '')?.conversation_id === conversation.id,
+    );
+    if (blocked) return null;
+    return (
+      snapshot.nodes.find(
+        (n) =>
+          n.ref_type === 'conversation' &&
+          n.ref_id === conversation.id &&
+          n.visibility !== 'hidden',
+      )?.title ?? conversation.title
+    );
+  };
+  return (items: ContextItem[]): ContextThread[] => {
+    const used: string[] = [];
+    const merged = new Set<string>();
+    const whole = new Set<string>();
+    for (const item of items) {
+      if (!item.thread_id) continue;
+      if (item.source_type === 'content_block') whole.add(item.thread_id);
+      if (!used.includes(item.thread_id)) used.push(item.thread_id);
+      if (collectionRoots.has(item.node_id)) merged.add(item.thread_id);
+    }
+    const describe = (id: string): ContextThread | null => {
+      const conversation = conversations.get(id);
+      if (!conversation) return null;
+      const ancestor = ancestry.get(id);
+      return {
+        thread_id: id,
+        title: title(conversation, !whole.has(id)),
+        relation: id === current?.id ? 'current' : ancestor ? 'ancestor' : 'reference',
+        depth: id !== current?.id && ancestor ? ancestor.depth : null,
+        via: id === current?.id ? null : (ancestor?.via ?? (merged.has(id) ? 'merge' : null)),
+      };
+    };
+    const rank = { ancestor: 0, reference: 1, current: 2 };
+    const threads = used
+      .filter((id) => id !== current?.id)
+      .map(describe)
+      .filter((thread): thread is ContextThread => thread !== null)
+      .map((thread, index) => ({ thread, index }))
+      .sort(
+        (a, b) =>
+          rank[a.thread.relation] - rank[b.thread.relation] ||
+          (b.thread.depth ?? 0) - (a.thread.depth ?? 0) ||
+          a.index - b.index,
+      )
+      .map(({ thread }) => thread);
+    const own = current ? describe(current.id) : null;
+    return own ? [...threads, own] : threads;
+  };
 }
 
 export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): ContextPackage {
@@ -317,6 +422,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
         source_id: excerpt?.id ?? block.id,
         source_block_id: block.id,
         node_id: nodeId,
+        ...(sourceTurn ? { thread_id: sourceTurn.conversation_id } : {}),
         actor: sourceTurn?.actor ?? null,
         sequence: sourceTurn?.sequence ?? null,
         role,
@@ -342,9 +448,16 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
   let deduplicated = 0;
   // Keep schema/framing headroom as well as the configured output reserve.
   const inputLimit = set.budget.max_input_tokens - set.budget.reserved_output_tokens;
+  const threadsFor = contextThreads(snapshot, conversation, blockedBlocks, collectionRoots);
   const inputSize = (next: ContextItem[]) =>
     estimateTokens(
-      ANSWER_INSTRUCTIONS + modelInput({ current_prompt: set.prompt_text, items: next, conflicts }),
+      ANSWER_INSTRUCTIONS +
+        modelInput({
+          current_prompt: set.prompt_text,
+          items: next,
+          threads: threadsFor(next),
+          conflicts,
+        }),
     ) + 1024;
   let used = 0;
   for (const item of candidates) {
@@ -395,6 +508,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     graph_snapshot_version: set.graph_snapshot_version,
     current_prompt: set.prompt_text,
     items,
+    threads: threadsFor(items),
     excluded,
     conflicts,
     diagnostics: [...new Set(diagnostics)],
