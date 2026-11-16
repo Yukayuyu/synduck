@@ -36,6 +36,7 @@ import {
   Check,
   Ban,
   MoreHorizontal,
+  ScrollText,
   Trash2,
   Pencil,
   Copy,
@@ -232,6 +233,8 @@ interface Props {
   onRename: (node: CanvasNode) => void;
   onBranch: (node: CanvasNode) => void;
   onSource: (node: CanvasNode) => void;
+  onSummarize: (node: CanvasNode) => void;
+  summarizing: string | null;
   onTrash: () => void;
   onError: (error: unknown) => void;
   onFold: (node: CanvasNode) => void;
@@ -262,6 +265,8 @@ export function Canvas({
   onRename,
   onBranch,
   onSource,
+  onSummarize,
+  summarizing,
   onTrash,
   onError,
   onFold,
@@ -669,6 +674,27 @@ export function Canvas({
                     ),
                   });
                 },
+              },
+            ]
+          : []),
+        ...(menuNode.ref_type === 'conversation'
+          ? [
+              {
+                label:
+                  summarizing === menuNode.ref_id
+                    ? '正在生成背景摘要…'
+                    : state.conversations.find((c) => c.id === menuNode.ref_id)?.summary_block_id
+                      ? '重新生成背景摘要'
+                      : '生成背景摘要',
+                icon: <ScrollText size={16} />,
+                disabled:
+                  locked ||
+                  summarizing !== null ||
+                  busyNodeIds.includes(menuNode.id) ||
+                  state.turns.filter(
+                    (t) => t.conversation_id === menuNode.ref_id && t.status === 'complete',
+                  ).length < 2,
+                run: () => onSummarize(menuNode),
               },
             ]
           : []),

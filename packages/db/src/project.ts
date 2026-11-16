@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   DomainError,
   ExternalOriginSchema,
+  ConversationSummarySchema,
   ReferenceMetadataSchema,
   MAX_PROJECT_BYTES,
   ProjectFileSchema,
@@ -129,7 +130,19 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
       if (
         !ctx ||
         !pkg ||
-        ctx.conversation_id !== turn.conversation_id ||
+        // A summary turn lives in a backing conversation; its context set names the
+        // conversation it summarizes.
+        (ctx.conversation_id !== turn.conversation_id &&
+          !(
+            ctx.id.startsWith('summary-') &&
+            conversations.has(ctx.conversation_id) &&
+            s.blocks.every(
+              (b) =>
+                b.turn_id !== turn.id ||
+                ConversationSummarySchema.safeParse(b.structured_data?.summary).data
+                  ?.conversation_id === ctx.conversation_id,
+            )
+          )) ||
         ctx.target_turn_id !== turn.id ||
         ctx.status !== 'used'
       )
@@ -156,6 +169,17 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
         !s.nodes.some((n) => n.ref_type === 'turn' && n.ref_id === b.turn_id)
       )
         invalid('參考文件的中繼資料或來源節點無效。');
+    }
+    if (b.structured_data?.summary) {
+      const summary = ConversationSummarySchema.safeParse(b.structured_data.summary);
+      if (
+        !summary.success ||
+        !b.turn_id ||
+        turns.get(b.turn_id)?.actor !== 'assistant' ||
+        !conversations.has(summary.data.conversation_id) ||
+        summary.data.source_block_ids.some((id) => !blocks.has(id))
+      )
+        invalid('对话摘要的来源记录无效。');
     }
     if (b.structured_data?.external_origin) {
       const origin = ExternalOriginSchema.safeParse(b.structured_data.external_origin);
