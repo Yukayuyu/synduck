@@ -113,6 +113,26 @@ export function createApp(
       idle();
       return models.codex.logout();
     });
+    app.get('/api/models/claude', async (_request, reply) =>
+      reply
+        .header('Cache-Control', 'no-store')
+        .send({ ...models.claude.status(), ...(await models.claude.listModels()) }),
+    );
+    app.post('/api/models/claude/connect', async (request) => {
+      idle();
+      const { api_key } = z
+        .object({ api_key: z.string().min(1).max(512) })
+        .strict()
+        .parse(request.body);
+      return models.claude.connect(api_key);
+    });
+    app.post('/api/models/claude/disconnect', async () => {
+      idle();
+      const status = models.claude.disconnect();
+      // Without a key the mode cannot answer; fall back to the offline demo.
+      if (models.name === 'claude' && !status.connected) await models.select('demo');
+      return status;
+    });
     app.post('/api/models/select', async (request) => {
       idle();
       const {

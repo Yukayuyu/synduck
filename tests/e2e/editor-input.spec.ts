@@ -86,7 +86,8 @@ test('types punctuation, modified keys and IME composition without moving focus 
   await editor.dispatchEvent('compositionend', { data: '中文，标点。' });
   await expect(editor).toBeFocused();
   await expect(editor).toHaveValue('normal, inpu,中文，标点。');
-  await page.keyboard.press('Enter');
+  // Enter now sends; a new line is Shift+Enter.
+  await page.keyboard.press('Shift+Enter');
   await page.keyboard.type('next line');
   await expect(editor).toHaveValue('normal, inpu,中文，标点。\nnext line');
   await page.keyboard.press('Shift+Comma');
@@ -125,4 +126,6 @@ test('types punctuation, modified keys and IME composition without moving focus 
   await card.getByRole('button', { name: '发送此上下文', exact: true }).click();
   await expect(editor).toHaveValue('');
   await expect(card.getByTestId('turn-human').last()).toContainText(finalText);
+  // Let the answer finish so closing the page does not record a stopped answer.
+  await expect(card.getByTestId('turn-assistant').last()).toContainText('本地演示');
 });

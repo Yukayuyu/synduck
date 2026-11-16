@@ -149,7 +149,6 @@ export function ProjectDialog({
         >
           <X size={18} />
         </button>
-        <span className="overline">YOUR WORK, YOUR COPY</span>
         <h2 id="project-title">备份与恢复</h2>
         <p className="project-description">
           保存整张思考地图，包括对话、摘录来源、画布位置和每轮上下文。文件包含原文，请妥善保管。

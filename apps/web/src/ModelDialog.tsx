@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, KeyRound } from 'lucide-react';
 import { useApi } from './api';
 
 type AccountState = {
@@ -39,6 +39,13 @@ const effortNames: Record<string, string> = {
 };
 const effortLabel = (effort: string) =>
   effortNames[effort] ? `${effortNames[effort]} · ${effort}` : effort;
+type ClaudeState = {
+  connected: boolean;
+  source: 'saved' | 'environment' | null;
+  key_hint: string | null;
+  model: string;
+  models: { model: string; name: string }[];
+};
 export function ModelDialog({
   provider,
   onClose,
@@ -62,6 +69,32 @@ export function ModelDialog({
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState('');
   const [modelRefresh, setModelRefresh] = useState(0);
+  const [claude, setClaude] = useState<ClaudeState | null>(null);
+  const [claudeKey, setClaudeKey] = useState('');
+  const [claudeModel, setClaudeModel] = useState('');
+  const loadClaude = () =>
+    api<ClaudeState>('/models/claude').then((next) => {
+      setClaude(next);
+      setClaudeModel(next.model);
+    });
+  const claudeAction = async (path: string, body: object) => {
+    setBusy(true);
+    setError('');
+    try {
+      await api(path, body);
+      // The key leaves this page as soon as the backend has it.
+      setClaudeKey('');
+      await loadClaude();
+      await onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '操作失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void loadClaude().catch(() => {});
+  }, []);
   useEffect(() => {
     let alive = true;
     void api<AccountState>('/models/codex')
@@ -161,55 +194,127 @@ export function ModelDialog({
         <button className="modal-close" aria-label="關閉模型設定" onClick={onClose}>
           <X size={18} />
         </button>
-        <span className="overline">MODEL CONNECTION</span>
         <h2 id="model-title">模型與登入</h2>
-        <p className="project-description">
-          用你的 ChatGPT 帳號透過官方 Codex 連接 AI。額度依帳號方案而定，登入資料只保存在後端。
-        </p>
-        <div className="account-card">
-          <strong>ChatGPT / Codex</strong>
-          <p>
-            {account?.connected
-              ? `已連接 · ${account.account?.email || 'ChatGPT 帳號'} · ${account.account?.plan || ''}`
-              : account
-                ? '尚未連接'
-                : '正在確認連線…'}
-          </p>
-          {account?.connected && (
-            <p className="project-description">
-              已連接表示帳號已登入；回答仍取決於模型權限、Codex 額度及網路狀態。
-            </p>
-          )}
-          {account?.login.status === 'pending' ? (
-            <>
-              <p>開啟官方授權頁面，登入後輸入以下一次性代碼：</p>
-              <code className="device-code">{account.login.userCode}</code>
-              <a
-                className="primary"
-                href={account.login.verificationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+        <label htmlFor="provider-choice">回答模式</label>
+        <select
+          id="provider-choice"
+          value={selection}
+          onChange={(e) => setSelection(e.target.value)}
+        >
+          <option value="demo">示範（不呼叫 AI）</option>
+          <option value="codex">ChatGPT / Codex</option>
+          <option value="claude">Claude</option>
+          <option value="openai">OpenAI API</option>
+        </select>
+        {selection === 'openai' && <p className="project-description">金鑰在後端 .env 設定。</p>}
+        {selection === 'claude' && (
+          <div className="account-card">
+            {claude?.connected ? (
+              <>
+                <p>
+                  <KeyRound size={13} /> 已連接 · ····{claude.key_hint}
+                  {claude.source === 'environment' ? ' · 後端設定' : ''}
+                </p>
+                <label htmlFor="claude-model-choice">Claude 模型</label>
+                <select
+                  id="claude-model-choice"
+                  value={claudeModel}
+                  disabled={busy}
+                  onChange={(e) => setClaudeModel(e.target.value)}
+                >
+                  {!claude.models.some((entry) => entry.model === claudeModel) && (
+                    <option value={claudeModel}>{claudeModel}</option>
+                  )}
+                  {claude.models.map((entry) => (
+                    <option key={entry.model} value={entry.model}>
+                      {entry.name}
+                    </option>
+                  ))}
+                </select>
+                {claude.source === 'saved' && (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => void claudeAction('/models/claude/disconnect', {})}
+                  >
+                    移除 API key
+                  </button>
+                )}
+              </>
+            ) : (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void claudeAction('/models/claude/connect', { api_key: claudeKey });
+                }}
               >
-                前往 ChatGPT 授權 <ExternalLink size={14} />
-              </a>
-              <p role="status">等待授權完成… 若代碼過期，請取消後重試。</p>
-              <button className="secondary" disabled={busy} onClick={() => void action('cancel')}>
-                取消登入
+                <label htmlFor="claude-key">Claude API key</label>
+                <input
+                  id="claude-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="sk-ant-…"
+                  value={claudeKey}
+                  disabled={busy || !claude}
+                  onChange={(e) => setClaudeKey(e.target.value)}
+                />
+                <button className="secondary" disabled={busy || claudeKey.trim().length < 20}>
+                  {busy ? '確認中…' : '連接'}
+                </button>
+                <a
+                  href="https://platform.claude.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  取得 API key <ExternalLink size={12} />
+                </a>
+              </form>
+            )}
+          </div>
+        )}
+        {selection === 'codex' && (
+          <div className="account-card">
+            <p>
+              {account?.connected
+                ? `已連接 · ${account.account?.email || 'ChatGPT 帳號'} · ${account.account?.plan || ''}`
+                : account
+                  ? '尚未連接'
+                  : '正在確認連線…'}
+            </p>
+            {account?.login.status === 'pending' ? (
+              <>
+                <p>開啟官方授權頁面，登入後輸入以下一次性代碼：</p>
+                <code className="device-code">{account.login.userCode}</code>
+                <a
+                  className="primary"
+                  href={account.login.verificationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  前往 ChatGPT 授權 <ExternalLink size={14} />
+                </a>
+                <p role="status">等待授權完成… 若代碼過期，請取消後重試。</p>
+                <button className="secondary" disabled={busy} onClick={() => void action('cancel')}>
+                  取消登入
+                </button>
+              </>
+            ) : (
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => void action(account?.connected ? 'logout' : 'login')}
+              >
+                {busy ? '處理中…' : account?.connected ? '登出 ChatGPT' : '使用 ChatGPT 帳號登入'}
               </button>
-            </>
-          ) : (
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() => void action(account?.connected ? 'logout' : 'login')}
-            >
-              {busy ? '處理中…' : account?.connected ? '登出 ChatGPT' : '使用 ChatGPT 帳號登入'}
-            </button>
-          )}
-          {account?.login.status === 'failed' && (
-            <p role="alert">登入未完成或已過期。請確認 ChatGPT 設定允許 Codex 裝置碼登入後重試。</p>
-          )}
-        </div>
+            )}
+            {account?.login.status === 'failed' && (
+              <p role="alert">
+                登入未完成或已過期。請確認 ChatGPT 設定允許 Codex 裝置碼登入後重試。
+              </p>
+            )}
+          </div>
+        )}
         {diagnostics?.last_failure && (
           <details>
             <summary>最近一次 Codex 回答失敗的診斷</summary>
@@ -224,16 +329,6 @@ export function ModelDialog({
             </p>
           </details>
         )}
-        <label htmlFor="provider-choice">回答模式</label>
-        <select
-          id="provider-choice"
-          value={selection}
-          onChange={(e) => setSelection(e.target.value)}
-        >
-          <option value="demo">示範模式（不呼叫 AI）</option>
-          <option value="codex">ChatGPT / Codex</option>
-          <option value="openai">OpenAI API（後端需設定密鑰）</option>
-        </select>
         {selection === 'codex' && (
           <>
             <label htmlFor="codex-model-choice">Codex 模型</label>
@@ -268,9 +363,6 @@ export function ModelDialog({
             >
               刷新模型列表
             </button>
-            {!account?.connected && (
-              <p className="project-description">登入 ChatGPT 後即可取得模型列表。</p>
-            )}
             {chosenModel?.description && (
               <p className="project-description">{chosenModel.description}</p>
             )}
@@ -299,12 +391,8 @@ export function ModelDialog({
             {chosenEffort?.description && (
               <p className="project-description">{chosenEffort.description}</p>
             )}
-            {chosenModel && (
-              <p className="project-description">
-                {chosenModel.supported_reasoning_efforts.length
-                  ? '較高的思考深度通常需要更長的回答時間。切換模型後請重新選擇深度。'
-                  : '此模型未提供可調整的思考深度，使用模型預設。'}
-              </p>
+            {chosenModel && !chosenModel.supported_reasoning_efforts.length && (
+              <p className="project-description">此模型未提供可調整的思考深度，使用模型預設。</p>
             )}
             {!loadingModels && modelList && !chosenModel && (
               <p role="alert">目前沒有選中可用模型，請刷新列表並重新選擇。</p>
@@ -315,13 +403,13 @@ export function ModelDialog({
             {modelError && <p role="alert">{modelError}</p>}
           </>
         )}
-        <p className="project-description">
-          Codex 每次使用獨立對話，只傳送你預覽的內容與固定回答指令。Codex
-          本身仍會加入執行環境資訊；上下文估算不是帳單用量。圖形操作仍需手動確認。
-        </p>
         <button
           className="primary"
-          disabled={busy || (selection === 'codex' && !canSelectCodex)}
+          disabled={
+            busy ||
+            (selection === 'codex' && !canSelectCodex) ||
+            (selection === 'claude' && !claude?.connected)
+          }
           onClick={() => {
             setBusy(true);
             setError('');
@@ -329,7 +417,9 @@ export function ModelDialog({
               provider: selection,
               ...(selection === 'codex'
                 ? { model: codexModel, reasoning_effort: codexEffort || null }
-                : {}),
+                : selection === 'claude'
+                  ? { model: claudeModel }
+                  : {}),
             })
               .then(onChanged)
               .then(onClose)

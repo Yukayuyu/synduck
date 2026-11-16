@@ -120,6 +120,7 @@ test('device login UI polls official authorization status and selects Codex with
   );
   await page.goto('/');
   await page.getByRole('button', { name: '模型與登入', exact: true }).tap();
+  await page.getByLabel('回答模式').selectOption('codex');
   await page.getByText('最近一次 Codex 回答失敗的診斷', { exact: true }).click();
   await expect(page.getByText('codex_schema_rejected', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '使用 ChatGPT 帳號登入', exact: true }).tap();

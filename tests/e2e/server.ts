@@ -13,6 +13,8 @@ process.env.LOCAL_PROJECT_ROOT = project;
 process.env.LOCAL_RUNTIME_PATH = join(directory, 'local-runtime');
 process.env.MODEL_SETTINGS_PATH = join(directory, 'model-settings.json');
 process.env.APP_CODEX_HOME = join(directory, 'codex');
+process.env.CLAUDE_CREDENTIALS_PATH = join(directory, 'claude', 'credentials.json');
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.PUBLIC_ORIGIN;
 delete process.env.APP_PASSWORD;
 process.env.API_HOST = '127.0.0.1';

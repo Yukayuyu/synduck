@@ -585,6 +585,15 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     };
     let started = false;
     updateJob(targetConversation, job);
+    // The question moves into the thread as soon as it is sent. A failed request
+    // puts it back so nothing typed is lost.
+    if (!retryId)
+      setPrompts((previous) =>
+        previous[targetConversation] === submittedPrompt ||
+        previous[targetConversation] === undefined
+          ? { ...previous, [targetConversation]: '' }
+          : previous,
+      );
     setRequestErrors((previous) => {
       const next = { ...previous };
       delete next[targetConversation];
@@ -645,7 +654,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             : previous,
         );
     } catch (error) {
-      if (started && !retryId)
+      if (!retryId)
         setPrompts((previous) =>
           previous[targetConversation] === ''
             ? { ...previous, [targetConversation]: submittedPrompt }
@@ -1071,7 +1080,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           }}
         >
           <Plus size={18} />
-          <span>提問</span>
+          <span className="sr-only">提問</span>
         </button>
         <span className="tool-divider" />
         <button
@@ -1083,7 +1092,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           }}
         >
           <FilePlus2 size={18} />
-          <span>參考</span>
+          <span className="sr-only">參考</span>
         </button>
         <button
           aria-label="畫布"
@@ -1092,7 +1101,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(null)}
         >
           <Network size={18} />
-          <span>畫布</span>
+          <span className="sr-only">畫布</span>
         </button>
         <button
           aria-label="對話"
@@ -1101,7 +1110,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(panel === 'conversations' ? null : 'conversations')}
         >
           <MessageSquare size={18} />
-          <span>對話</span>
+          <span className="sr-only">對話</span>
         </button>
         <button
           aria-label="上下文"
@@ -1110,7 +1119,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(panel === 'context' ? null : 'context')}
         >
           <ScanLine size={18} />
-          <span>上下文{selected.length > 0 ? ` · ${selected.length}` : ''}</span>
+          <span className="sr-only">上下文</span>
+          {selected.length > 0 && <span className="tool-badge">{selected.length}</span>}
         </button>
         <button
           aria-label="回收桶"
@@ -1173,7 +1183,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           ) : (
             <>
               <h2>對話</h2>
-              <p className="drawer-caption">所有思路，都在同一張畫布上。</p>
               <nav className="conversation-list" aria-label="对话列表">
                 {state.conversations
                   .filter((c) =>
@@ -1380,7 +1389,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               void create(newTitle.trim() || '新的探索');
             }}
           >
-            <span className="overline">NEW CONVERSATION</span>
             <h2 id="new-title">从哪里开始探索？</h2>
             <label htmlFor="conversation-title">给这段对话起个名字</label>
             <input
@@ -1415,7 +1423,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <button className="modal-close" aria-label="关闭帮助" onClick={() => setHelp(false)}>
               <X size={18} />
             </button>
-            <span className="overline">HOW IT WORKS</span>
             <h2 id="help-title">从对话，到思考地图。</h2>
             <ol>
               <li>

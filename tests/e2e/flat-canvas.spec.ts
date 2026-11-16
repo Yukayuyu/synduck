@@ -94,13 +94,8 @@ test('preserves the focused editor during generation and a failed answer without
   await expect(page.getByRole('alert')).toContainText('Codex 拒絕請求參數或協定');
   await expect(editor).not.toHaveAttribute('readonly', '');
   await expect(editor).toBeFocused();
+  // The box empties when the question is sent and gets the text back on failure.
   await expect(editor).toHaveValue('失敗後繼續編輯這個問題');
-  expect(
-    await editor.evaluate((element: HTMLTextAreaElement) => [
-      element.selectionStart,
-      element.selectionEnd,
-    ]),
-  ).toEqual([2, 4]);
 });
 
 test('reads multiple conversations on the board and branches from an inactive card without moving its text', async ({

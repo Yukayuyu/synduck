@@ -355,13 +355,6 @@ export function Focus(props: Props) {
         </div>
       )}
       <div className="focus-title">
-        <span className="overline">
-          {excerpt
-            ? 'EXCERPT / 原文摘录'
-            : origin
-              ? 'BRANCH / 分支对话'
-              : 'CONVERSATION / 自由探索'}
-        </span>
         <h2>{node.title}</h2>
       </div>
       {excerpt ? (
@@ -750,34 +743,48 @@ export function Focus(props: Props) {
               <textarea
                 ref={inputRef}
                 id={`prompt-${node.id}`}
-                placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
-                value={busy && props.pendingInput ? props.pendingInput.prompt : props.prompt}
+                placeholder="提問…"
+                value={props.prompt}
                 onChange={(e) => props.onPrompt(e.target.value)}
                 onKeyDown={(event) => {
+                  // Never act on Enter while an input method is composing text.
                   if (
-                    locked ||
-                    props.preparingForks ||
                     event.key !== 'Enter' ||
                     event.nativeEvent.isComposing ||
                     event.nativeEvent.keyCode === 229 ||
                     event.shiftKey ||
                     event.ctrlKey ||
                     event.altKey ||
-                    event.metaKey ||
-                    props.forkDrafts.length >= 8
+                    event.metaKey
                   )
                     return;
+                  if (locked || props.preparingForks) {
+                    event.preventDefault();
+                    return;
+                  }
                   const input = event.currentTarget;
-                  if (
-                    input.selectionStart !== input.value.length ||
-                    input.selectionEnd !== input.value.length
-                  )
+                  const atEnd =
+                    input.selectionStart === input.value.length &&
+                    input.selectionEnd === input.value.length;
+                  const match =
+                    atEnd && props.forkDrafts.length < 8
+                      ? /(?:^|\n)\/(fork|btw)(?:[ \t]+([^\n]*))?$/.exec(input.value)
+                      : null;
+                  if (match) {
+                    event.preventDefault();
+                    props.onPrompt(input.value.slice(0, match.index));
+                    addDraft(match[1] as ForkDraft['mode'], match[2] ?? '');
                     return;
-                  const match = /(?:^|\n)\/(fork|btw)(?:[ \t]+([^\n]*))?$/.exec(input.value);
-                  if (!match) return;
+                  }
+                  // Enter sends, Shift+Enter starts a new line. Touch keyboards have
+                  // no convenient Shift, so there Enter keeps adding lines.
+                  if (window.matchMedia('(pointer: coarse)').matches) return;
                   event.preventDefault();
-                  props.onPrompt(input.value.slice(0, match.index));
-                  addDraft(match[1] as ForkDraft['mode'], match[2] ?? '');
+                  if (props.forkDrafts.length) {
+                    if (props.forkDrafts.every((d) => d.prompt.trim())) props.onSendForks();
+                  } else if (preview) {
+                    if (preview.sendable) props.onSend();
+                  } else if (props.prompt.trim()) props.onSendDirect();
                 }}
                 readOnly={locked || props.preparingForks}
                 rows={2}
@@ -883,10 +890,9 @@ export function Focus(props: Props) {
                 >
                   <summary aria-label="提问选项" title="预览上下文与预算">
                     <SlidersHorizontal size={16} />
-                    <span>选项</span>
+                    <span className="sr-only">选项</span>
                   </summary>
                   <div className="composer-options">
-                    <small className="composer-mode">画布对话 · 使用选定上下文回答</small>
                     <label>
                       上下文预算
                       <select
@@ -925,7 +931,8 @@ export function Focus(props: Props) {
                     }
                   >
                     <Send size={14} />
-                    分别发送 {props.forkDrafts.length + (!busy && props.prompt.trim() ? 1 : 0)}
+                    <span className="sr-only">分别发送 </span>
+                    {props.forkDrafts.length + (!busy && props.prompt.trim() ? 1 : 0)}
                   </button>
                 ) : preview ? (
                   <button
@@ -935,7 +942,7 @@ export function Focus(props: Props) {
                     onClick={props.onSend}
                   >
                     <Send size={14} />
-                    发送此上下文
+                    <span className="sr-only">发送此上下文</span>
                   </button>
                 ) : (
                   <div className="composer-send-actions">
@@ -946,7 +953,7 @@ export function Focus(props: Props) {
                       onClick={props.onSendDirect}
                     >
                       <Send size={14} />
-                      傳送
+                      <span className="sr-only">傳送</span>
                     </button>
                   </div>
                 )}

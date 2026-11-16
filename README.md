@@ -109,3 +109,5 @@ pnpm test:portable
 0.14.0 新增脉络链：模型知道每段背景来自哪条分支／汇合对话并沿链推理，见[脉络链说明](docs/context-chain.md)。
 
 0.15.0 长对话优先保留最新消息，并可生成背景摘要代替放不下的较早内容，见[背景摘要说明](docs/summaries.md)。
+
+0.16.0 新增 Claude 模式（自备 API key）、Enter 送出与更精简的界面，见 [Claude 模式](docs/claude.md)。
