@@ -1,5 +1,5 @@
 import { ScanLine, ArrowUpRight, Check, X, AlertTriangle, Layers, Pin } from 'lucide-react';
-import type { ContextPackage } from '@acc/domain';
+import type { ContextPackage, ContextThread } from '@acc/domain';
 import type { ClientState } from './api';
 
 const roles: Record<string, string> = {
@@ -10,6 +10,20 @@ const roles: Record<string, string> = {
   related: '相关来源',
   historical: '历史资料',
 };
+const vias: Record<string, string> = {
+  fork: '分支',
+  btw: '顺手问',
+  excerpt: '摘录',
+  merge: '汇合',
+};
+const relation = (thread: ContextThread) =>
+  thread.relation === 'current'
+    ? '当前对话'
+    : thread.relation === 'ancestor'
+      ? `${thread.depth === 1 ? '上一层' : `上 ${thread.depth} 层`}${thread.via ? ` · 经${vias[thread.via]}` : ''}`
+      : thread.via === 'merge'
+        ? '汇合观点'
+        : '参考来源';
 const reasons: Record<string, string> = {
   'deleted from canvas': '卡片已刪除，可從回收桶還原',
   'explicitly excluded': '你明确排除了此内容',
@@ -36,6 +50,12 @@ export function Inspector({
   onLocate: (id: string) => void;
 }) {
   const title = (id: string) => state.nodes.find((n) => n.id === id)?.title || id;
+  const threadNode = (id: string) =>
+    state.nodes.find((n) => n.ref_type === 'conversation' && n.ref_id === id);
+  const threadName = (id: string) =>
+    threadNode(id)?.title ?? state.conversations.find((c) => c.id === id)?.title ?? '未命名对话';
+  // A package saved before context chains has no thread list.
+  const threads = pkg?.threads ?? [];
   return (
     <aside className="inspector" aria-label="上下文检查器">
       <div className="panel-heading">
@@ -113,6 +133,41 @@ export function Inspector({
               />
               <p>含问题与元数据的输入估算：{pkg.budget.estimated_input_tokens.toLocaleString()}</p>
             </div>
+            {threads.length > 1 && (
+              <>
+                <h3 className="section-label">
+                  脉络链 <span>{threads.length}</span>
+                </h3>
+                <ol className="context-chain" aria-label="脉络链">
+                  {threads.map((thread) => {
+                    const node = threadNode(thread.thread_id);
+                    return (
+                      <li key={thread.thread_id} className={thread.relation}>
+                        <button
+                          disabled={!node}
+                          onClick={() => node && onLocate(node.id)}
+                          title={
+                            thread.title === null
+                              ? '只引用了其中的片段，对话名称不会发送给模型'
+                              : undefined
+                          }
+                        >
+                          <span className="chain-relation">{relation(thread)}</span>
+                          <strong>{threadName(thread.thread_id)}</strong>
+                          <small>
+                            {pkg.items.filter((i) => i.thread_id === thread.thread_id).length} 条
+                            {thread.title === null && ' · 名称不发送'}
+                          </small>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+                <p className="chain-note">
+                  模型按此顺序阅读：先背景，后当前对话。未列出的兄弟分支不会进入输入。
+                </p>
+              </>
+            )}
             <h3 className="section-label">
               包含在模型输入中 <span>{pkg.items.length}</span>
             </h3>
@@ -133,6 +188,9 @@ export function Inspector({
                   {title(item.node_id)}
                   <ArrowUpRight size={13} />
                 </h4>
+                {threads.length > 1 && item.thread_id && (
+                  <span className="item-thread">来自：{threadName(item.thread_id)}</span>
+                )}
                 <p>{item.content}</p>
                 <div className="item-explanation">
                   {item.state} · {item.score.toFixed(2)}

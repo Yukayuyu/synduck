@@ -696,6 +696,26 @@
   background: var(--input-surface);
   border-color: var(--stroke);
 }
+.canvas-first .inspector .context-chain {
+  border-left-color: var(--stroke);
+}
+.canvas-first .inspector .context-chain li::before {
+  background: var(--muted-ink);
+}
+.canvas-first .inspector .context-chain li.current::before {
+  background: var(--accent);
+}
+.canvas-first .inspector .context-chain li.reference::before {
+  background: var(--input-surface);
+  border-color: var(--muted-ink);
+}
+.canvas-first .inspector .context-chain .chain-relation,
+.canvas-first .inspector .context-chain small,
+.canvas-first .inspector .chain-note,
+.canvas-first .inspector .item-thread {
+  color: var(--muted-ink);
+}
+.canvas-first .inspector .context-chain strong,
 .canvas-first .inspector .context-item h4,
 .canvas-first .inspector .context-item p {
   color: var(--ink);

@@ -105,3 +105,5 @@ pnpm test:portable
 0.6.0 支持话题分组、输入分叉与多来源摘录汇合，见[操作说明](docs/thought-islands.md)。
 
 0.7.0 支持多画布切换、独立草稿和跨画布摘录引用，见[多画布说明](docs/multiple-canvases.md)。
+
+0.14.0 新增脉络链：模型知道每段背景来自哪条分支／汇合对话并沿链推理，见[脉络链说明](docs/context-chain.md)。
