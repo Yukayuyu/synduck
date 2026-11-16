@@ -17,6 +17,7 @@
     "package:windows": "tsx scripts/package-windows.ts",
     "package:macos": "tsx scripts/package-macos.ts",
     "test:macos-bootstrap": "tsx scripts/test-macos-bootstrap.ts",
+    "test:macos-desktop": "tsx scripts/test-macos-desktop.ts",
     "test:github-runtime": "tsx scripts/test-github-runtime.ts",
     "test:portable": "tsx scripts/test-portable.ts",
     "db:migrate": "node --env-file-if-exists=.env --import tsx packages/db/src/migrate.ts",

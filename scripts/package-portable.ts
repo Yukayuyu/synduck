@@ -85,6 +85,9 @@ export async function packagePortable(target: ReleaseTarget) {
   files['app/apps/api/desktop/windows.ps1'] = new Uint8Array(
     await fs.readFile(join(root, 'packages/local-runtime/desktop/windows.ps1')),
   );
+  files['app/apps/api/desktop/macos.js'] = new Uint8Array(
+    await fs.readFile(join(root, 'packages/local-runtime/desktop/macos.js')),
+  );
   files['app/.env.example'] = new Uint8Array(await fs.readFile(join(root, '.env.example')));
   files['app/LICENSE'] = new Uint8Array(await fs.readFile(join(root, 'LICENSE')));
   files['app/release-info.json'] = new TextEncoder().encode(

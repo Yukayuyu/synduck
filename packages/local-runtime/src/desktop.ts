@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -91,7 +92,7 @@ const BoundsSchema = z.object({
 });
 export class WindowsDesktopDriver implements DesktopDriver {
   available = process.platform === 'win32';
-  reason = this.available ? '' : '桌面控制目前支援 Windows 互動式桌面；這台後端不支援。';
+  reason = this.available ? '' : '桌面控制支援 Windows 與 macOS 的互動式桌面；這台後端不支援。';
   private request(body: object, signal?: AbortSignal): Promise<unknown> {
     if (!this.available) return Promise.reject(fail(this.reason));
     return new Promise((resolve, reject) => {
@@ -223,6 +224,134 @@ export class WindowsDesktopDriver implements DesktopDriver {
     );
   }
 }
+const bridgePath = (name: string) =>
+  fileURLToPath(
+    new URL(
+      process.env.CANVAS_COMPILED === '1' ? `./desktop/${name}` : `../desktop/${name}`,
+      import.meta.url,
+    ),
+  );
+// Fixed bridge codes only; raw system errors and window titles never reach the UI.
+const macErrors: Record<string, string> = {
+  window_missing: '目標視窗已不存在或不在畫面上，請重新選擇。',
+  process_changed: '目標視窗所屬程式已變更，請重新選擇。',
+  geometry_changed: '目標視窗的大小或位置已變更，請重新擷取。',
+  not_frontmost: '無法把目標視窗帶到最前面；請手動點一下該視窗後重試。',
+  accessibility_required:
+    '需要「輔助使用」權限：系統設定 → 隱私權與安全性 → 輔助使用，允許啟動 Synduck 的終端機，然後重新啟動 Synduck。',
+  invalid_coordinates: '操作座標超出截圖範圍。',
+  unsupported_key: '不支援這個按鍵。',
+  unsupported_operation: '不支援這個桌面操作。',
+};
+export class MacDesktopDriver implements DesktopDriver {
+  available = process.platform === 'darwin';
+  reason = this.available ? '' : '桌面控制支援 Windows 與 macOS 的互動式桌面；這台後端不支援。';
+  private run(
+    file: string,
+    args: string[],
+    signal?: AbortSignal,
+    input?: string,
+  ): Promise<{ code: number | null; stdout: Buffer }> {
+    return new Promise((resolve, reject) => {
+      const env: NodeJS.ProcessEnv = {};
+      for (const key of ['PATH', 'HOME', 'TMPDIR', 'USER', 'LANG'])
+        if (process.env[key]) env[key] = process.env[key];
+      const child = spawn(file, args, { stdio: ['pipe', 'pipe', 'ignore'], env });
+      let stdout = Buffer.alloc(0);
+      let stopped = false;
+      const cancel = () => {
+        stopped = true;
+        child.kill('SIGKILL');
+      };
+      const timer = setTimeout(cancel, 20000);
+      signal?.addEventListener('abort', cancel, { once: true });
+      child.stdout.on('data', (part: Buffer) => {
+        if (stdout.length + part.length > 1024 * 1024) cancel();
+        else stdout = Buffer.concat([stdout, part]);
+      });
+      child.on('error', () => reject(fail('無法啟動 macOS 桌面工具。')));
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', cancel);
+        if (stopped || signal?.aborted)
+          return reject(fail('桌面操作中斷；請檢查目標視窗與實際狀態。'));
+        resolve({ code, stdout });
+      });
+      child.stdin.on('error', () => {});
+      if (signal?.aborted) cancel();
+      child.stdin.end(input ?? '');
+    });
+  }
+  private async request(body: object, signal?: AbortSignal): Promise<unknown> {
+    if (!this.available) throw fail(this.reason);
+    const { stdout } = await this.run(
+      '/usr/bin/osascript',
+      ['-l', 'JavaScript', bridgePath('macos.js')],
+      signal,
+      JSON.stringify(body),
+    );
+    let response: unknown;
+    try {
+      response = JSON.parse(stdout.toString('utf8').trim());
+    } catch {
+      throw fail('macOS 桌面工具沒有傳回有效結果。');
+    }
+    const error = (response as { error?: unknown } | null)?.error;
+    if (typeof error === 'string') throw fail(macErrors[error] ?? '桌面工具無法完成操作。');
+    return response;
+  }
+  async windows(signal?: AbortSignal) {
+    return z
+      .array(WindowSchema)
+      .max(500)
+      .parse(await this.request({ operation: 'windows' }, signal))
+      .slice(0, 200);
+  }
+  async capture(window: string, signal: AbortSignal, processId?: number) {
+    const located = z
+      .object({ window: WindowSchema, bounds: BoundsSchema })
+      .parse(await this.request({ operation: 'locate', window, process_id: processId }, signal));
+    const directory = await fs.mkdtemp(join(tmpdir(), 'synduck-capture-'));
+    const file = join(directory, 'window.png');
+    try {
+      // -x no sound, -o no shadow so the image matches the window bounds.
+      const shot = await this.run(
+        '/usr/sbin/screencapture',
+        ['-x', '-o', '-l', located.window.id, '-t', 'png', file],
+        signal,
+      );
+      const exists = await fs.stat(file).then(
+        (stat) => stat.size > 0,
+        () => false,
+      );
+      if (shot.code !== 0 || !exists)
+        throw fail(
+          '無法擷取視窗。請在系統設定 → 隱私權與安全性 →「螢幕與系統錄音」允許啟動 Synduck 的終端機，然後重新啟動 Synduck。',
+        );
+      // Retina captures are 2x; keep the longest side at most 1280 like Windows.
+      const scaled = await this.run('/usr/bin/sips', ['-Z', '1280', file], signal);
+      if (scaled.code !== 0) throw fail('無法處理視窗截圖。');
+      return { png: await fs.readFile(file), window: located.window, bounds: located.bounds };
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  }
+  async act(window: string, args: DesktopOperation, frame: Frame, signal: AbortSignal) {
+    await this.request(
+      {
+        ...args,
+        window,
+        process_id: frame.window.process_id,
+        bounds: frame.bounds,
+        image_width: frame.width,
+        image_height: frame.height,
+      },
+      signal,
+    );
+  }
+}
+export const platformDesktopDriver = (): DesktopDriver =>
+  process.platform === 'darwin' ? new MacDesktopDriver() : new WindowsDesktopDriver();
 export class DesktopManager {
   private settings: { enabled: boolean; window_id: string; process_id: number | null } = {
     enabled: false,
@@ -232,7 +361,7 @@ export class DesktopManager {
   constructor(
     private readonly directory: string,
     readonly evidence: EvidenceStore,
-    private readonly driver: DesktopDriver = new WindowsDesktopDriver(),
+    private readonly driver: DesktopDriver = platformDesktopDriver(),
   ) {}
   async initialize() {
     try {
