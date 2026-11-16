@@ -32,6 +32,9 @@ jobs:
       - run: pnpm package:${{ matrix.target }}
       - run: pnpm test:macos-bootstrap
         if: runner.os == 'macOS'
+      - name: Check the macOS desktop bridge against a real window
+        run: pnpm test:macos-desktop
+        if: runner.os == 'macOS'
       - run: pnpm test:portable
       - name: Check compatibility with the previous bootstrap
         run: pnpm test:portable

@@ -8,6 +8,8 @@ export default ts.config(
       'data/**',
       'playwright-report/**',
       'test-results/**',
+      // JXA script run by osascript, not Node: it uses $ and delay globals.
+      'packages/local-runtime/desktop/macos.js',
     ],
   },
   js.configs.recommended,

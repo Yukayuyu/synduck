@@ -4,6 +4,7 @@ import {
   ANSWER_INSTRUCTIONS,
   DomainError,
   modelInput,
+  SUMMARY_PROMPT,
   type Answer,
   type ContextPackage,
 } from '@acc/domain';
@@ -47,11 +48,16 @@ export class DemoProvider implements ModelProvider {
   readonly name = 'demo';
   readonly model = 'offline-demo-v1';
   async generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
-    const text = `【本地演示 · 未调用 AI】\n\n你的问题：${pkg.current_prompt}\n\n${
-      pkg.items.length
-        ? `本轮已包含 ${pkg.items.length} 项上下文。以下为原文引用，未做模型推理：\n\n${pkg.items.map((i, n) => `${n + 1}.「${i.content}」`).join('\n\n')}`
-        : '这是一段用于体验工作流的示例文字：让上下文可见，让每个分支都保留来源。画布记录思考路径，上下文检查器显示本轮发送的内容。'
-    }\n\n选中一段文字即可建立摘录，再沿着它开始新的分支。真实回答需要在服务端配置模型。`;
+    // Demo mode cannot summarize. It stores clearly labelled openings of each
+    // message so the workflow can be tried without pretending to be a model.
+    const text =
+      pkg.current_prompt === SUMMARY_PROMPT
+        ? `【本地演示 · 未调用 AI · 非真实摘要】各条消息的开头：\n${pkg.items.map((i, n) => `${n + 1}. ${i.content.slice(0, 40)}…`).join('\n')}`
+        : `【本地演示 · 未调用 AI】\n\n你的问题：${pkg.current_prompt}\n\n${
+            pkg.items.length
+              ? `本轮已包含 ${pkg.items.length} 项上下文。以下为原文引用，未做模型推理：\n\n${pkg.items.map((i, n) => `${n + 1}.「${i.content}」`).join('\n\n')}`
+              : '这是一段用于体验工作流的示例文字：让上下文可见，让每个分支都保留来源。画布记录思考路径，上下文检查器显示本轮发送的内容。'
+          }\n\n选中一段文字即可建立摘录，再沿着它开始新的分支。真实回答需要在服务端配置模型。`;
     // Draft events demonstrate lifecycle without pretending to be model tokens.
     for (let i = 0; i < text.length; i += 48) {
       if (signal?.aborted) throw new DomainError('generation_cancelled', '回答已停止。', 499);

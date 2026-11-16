@@ -711,6 +711,7 @@
 }
 .canvas-first .inspector .context-chain .chain-relation,
 .canvas-first .inspector .context-chain small,
+.canvas-first .inspector .summary-discard,
 .canvas-first .inspector .chain-note,
 .canvas-first .inspector .item-thread {
   color: var(--muted-ink);

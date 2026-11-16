@@ -18,6 +18,8 @@ import {
   CreateForksSchema,
   ExternalOriginSchema,
   CreateReferenceSchema,
+  ConversationSummarySchema,
+  conversationSummaries,
   sourceNodeForTurn,
   DomainError,
   type Workspace,
@@ -851,6 +853,114 @@ export class Store {
           updated_at: now(),
         });
       this.bump();
+    });
+  }
+  // A summary is an ordinary assistant turn with a sealed input package. It lives in
+  // a backing conversation without a card, so it never appears as a message of the
+  // conversation it summarizes.
+  beginSummary(set: ContextSet, pkg: ContextPackage, provider: string, model: string) {
+    return this.transaction(() => {
+      const s = this.snapshot();
+      const target = s.conversations.find((c) => c.id === set.conversation_id);
+      if (!target) throw new DomainError('missing_conversation', '找不到对话', 404);
+      if (s.context_sets.some((c) => c.id === set.id))
+        throw new DomainError('already_used', '這個摘要請求已處理，請勿重複提交。', 409);
+      if (!pkg.sendable)
+        throw new DomainError(
+          'summary_blocked',
+          pkg.diagnostics[0] ?? '这条对话目前不能生成摘要。',
+          409,
+        );
+      if (
+        s.turns.some(
+          (t) =>
+            t.status === 'streaming' &&
+            s.context_sets.some(
+              (c) =>
+                c.id === t.input_context_set_id &&
+                c.conversation_id === target.id &&
+                c.id.startsWith('summary-'),
+            ),
+        )
+      )
+        throw new DomainError('busy', '这条对话正在生成摘要。', 409);
+      const at = now();
+      const backing: Conversation = {
+        id: id(),
+        workspace_id: target.workspace_id,
+        title: `摘要 · ${target.title}`.slice(0, 160),
+        status: 'active',
+        root_turn_id: null,
+        summary_block_id: null,
+        branch_origin_excerpt_id: null,
+        created_at: at,
+        updated_at: at,
+      };
+      this.saveConversation(backing);
+      this.saveContext(set, pkg);
+      const turn = this.appendTurn(backing.id, 'assistant', null, {
+        context: set.id,
+        provider,
+        model,
+      });
+      this.saveContext({ ...set, status: 'used', target_turn_id: turn.id }, pkg);
+      this.bump();
+      return { turn, pkg };
+    });
+  }
+  finishSummary(turnId: string, raw: Answer) {
+    return this.transaction(() => {
+      const before = this.snapshot();
+      const turn = before.turns.find((t) => t.id === turnId);
+      const set = before.context_sets.find((c) => c.id === turn?.input_context_set_id);
+      const pkg = before.packages.find((p) => p.context_set_id === set?.id);
+      if (!turn || !set || !pkg || !set.id.startsWith('summary-'))
+        throw new DomainError('invalid_turn', '摘要状态已变化', 409);
+      this.finishAnswer(turnId, raw);
+      const block = this.snapshot().blocks.find((b) => b.turn_id === turnId)!;
+      const summary = ConversationSummarySchema.parse({
+        conversation_id: set.conversation_id,
+        request_id: set.id.slice('summary-'.length),
+        summary_version: 1,
+        source_block_ids: pkg.items.map((i) => i.source_block_id),
+        source_content_hashes: pkg.items.map((i) => i.content_hash),
+        status: 'active',
+      });
+      const saved = { ...block, structured_data: { summary } };
+      this.saveBlock(saved);
+      const target = this.snapshot().conversations.find((c) => c.id === set.conversation_id)!;
+      this.saveConversation({ ...target, summary_block_id: block.id, updated_at: now() });
+      this.bump();
+      return saved;
+    });
+  }
+  discardSummary(blockId: string) {
+    return this.transaction(() => {
+      const s = this.snapshot();
+      const block = s.blocks.find((b) => b.id === blockId);
+      const parsed = ConversationSummarySchema.safeParse(block?.structured_data?.summary);
+      if (!block || !parsed.success) throw new DomainError('missing_summary', '找不到摘要', 404);
+      if (parsed.data.status === 'discarded') return block;
+      // Text, hash and the sealed input stay; only future use is switched off.
+      const saved = {
+        ...block,
+        structured_data: { summary: { ...parsed.data, status: 'discarded' as const } },
+        updated_at: now(),
+      };
+      this.saveBlock(saved);
+      const target = s.conversations.find((c) => c.id === parsed.data.conversation_id);
+      if (target?.summary_block_id === blockId) {
+        const next = conversationSummaries(this.snapshot(), target.id).find(
+          (entry) => entry.summary.status === 'active',
+        );
+        this.saveConversation({
+          ...target,
+          summary_block_id: next?.block.id ?? null,
+          updated_at: now(),
+        });
+      }
+      this.bump();
+      return saved;
     });
   }
   failAnswer(turnId: string, message: string) {

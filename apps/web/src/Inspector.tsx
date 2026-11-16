@@ -1,4 +1,13 @@
-import { ScanLine, ArrowUpRight, Check, X, AlertTriangle, Layers, Pin } from 'lucide-react';
+import {
+  ScanLine,
+  ArrowUpRight,
+  Check,
+  X,
+  AlertTriangle,
+  Layers,
+  Pin,
+  ScrollText,
+} from 'lucide-react';
 import type { ContextPackage, ContextThread } from '@acc/domain';
 import type { ClientState } from './api';
 
@@ -31,6 +40,7 @@ const reasons: Record<string, string> = {
   'answer depends on an excluded source': '这条回答依赖已排除的来源，也已排除',
   'rejected by lifecycle policy': '内容已被否决',
   'omitted to fit context budget': '超过上下文预算',
+  'represented by a conversation summary': '较早的消息，已由背景摘要代表',
   'explicit source exceeds budget; sending blocked': '指定原文超出预算，已阻止发送',
   'duplicate source content': '同一来源的重复内容',
   'source content hash or selector mismatch': '来源已变化，需要重新选择',
@@ -42,12 +52,18 @@ export function Inspector({
   historical,
   selected,
   onLocate,
+  summarizing,
+  onSummarize,
+  onDiscardSummary,
 }: {
   state: ClientState;
   pkg: ContextPackage | null;
   historical: boolean;
   selected: string[];
   onLocate: (id: string) => void;
+  summarizing: string | null;
+  onSummarize: (conversationId: string) => void;
+  onDiscardSummary: (blockId: string) => void;
 }) {
   const title = (id: string) => state.nodes.find((n) => n.id === id)?.title || id;
   const threadNode = (id: string) =>
@@ -56,6 +72,13 @@ export function Inspector({
     threadNode(id)?.title ?? state.conversations.find((c) => c.id === id)?.title ?? '未命名对话';
   // A package saved before context chains has no thread list.
   const threads = pkg?.threads ?? [];
+  // Background conversations that lost messages to the budget and could be summarized.
+  const trimmed = new Map<string, number>();
+  for (const item of pkg?.excluded ?? []) {
+    const node = state.nodes.find((n) => n.id === item.node_id);
+    if (item.reason === 'omitted to fit context budget' && node?.ref_type === 'conversation')
+      trimmed.set(node.id, (trimmed.get(node.id) ?? 0) + 1);
+  }
   return (
     <aside className="inspector" aria-label="上下文检查器">
       <div className="panel-heading">
@@ -168,6 +191,28 @@ export function Inspector({
                 </p>
               </>
             )}
+            {[...trimmed].map(([nodeId, count]) => {
+              const conversationId = state.nodes.find((n) => n.id === nodeId)!.ref_id;
+              return (
+                <div className="notice summary-offer" key={nodeId}>
+                  <ScrollText size={16} />
+                  <span>
+                    「{title(nodeId)}」有 {count} 条较早的消息超出预算，没有发送。
+                    <small>
+                      生成背景摘要后，放不下的部分会以摘要代替；最新的消息仍优先保留原文。
+                    </small>
+                    {!historical && (
+                      <button
+                        disabled={summarizing !== null}
+                        onClick={() => onSummarize(conversationId)}
+                      >
+                        {summarizing === conversationId ? '正在生成摘要…' : '生成背景摘要'}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
             <h3 className="section-label">
               包含在模型输入中 <span>{pkg.items.length}</span>
             </h3>
@@ -175,30 +220,45 @@ export function Inspector({
               <p className="empty-note">只发送当前问题，没有额外上下文。</p>
             )}
             {pkg.items.map((item, index) => (
-              <button
-                key={`${item.node_id}-${item.source_id}-${index}`}
-                className="context-item"
-                onClick={() => onLocate(item.node_id)}
-              >
-                <div className="context-item-top">
-                  <span className={`role ${item.role}`}>{roles[item.role]}</span>
-                  <span>{item.token_estimate} est.</span>
-                </div>
-                <h4>
-                  {title(item.node_id)}
-                  <ArrowUpRight size={13} />
-                </h4>
-                {threads.length > 1 && item.thread_id && (
-                  <span className="item-thread">来自：{threadName(item.thread_id)}</span>
+              <div className="context-entry" key={`${item.node_id}-${item.source_id}-${index}`}>
+                <button
+                  className={`context-item${item.compressed ? ' compressed' : ''}`}
+                  onClick={() => onLocate(item.node_id)}
+                >
+                  <div className="context-item-top">
+                    <span className={`role ${item.role}`}>
+                      {item.compressed ? '背景摘要' : roles[item.role]}
+                    </span>
+                    <span>{item.token_estimate} est.</span>
+                  </div>
+                  <h4>
+                    {title(item.node_id)}
+                    <ArrowUpRight size={13} />
+                  </h4>
+                  {threads.length > 1 && item.thread_id && (
+                    <span className="item-thread">来自：{threadName(item.thread_id)}</span>
+                  )}
+                  <p>{item.content}</p>
+                  <div className="item-explanation">
+                    {item.state} · {item.score.toFixed(2)}
+                    <span title={item.reason}>
+                      {item.compressed
+                        ? `代替 ${item.summarized_block_ids?.length ?? 0} 条消息中放不下的部分`
+                        : item.reason.includes('explicit')
+                          ? '由你明确指定'
+                          : '按结构关系纳入'}
+                    </span>
+                  </div>
+                </button>
+                {item.compressed && !historical && (
+                  <button
+                    className="summary-discard"
+                    onClick={() => onDiscardSummary(item.source_id)}
+                  >
+                    停用这份摘要
+                  </button>
                 )}
-                <p>{item.content}</p>
-                <div className="item-explanation">
-                  {item.state} · {item.score.toFixed(2)}
-                  <span title={item.reason}>
-                    {item.reason.includes('explicit') ? '由你明确指定' : '按结构关系纳入'}
-                  </span>
-                </div>
-              </button>
+              </div>
             ))}
             {pkg.excluded.length > 0 && (
               <>

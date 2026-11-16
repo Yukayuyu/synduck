@@ -12,6 +12,8 @@ import {
   type ContextSet,
   type ContextPackage,
   type Turn,
+  SummarizeRequestSchema,
+  SUMMARY_PROMPT,
 } from '@acc/domain';
 import {
   Store,
@@ -23,7 +25,7 @@ import {
   listRecoverySnapshots,
   recoveryProject,
 } from '@acc/db';
-import { compileContext, excludedSources } from '@acc/context-compiler';
+import { compileContext, compileSummaryInput, excludedSources } from '@acc/context-compiler';
 import { type ModelProvider } from '@acc/model-gateway';
 import { ProviderRegistry, ProviderMode } from '../../../packages/model-gateway/src/registry';
 import { ReasoningEffort } from '../../../packages/model-gateway/src/codex';
@@ -405,6 +407,66 @@ export function createApp(
       reply.raw.end();
     }
   };
+  // Summaries are requested explicitly: they spend model quota and later stand in
+  // for a conversation's older messages when those no longer fit a budget.
+  app.post('/api/summaries', async (request) => {
+    const input = SummarizeRequestSchema.parse(request.body);
+    const { turn, pkg } = store.transaction(() => {
+      const s = store.snapshot();
+      const node = s.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === input.conversation_id,
+      );
+      if (!node) throw new DomainError('missing_conversation', '找不到对话', 404);
+      const set: ContextSet = {
+        id: `summary-${input.request_id}`,
+        workspace_id: s.workspace.id,
+        conversation_id: input.conversation_id,
+        target_turn_id: null,
+        current_node_id: node.id,
+        prompt_text: SUMMARY_PROMPT,
+        selected_node_ids: [],
+        pinned_node_ids: [],
+        excluded_node_ids: s.workspace.settings.excluded_node_ids,
+        budget: {
+          max_input_tokens: 128000,
+          reserved_output_tokens: 8000,
+          target_context_tokens: 64000,
+        },
+        policy_version: 'context-policy-0.1',
+        graph_snapshot_version: s.workspace.revision,
+        status: 'compiled',
+        created_at: now(),
+      };
+      return store.beginSummary(
+        set,
+        compileSummaryInput(s, set),
+        provider.name,
+        provider.model || 'unconfigured',
+      );
+    });
+    const controller = new AbortController();
+    const disconnected = () => controller.abort();
+    request.raw.once('aborted', disconnected);
+    try {
+      const answer = await provider.generate(pkg, undefined, controller.signal);
+      if (controller.signal.aborted)
+        throw new DomainError('generation_cancelled', '已停止生成摘要。', 499);
+      return { block: store.finishSummary(turn.id, answer) };
+    } catch (error) {
+      store.failAnswer(
+        turn.id,
+        error instanceof DomainError ? error.message : '摘要生成失败，可重试。',
+      );
+      throw error instanceof DomainError
+        ? error
+        : new DomainError('generation_failed', '摘要生成失败，可重试。', 502);
+    } finally {
+      request.raw.off('aborted', disconnected);
+    }
+  });
+  app.delete('/api/summaries/:id', async (request) => ({
+    block: store.discardSummary(z.object({ id: Id }).parse(request.params).id),
+  }));
   app.post('/api/answers/:id/cancel', async (request) => {
     const { id: turnId } = z.object({ id: Id }).parse(request.params);
     const turn = store.snapshot().turns.find((t) => t.id === turnId);

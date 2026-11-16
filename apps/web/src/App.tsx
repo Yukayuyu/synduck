@@ -164,6 +164,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const [renameTitle, setRenameTitle] = useState('');
   const [pendingDelete, setPendingDelete] = useState<CanvasNode | null>(null);
   const [cardActionBusy, setCardActionBusy] = useState(false);
+  const [summarizing, setSummarizing] = useState<string | null>(null);
   const [lastDeleted, setLastDeleted] = useState<{
     id: string;
     title: string;
@@ -526,6 +527,34 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
       fail(e);
     }
   };
+  // Summaries spend model quota, so they are only made on request. A current
+  // preview is recompiled afterwards so the inspector shows the real effect.
+  const summarize = async (targetConversation: string) => {
+    if (summarizing) return;
+    setSummarizing(targetConversation);
+    try {
+      await api('/summaries', {
+        conversation_id: targetConversation,
+        request_id: crypto.randomUUID(),
+      });
+      await refresh();
+      if (preview && prompt.trim()) await compile(false);
+    } catch (e) {
+      fail(e);
+      await refresh().catch(() => undefined);
+    } finally {
+      setSummarizing(null);
+    }
+  };
+  const discardSummary = async (blockId: string) => {
+    try {
+      await api('/summaries/' + encodeURIComponent(blockId), {}, 'DELETE');
+      await refresh();
+      if (preview && prompt.trim()) await compile(false);
+    } catch (e) {
+      fail(e);
+    }
+  };
   const generate = async (
     targetConversation: string,
     retryId?: string,
@@ -865,6 +894,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               setRenameTarget(node);
               setRenameTitle(node.title);
             }}
+            onSummarize={(node) => void summarize(node.ref_id)}
+            summarizing={summarizing}
             onBranch={(node) => {
               const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
               if (excerpt) void branch(excerpt);
@@ -1110,6 +1141,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               pkg={inspected?.pkg || null}
               historical={inspected?.historical || false}
               selected={selected}
+              summarizing={summarizing}
+              onSummarize={(id) => void summarize(id)}
+              onDiscardSummary={(id) => void discardSummary(id)}
               onLocate={(id) => {
                 setPanel(null);
                 if (state.nodes.some((node) => node.id === id && node.visibility === 'hidden')) {

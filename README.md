@@ -107,3 +107,5 @@ pnpm test:portable
 0.7.0 支持多画布切换、独立草稿和跨画布摘录引用，见[多画布说明](docs/multiple-canvases.md)。
 
 0.14.0 新增脉络链：模型知道每段背景来自哪条分支／汇合对话并沿链推理，见[脉络链说明](docs/context-chain.md)。
+
+0.15.0 长对话优先保留最新消息，并可生成背景摘要代替放不下的较早内容，见[背景摘要说明](docs/summaries.md)。
