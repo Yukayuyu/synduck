@@ -85,6 +85,50 @@ describe('local project executor', () => {
     expect(restarted.task(task.id)).toEqual(result);
     expect(restarted.snapshot().enabled).toBe(true);
   });
+  it('browses folders by name only, hides app data and remembers recent projects', async () => {
+    const { executor, project, home, history } = await fixture();
+    await mkdir(join(project, 'src'));
+    await mkdir(join(project, '.git'));
+    await writeFile(join(project, 'notes.txt'), 'file contents stay private');
+    const second = join(home, 'second');
+    await mkdir(second);
+    const listing = await executor.browseFolders(home);
+    // Files, hidden folders and the app's own data directory are never listed.
+    expect(listing.folders.map((entry) => entry.name)).toEqual(['project', 'second']);
+    expect(listing.folders.map((entry) => entry.path)).not.toContain(history);
+    expect(listing.recent).toEqual([project]);
+    expect(listing.parent).not.toBeNull();
+    const inside = await executor.browseFolders(project);
+    expect(inside.folders.map((entry) => entry.name)).toEqual(['src']);
+    expect(JSON.stringify(inside)).not.toContain('notes.txt');
+    expect(inside.parent).toBe(listing.path);
+    await expect(executor.browseFolders(history)).rejects.toMatchObject({
+      code: 'local_root_invalid',
+    });
+    await expect(executor.browseFolders(join(home, 'missing'))).rejects.toMatchObject({
+      code: 'local_folder_missing',
+    });
+    await expect(executor.browseFolders(join(project, 'notes.txt'))).rejects.toMatchObject({
+      code: 'local_folder_missing',
+    });
+    await executor.configure(true, second);
+    expect((await executor.browseFolders(home)).recent).toEqual([
+      (await executor.browseFolders(second)).path,
+      project,
+    ]);
+    // Without a path it starts from the home folder; roots are offered for jumping.
+    const start = await executor.browseFolders();
+    expect(start.path).toBe(start.home);
+    expect(start.roots.length).toBeGreaterThan(0);
+    process.env.MCP_BROWSE_TEST_TOKEN = 'never-returned';
+    try {
+      const integrations = executor.integrations();
+      expect(integrations.env_names).toContain('MCP_BROWSE_TEST_TOKEN');
+      expect(JSON.stringify(integrations)).not.toContain('never-returned');
+    } finally {
+      delete process.env.MCP_BROWSE_TEST_TOKEN;
+    }
+  });
   it('rejects traversal, credential files and directory symlinks', async () => {
     const { executor, project, home } = await fixture();
     await writeFile(join(project, '.env'), 'secret-value');

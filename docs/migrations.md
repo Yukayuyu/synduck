@@ -69,3 +69,5 @@ A summary is an ordinary assistant Turn with a sealed Context Package, stored in
 ## 0.16.0 Claude mode (no SQL migration)
 
 The model settings JSON optionally records `claude_model`, and `provider` may be `claude`. A Claude API key saved through the UI is stored in `claude/credentials.json` beside the model settings file (override with `CLAUDE_CREDENTIALS_PATH`), written with mode 0600 inside a 0700 directory, and added to the directories the local executor refuses to read. It is not encrypted vault storage; full data backups include it. `ANTHROPIC_API_KEY` in the backend environment is used when no key is saved. Older versions reject a settings file whose provider is `claude`; select another mode before downgrading. The runtime dependency manifest adds the official `@anthropic-ai/sdk` 1.8.0. Graph schemas, canvas files, sealed packages and provenance are unchanged.
+
+Also in 0.16.0: recently used project folders are kept in `recent-projects.json` in the local runtime directory (at most eight absolute paths). It is optional, unrelated to permissions, and ignored if missing or invalid; `settings.json` keeps its existing two fields.

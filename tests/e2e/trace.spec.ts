@@ -97,9 +97,14 @@ test('configures and discovers a real MCP server through the interface', async (
   await dialog.getByText('高级连接设置', { exact: true }).click();
   await dialog.getByRole('button', { name: '新增 MCP', exact: true }).click();
   await dialog.getByLabel('MCP 服務名稱 1').fill('瀏覽器測試 MCP');
+  await dialog.getByLabel('MCP 啟動方式 1').selectOption('custom');
   await dialog.getByLabel('MCP 啟動程式 1').fill(process.execPath);
   await dialog.getByLabel('MCP 啟動參數 1').fill(args.join('\n'));
-  await dialog.locator('.mcp-server').first().getByRole('checkbox').check();
+  await dialog
+    .locator('.mcp-server')
+    .first()
+    .getByRole('checkbox', { name: '啟用', exact: true })
+    .check();
   await dialog.getByRole('button', { name: '保存 MCP 設定', exact: true }).click();
   await expect
     .poll(async () => (await (await request.get('/api/local/integrations')).json()).mcp.length)

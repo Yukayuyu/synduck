@@ -243,6 +243,14 @@ interface Props {
   onFold: (node: CanvasNode) => void;
 }
 
+// One tap applies a size; dragging the corner grip gives any other size.
+const sizePresets = [
+  { label: '緊湊', width: 420, height: 360 },
+  { label: '小', width: 440, height: 500 },
+  { label: '中', width: 540, height: 650 },
+  { label: '大', width: 760, height: 860 },
+  { label: '寬', width: 960, height: 700 },
+];
 export function Canvas({
   state,
   initialViewport,
@@ -918,48 +926,38 @@ export function Canvas({
               if (event.key === 'Escape' && !event.nativeEvent.isComposing && !savingSize)
                 setSizeDialog(null);
             }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSavingSize(true);
-              void resizeHandler
-                .current(sizeDialog.id, {
-                  width: sizeDialog.width,
-                  height: sizeDialog.height,
-                  size_mode: 'manual',
-                })
-                .then(() => setSizeDialog(null))
-                .catch(onError)
-                .finally(() => setSavingSize(false));
-            }}
+            onSubmit={(event) => event.preventDefault()}
           >
             <h2>对话框尺寸</h2>
-            <label>
-              宽度
-              <input
-                autoFocus
-                type="number"
-                min={340}
-                max={1600}
-                required
-                value={Number.isFinite(sizeDialog.width) ? sizeDialog.width : ''}
-                onChange={(event) =>
-                  setSizeDialog({ ...sizeDialog, width: event.currentTarget.valueAsNumber })
-                }
-              />
-            </label>
-            <label>
-              高度
-              <input
-                type="number"
-                min={360}
-                max={1800}
-                required
-                value={Number.isFinite(sizeDialog.height) ? sizeDialog.height : ''}
-                onChange={(event) =>
-                  setSizeDialog({ ...sizeDialog, height: event.currentTarget.valueAsNumber })
-                }
-              />
-            </label>
+            <div className="size-presets" role="group" aria-label="尺寸">
+              {sizePresets.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  aria-pressed={
+                    sizeDialog.width === preset.width && sizeDialog.height === preset.height
+                  }
+                  disabled={savingSize}
+                  onClick={() => {
+                    setSavingSize(true);
+                    void resizeHandler
+                      .current(sizeDialog.id, {
+                        width: preset.width,
+                        height: preset.height,
+                        size_mode: 'manual',
+                      })
+                      .then(() => setSizeDialog(null))
+                      .catch(onError)
+                      .finally(() => setSavingSize(false));
+                  }}
+                >
+                  {preset.label}
+                  <small>
+                    {preset.width}×{preset.height}
+                  </small>
+                </button>
+              ))}
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
@@ -978,9 +976,6 @@ export function Canvas({
               </button>
               <button type="button" disabled={savingSize} onClick={() => setSizeDialog(null)}>
                 取消
-              </button>
-              <button className="primary" disabled={savingSize}>
-                保存尺寸
               </button>
             </div>
           </form>

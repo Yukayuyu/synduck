@@ -194,7 +194,6 @@ export function ConnectionCard({
 export function ConnectionsPanel() {
   const api = useApi();
   const { state, error } = useConnections();
-  const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState('');
@@ -209,7 +208,6 @@ export function ConnectionsPanel() {
       ))}
       <details className="connection-add">
         <summary>添加其他服务</summary>
-        <p>粘贴服务方提供的连接地址。支持网页登录的服务会自动打开授权入口。</p>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
@@ -217,11 +215,10 @@ export function ConnectionsPanel() {
             setFailure('');
             try {
               const result = await api<{ id: string }>('/connections/add', {
-                name: name.trim() || new URL(url).hostname,
+                name: new URL(url).hostname,
                 url: url.trim(),
               });
               await api('/connections/' + result.id + '/start', {});
-              setName('');
               setUrl('');
             } catch (e) {
               setFailure(e instanceof Error ? e.message : '请检查服务地址后重试。');
@@ -230,14 +227,6 @@ export function ConnectionsPanel() {
             }
           }}
         >
-          <label>
-            服务名称
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如：我的知识库"
-            />
-          </label>
           <label>
             连接地址
             <input

@@ -192,9 +192,9 @@ test('keeps options out of the layout and persists pointer and numeric conversat
   await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
   await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '调整对话框尺寸', exact: true });
-  await dialog.getByLabel('宽度', { exact: true }).fill('540');
-  await dialog.getByLabel('高度', { exact: true }).fill('650');
-  await dialog.getByRole('button', { name: '保存尺寸', exact: true }).click();
+  // Sizes are picked, not typed.
+  await expect(dialog.getByRole('spinbutton')).toHaveCount(0);
+  await dialog.getByRole('button', { name: /^中/ }).click();
   await expect(dialog).toHaveCount(0);
   await expect
     .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetWidth)))
@@ -236,9 +236,7 @@ test('keeps options out of the layout and persists pointer and numeric conversat
     .toBe(420);
   await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
   await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).click();
-  await dialog.getByLabel('宽度', { exact: true }).fill('420');
-  await dialog.getByLabel('高度', { exact: true }).fill('360');
-  await dialog.getByRole('button', { name: '保存尺寸', exact: true }).click();
+  await dialog.getByRole('button', { name: /^緊湊/ }).click();
   await wrapper.locator('.card-title').click();
   for (let index = 0; index < 4; index++) {
     await wrapper.getByLabel('添加分支问题', { exact: true }).click();

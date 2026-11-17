@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X, Terminal, Check, Square } from 'lucide-react';
+import { X, Terminal, Check, Square, FolderOpen, Unplug } from 'lucide-react';
+import { FolderPicker } from './FolderPicker';
 import { useApi } from './api';
 import { MessageText } from './MessageText';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
@@ -64,7 +65,7 @@ export function LocalDialog({
 
   const [state, setState] = useState<LocalState | null>(null);
   const [root, setRoot] = useState('');
-  const [enabled, setEnabled] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'codex' | 'manual' | 'integrations'>('codex');
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
@@ -95,7 +96,6 @@ export function LocalDialog({
         setState(next);
         if (initial) {
           setRoot(next.root);
-          setEnabled(next.enabled);
         }
         setSelectedId((previous) => previous || next.tasks[0]?.id || '');
       } catch (e) {
@@ -153,7 +153,6 @@ export function LocalDialog({
         <button className="modal-close" aria-label="關閉本地任務" onClick={onClose}>
           <X size={18} />
         </button>
-        <span className="overline">LOCAL WORKSPACE</span>
         <h2 id="local-title">
           <Terminal size={22} /> 本地任務
         </h2>
@@ -172,31 +171,63 @@ export function LocalDialog({
         ) : (
           <>
             <div className="runtime-settings">
-              <label>
-                專案完整路徑
+              <div className="folder-field">
+                <FolderOpen size={16} />
+                <code title={state?.root}>
+                  {state?.enabled && state.root ? state.root : '尚未連接專案'}
+                </code>
+                <button
+                  type="button"
+                  disabled={working || state?.busy}
+                  aria-expanded={picking}
+                  onClick={() => setPicking((open) => !open)}
+                >
+                  選擇資料夾
+                </button>
+                {state?.enabled && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="中斷專案"
+                    title="中斷專案"
+                    disabled={working || state.busy}
+                    onClick={() =>
+                      void action(() =>
+                        api('/local/configure', { root: state.root, enabled: false }),
+                      )
+                    }
+                  >
+                    <Unplug size={15} />
+                  </button>
+                )}
+              </div>
+              {picking && (
+                <FolderPicker
+                  start={state?.root || ''}
+                  busy={working || !!state?.busy}
+                  onPick={(path) => {
+                    setPicking(false);
+                    void action(() => api('/local/configure', { root: path, enabled: true }));
+                  }}
+                />
+              )}
+              <details className="folder-manual">
+                <summary>手動輸入路徑</summary>
                 <input
                   aria-label="本地專案路徑"
                   value={root}
                   onChange={(e) => setRoot(e.target.value)}
                   readOnly={state?.busy}
-                  placeholder="例如 C:\Projects\my-app"
                 />
-              </label>
-              <label className="runtime-check">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  disabled={state?.busy}
-                />
-                啟用這個專案
-              </label>
-              <button
-                disabled={working || state?.busy}
-                onClick={() => void action(() => api('/local/configure', { root, enabled }))}
-              >
-                保存專案設定
-              </button>
+                <button
+                  disabled={working || state?.busy || !root.trim()}
+                  onClick={() =>
+                    void action(() => api('/local/configure', { root, enabled: true }))
+                  }
+                >
+                  使用此路徑
+                </button>
+              </details>
             </div>
             <div className="runtime-tabs" role="tablist" aria-label="本地任務模式">
               <button role="tab" aria-selected={tab === 'codex'} onClick={() => setTab('codex')}>

@@ -2129,3 +2129,100 @@ small {
     display: none;
   }
 }
+.folder-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-field code,
+.folder-picker-bar code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.folder-picker {
+  border: 1px solid #dce6d1;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.folder-picker-bar,
+.folder-picker-recent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.folder-picker-recent button {
+  padding: 3px 9px;
+  border: 1px solid #dce6d1;
+  border-radius: 12px;
+  background: none;
+  font-size: 11px;
+}
+.folder-picker-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.folder-picker-list button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+}
+.folder-picker-list button:hover {
+  background: #f1f5ea;
+}
+.folder-picker-empty {
+  padding: 8px;
+  font-size: 11px;
+  color: #a2ad93;
+}
+.folder-manual {
+  margin-top: 8px;
+  font-size: 11px;
+}
+.folder-manual input {
+  margin: 6px 0;
+}
+.env-choices {
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+}
+.size-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.size-presets button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid #dce6d1;
+  border-radius: 8px;
+  background: none;
+}
+.size-presets button[aria-pressed='true'] {
+  border-color: #2f66b3;
+}
+.size-presets small {
+  font-size: 9px;
+  color: #a2ad93;
+}

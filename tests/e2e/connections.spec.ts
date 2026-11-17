@@ -78,8 +78,10 @@ test('adds an online service with plain fields, completes real OAuth consent and
     const dialog = page.getByRole('dialog', { name: '连接', exact: true });
     await expect(dialog.getByText(/JSON/)).toHaveCount(0);
     await dialog.getByText('添加其他服务', { exact: true }).click();
-    const name = dialog.getByLabel('服务名称', { exact: true });
-    await name.fill('测试知识库');
+    // Only the address is asked for; the service is named after its host.
+    await expect(dialog.getByLabel('服务名称', { exact: true })).toHaveCount(0);
+    const service = new URL(fixture.url).hostname;
+    const name = dialog.getByLabel('连接地址', { exact: true });
     await name.focus();
     await name.evaluate((element) => Reflect.set(window, 'connectionNameInput', element));
     await page.waitForResponse(
@@ -93,11 +95,11 @@ test('adds an online service with plain fields, completes real OAuth consent and
     ).toBe(true);
     await dialog.getByLabel('连接地址', { exact: true }).fill(fixture.url);
     await dialog.getByRole('button', { name: '添加并连接', exact: true }).click();
-    const card = dialog.getByRole('region', { name: '测试知识库, 连接', exact: true });
-    const link = card.getByRole('link', { name: '前往 测试知识库, 授权' });
+    const card = dialog.getByRole('region', { name: service + ' 连接', exact: true });
+    const link = card.getByRole('link', { name: '前往 ' + service + ' 授权' });
     await expect(link).toBeVisible();
     const state = await (await request.get('/api/connections')).json();
-    id = state.services.find((entry: { name: string }) => entry.name === '测试知识库,')?.id;
+    id = state.services.find((entry: { name: string }) => entry.name === service)?.id;
     const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()]);
     await expect(popup.getByRole('heading', { name: '测试网页登录' })).toBeVisible();
     await popup.getByRole('link', { name: '允许这次测试登录' }).click();
@@ -108,7 +110,7 @@ test('adds an online service with plain fields, completes real OAuth consent and
     await page.getByRole('button', { name: '连接账号与服务' }).click();
     await expect(
       page
-        .getByRole('region', { name: '测试知识库, 连接', exact: true })
+        .getByRole('region', { name: service + ' 连接', exact: true })
         .getByText('已连接', { exact: true }),
     ).toBeVisible();
   } finally {

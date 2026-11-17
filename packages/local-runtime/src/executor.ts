@@ -3,6 +3,7 @@ import { isUtf8 } from 'node:buffer';
 import { spawn } from 'node:child_process';
 import { promises as fs, constants } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { homedir } from 'node:os';
 import { z } from 'zod';
 import { zipSync } from 'fflate';
 import { McpManager } from './mcp';
@@ -406,7 +407,88 @@ export class LocalExecutor {
     return zipSync(files);
   }
   integrations() {
-    return { mcp: this.mcp.status(), desktop: this.desktop.status() };
+    return {
+      mcp: this.mcp.status(),
+      desktop: this.desktop.status(),
+      // Names only, so secrets can be picked from a list instead of typed.
+      env_names: Object.keys(process.env)
+        .filter((name) => /^MCP_[A-Z0-9_]{1,80}$/.test(name))
+        .sort(),
+    };
+  }
+  private recentPath() {
+    return join(this.directory, 'recent-projects.json');
+  }
+  private async recentProjects() {
+    try {
+      return z
+        .array(z.string().max(2000))
+        .max(8)
+        .parse(JSON.parse(await fs.readFile(this.recentPath(), 'utf8')));
+    } catch {
+      return [];
+    }
+  }
+  private blockedFolder(path: string) {
+    return this.protectedRoots.some(
+      (root) => resolve(path) === resolve(root) || this.inside(root, path),
+    );
+  }
+  // Lets the owner pick a project by browsing instead of typing a path. Only
+  // folder names are returned: no files, no contents, never the app's own data.
+  async browseFolders(path?: string) {
+    const home = homedir();
+    let current: string;
+    try {
+      current = await fs.realpath(path && isAbsolute(path) && !path.includes('\0') ? path : home);
+      if (!(await fs.stat(current)).isDirectory()) throw new Error('not a directory');
+    } catch {
+      throw fail('local_folder_missing', '找不到這個資料夾。', 404);
+    }
+    if (this.blockedFolder(current))
+      throw fail('local_root_invalid', '不能選擇應用資料或登入目錄。');
+    let entries: import('node:fs').Dirent[] = [];
+    let readable = true;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      readable = false;
+    }
+    const folders = entries
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+      .map((entry) => ({ name: entry.name, path: join(current, entry.name) }))
+      .filter((entry) => !this.blockedFolder(entry.path))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 500);
+    const parent = dirname(current);
+    const roots: string[] = [];
+    if (process.platform === 'win32') {
+      for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZAB') {
+        try {
+          await fs.access(`${letter}:\\`);
+          roots.push(`${letter}:\\`);
+        } catch {
+          /* drive not present */
+        }
+      }
+    } else roots.push('/');
+    const recent: string[] = [];
+    for (const entry of await this.recentProjects()) {
+      try {
+        if ((await fs.stat(entry)).isDirectory() && !this.blockedFolder(entry)) recent.push(entry);
+      } catch {
+        /* no longer there */
+      }
+    }
+    return {
+      path: current,
+      parent: parent !== current && !this.blockedFolder(parent) ? parent : null,
+      home,
+      roots,
+      recent,
+      readable,
+      folders,
+    };
   }
   connections() {
     return { github: this.github.status(), services: this.mcp.connections() };
@@ -457,6 +539,11 @@ export class LocalExecutor {
       const next = { enabled, root };
       await this.writeJson(join(this.directory, 'settings.json'), next);
       this.settings = next;
+      if (enabled && root)
+        await this.writeJson(
+          this.recentPath(),
+          [root, ...(await this.recentProjects()).filter((entry) => entry !== root)].slice(0, 8),
+        );
       return { ...this.summary(), busy: false };
     } finally {
       this.configuring = false;
