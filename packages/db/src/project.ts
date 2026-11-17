@@ -3,6 +3,7 @@ import {
   DomainError,
   ExternalOriginSchema,
   ConversationSummarySchema,
+  NoteMetadataSchema,
   ReferenceMetadataSchema,
   MAX_PROJECT_BYTES,
   ProjectFileSchema,
@@ -134,14 +135,16 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
         // conversation it summarizes.
         (ctx.conversation_id !== turn.conversation_id &&
           !(
-            ctx.id.startsWith('summary-') &&
+            (ctx.id.startsWith('summary-') || ctx.id.startsWith('brainstorm-')) &&
             conversations.has(ctx.conversation_id) &&
-            s.blocks.every(
-              (b) =>
-                b.turn_id !== turn.id ||
-                ConversationSummarySchema.safeParse(b.structured_data?.summary).data
-                  ?.conversation_id === ctx.conversation_id,
-            )
+            // A summary's block must name the conversation it summarizes.
+            (ctx.id.startsWith('brainstorm-') ||
+              s.blocks.every(
+                (b) =>
+                  b.turn_id !== turn.id ||
+                  ConversationSummarySchema.safeParse(b.structured_data?.summary).data
+                    ?.conversation_id === ctx.conversation_id,
+              ))
           )) ||
         ctx.target_turn_id !== turn.id ||
         ctx.status !== 'used'
@@ -180,6 +183,19 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
         summary.data.source_block_ids.some((id) => !blocks.has(id))
       )
         invalid('对话摘要的来源记录无效。');
+    }
+    if (b.structured_data?.note) {
+      const note = NoteMetadataSchema.safeParse(b.structured_data.note);
+      if (
+        !note.success ||
+        !b.turn_id ||
+        turns.get(b.turn_id)?.actor !== 'human' ||
+        b.text_content === null ||
+        (note.data.idea &&
+          (turns.get(note.data.idea.brainstorm_turn_id)?.actor !== 'assistant' ||
+            !s.nodes.some((n) => n.id === note.data.idea!.source_node_id)))
+      )
+        invalid('筆記的內容或來源記錄無效。');
     }
     if (b.structured_data?.external_origin) {
       const origin = ExternalOriginSchema.safeParse(b.structured_data.external_origin);
@@ -250,7 +266,10 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
         !turn ||
         (source.ref_type === 'conversation'
           ? source.ref_id !== turn.conversation_id
-          : source.ref_type !== 'turn' || source.ref_id !== turn.id)
+          : source.ref_type !== 'turn' ||
+            // An edited note's card moves to its newest version in the same conversation.
+            (source.ref_id !== turn.id &&
+              turns.get(source.ref_id)?.conversation_id !== turn.conversation_id))
       )
         invalid('摘录连线与来源消息不一致。');
     }

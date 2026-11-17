@@ -761,3 +761,60 @@
   color: var(--muted-ink);
   font-size: 12px;
 }
+/* Notes: the person's own clues, coloured by hand. */
+.canvas-first .canvas-card.note {
+  background: var(--note-bg);
+  color: var(--note-ink);
+  border-style: solid;
+}
+.canvas-first .canvas-card.note .card-title,
+.canvas-first .note-panel .message-text {
+  color: var(--note-ink);
+}
+.canvas-first .note-plain {
+  --note-bg: var(--input-surface);
+  --note-ink: var(--ink);
+}
+.canvas-first .note-yellow {
+  --note-bg: #fbf3d1;
+  --note-ink: #4d4632;
+}
+.canvas-first .note-green {
+  --note-bg: #e3f2df;
+  --note-ink: #33493a;
+}
+.canvas-first .note-blue {
+  --note-bg: #e1ecfa;
+  --note-ink: #2f4462;
+}
+.canvas-first .note-pink {
+  --note-bg: #fae3ea;
+  --note-ink: #5a3341;
+}
+.canvas-first .note-purple {
+  --note-bg: #ece5f8;
+  --note-ink: #42355c;
+}
+.canvas-first .canvas-card.note.idea {
+  border-style: dashed;
+}
+.canvas-first .note-panel {
+  background: transparent;
+}
+.canvas-first .note-panel .reference-scroll {
+  max-height: 340px;
+}
+.canvas-first[data-canvas-style='ink'] .canvas-card.note {
+  filter: brightness(0.86) saturate(0.9);
+}
+.canvas-first .canvas-card.link-target {
+  cursor: crosshair;
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+}
+/* A note's first line is its body; the header keeps the name only for screen readers. */
+.canvas-first .canvas-card.note .card-title.note-title {
+  color: transparent;
+  overflow: hidden;
+  white-space: nowrap;
+}

@@ -17,6 +17,7 @@ import {
   Palette,
   MoreHorizontal,
   FilePlus2,
+  StickyNote,
 } from 'lucide-react';
 import {
   DEFAULT_BUDGET,
@@ -26,8 +27,12 @@ import {
   type Excerpt,
   type Conversation,
   UNTITLED_CONVERSATION,
+  noteBlock,
+  noteMetadata,
 } from '@acc/domain';
 import { ReferenceDialog } from './ReferenceDialog';
+import { NoteDialog } from './NoteDialog';
+import { BrainstormDialog } from './BrainstormDialog';
 import { useApi, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
@@ -163,6 +168,12 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const [pendingDelete, setPendingDelete] = useState<CanvasNode | null>(null);
   const [cardActionBusy, setCardActionBusy] = useState(false);
   const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [noteDialog, setNoteDialog] = useState<{
+    position?: { x: number; y: number };
+    edit?: CanvasNode;
+  } | null>(null);
+  const [brainstormNode, setBrainstormNode] = useState<CanvasNode | null>(null);
+  const [reveal, setReveal] = useState<{ ids: string[]; tick: number } | null>(null);
   const [lastDeleted, setLastDeleted] = useState<{
     id: string;
     title: string;
@@ -421,7 +432,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     if (!state) return;
     const b = state.blocks.find((b) => b.id === e.source_block_id);
     const t = state.turns.find((t) => t.id === b?.turn_id);
-    const n = sourceNodeForTurn(state.nodes, t);
+    const n = sourceNodeForTurn(state.nodes, t, state.turns);
     if (n) {
       if (n.visibility === 'hidden') {
         setTrashTarget({
@@ -465,7 +476,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           const origin = navigation.origin;
           const block = fresh.blocks.find((b) => b.id === origin.source_block_id);
           const turn = fresh.turns.find((t) => t.id === block?.turn_id);
-          const node = sourceNodeForTurn(fresh.nodes, turn);
+          const node = sourceNodeForTurn(fresh.nodes, turn, fresh.turns);
           if (
             fresh.workspace.id !== origin.workspace_id ||
             !node ||
@@ -524,6 +535,65 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   };
   // Summaries spend model quota, so they are only made on request. A current
   // preview is recompiled afterwards so the inspector shows the real effect.
+  // New notes land in the middle of the current view unless a point was chosen.
+  const viewCenter = () => {
+    const view = localViewport.current ?? state?.workspace.settings.viewport;
+    if (!view) return undefined;
+    return {
+      x: Math.round((window.innerWidth / 2 - view.x) / view.zoom - 150),
+      y: Math.round((window.innerHeight / 2 - view.y) / view.zoom - 110),
+    };
+  };
+  const saveNote = async (text: string, color: string) => {
+    try {
+      if (noteDialog?.edit) {
+        await api('/notes/' + encodeURIComponent(noteDialog.edit.id), { text, color }, 'PUT');
+        await refresh();
+      } else {
+        const result = await api<{ node: CanvasNode }>('/notes', {
+          request_id: crypto.randomUUID(),
+          text,
+          color,
+          position: noteDialog?.position ?? viewCenter(),
+        });
+        await refresh();
+        moveTo(result.node.id);
+      }
+      setNoteDialog(null);
+    } catch (e) {
+      fail(e);
+    }
+  };
+  // Asking from a note or reference opens a new conversation with it as context.
+  const askAbout = (node: CanvasNode) =>
+    void api<{ node: CanvasNode }>('/conversations', {
+      title: ('關於 ' + node.title).slice(0, 160),
+      position: { x: node.x + 480, y: node.y },
+    })
+      .then(async (result) => {
+        await refresh();
+        setSelected([node.id]);
+        // An idea card already holds the question to ask next.
+        const idea = noteMetadata(noteBlock(state!, node))?.idea;
+        if (idea) setPrompts((previous) => ({ ...previous, [result.node.ref_id]: idea.prompt }));
+        openOnCanvas(result.node);
+      })
+      .catch(fail);
+  const brainstormSelection = async (selection: SelectedText) => {
+    try {
+      const result = await api<{ node: CanvasNode }>('/excerpts', {
+        source_block_id: selection.block.id,
+        source_content_hash: selection.block.content_hash,
+        selector: selection.selector,
+        branch: false,
+      });
+      await refresh();
+      window.getSelection()?.removeAllRanges();
+      setBrainstormNode(result.node);
+    } catch (e) {
+      fail(e);
+    }
+  };
   const summarize = async (targetConversation: string) => {
     if (summarizing) return;
     setSummarizing(targetConversation);
@@ -887,6 +957,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             activeNode={activeId}
             selected={selected}
             locate={locate}
+            reveal={reveal}
             tool={tool}
             traceEpoch={traceEpoch}
             onTraceCount={setTraceCount}
@@ -899,6 +970,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               setRenameTitle(node.title);
             }}
             onSummarize={(node) => void summarize(node.ref_id)}
+            onNoteAt={(position) => setNoteDialog({ position })}
+            onEditNote={(node) => setNoteDialog({ edit: node })}
+            onAskNote={askAbout}
+            onBrainstorm={setBrainstormNode}
+            onGraphChanged={async () => {
+              await refresh();
+              invalidate();
+            }}
             summarizing={summarizing}
             onBranch={(node) => {
               const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
@@ -1004,24 +1083,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
                 onSend={() => void generate(node.ref_id)}
                 onSendDirect={() => void generate(node.ref_id, undefined, true)}
                 onExcerpt={(s, b) => void excerpt(s, b)}
+                onBrainstormSelection={(s) => void brainstormSelection(s)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
                 onReference={canvas.onReference}
                 onExternalSource={canvas.onSourceJump}
                 referenceSelected={selected.includes(node.id)}
                 onSelectReference={() => select(node.id)}
-                onAskReference={() => {
-                  void api<{ node: CanvasNode }>('/conversations', {
-                    title: ('關於 ' + node.title).slice(0, 160),
-                    position: { x: node.x + 480, y: node.y },
-                  })
-                    .then(async (result) => {
-                      await refresh();
-                      setSelected([node.id]);
-                      openOnCanvas(result.node);
-                    })
-                    .catch(fail);
-                }}
+                onAskReference={() => askAbout(node)}
                 onInspect={(pkg) => {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
@@ -1075,6 +1144,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
         >
           <Plus size={18} />
           <span className="sr-only">提問</span>
+        </button>
+        <button aria-label="新增筆記" title="新增筆記" onClick={() => setNoteDialog({})}>
+          <StickyNote size={18} />
         </button>
         <span className="tool-divider" />
         <button
@@ -1357,6 +1429,32 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <X size={16} />
           </button>
         </div>
+      )}
+      {noteDialog && (
+        <NoteDialog
+          editing={!!noteDialog.edit}
+          initial={(() => {
+            const block = noteDialog.edit && noteBlock(state, noteDialog.edit);
+            const meta = noteMetadata(block);
+            return block && meta
+              ? { text: block.text_content ?? '', color: meta.color }
+              : undefined;
+          })()}
+          onSave={saveNote}
+          onClose={() => setNoteDialog(null)}
+        />
+      )}
+      {brainstormNode && (
+        <BrainstormDialog
+          node={brainstormNode}
+          onClose={() => setBrainstormNode(null)}
+          onAccepted={async (nodes) => {
+            await refresh();
+            setBrainstormNode(null);
+            setActiveId(null);
+            setReveal({ ids: [brainstormNode.id, ...nodes.map((n) => n.id)], tick: Date.now() });
+          }}
+        />
       )}
       {referenceDialog && (
         <ReferenceDialog

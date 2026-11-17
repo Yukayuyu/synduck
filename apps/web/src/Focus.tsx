@@ -12,10 +12,13 @@ import {
   SlidersHorizontal,
   Plus,
   Minus,
+  Lightbulb,
 } from 'lucide-react';
 import {
   collectionSources,
   referenceBlock,
+  noteBlock,
+  noteMetadata,
   type CanvasNode,
   type ContentBlock,
   type ContextPackage,
@@ -64,6 +67,7 @@ interface Props {
   onSend: () => void;
   onSendDirect: () => void;
   onExcerpt: (selection: SelectedText, branch: boolean) => void;
+  onBrainstormSelection: (selection: SelectedText) => void;
   onBranch: (excerpt: Excerpt) => void;
   onSource: (excerpt: Excerpt) => void;
   onInspect: (pkg: ContextPackage) => void;
@@ -108,6 +112,7 @@ export function Focus(props: Props) {
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
   const reference = referenceBlock(state, node);
+  const note = noteBlock(state, node);
   const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
   const sources = excerpt ? collectionSources(state, excerpt) : [];
   const forks = state.conversations.filter(
@@ -268,6 +273,17 @@ export function Focus(props: Props) {
           <GitBranch size={14} />
           延伸提問
         </button>
+        <button
+          aria-label="從選取文字腦力激盪"
+          title="腦力激盪"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            props.onBrainstormSelection(selection);
+            setSelection(null);
+          }}
+        >
+          <Lightbulb size={14} />
+        </button>
         {props.collectingId && (
           <button
             onMouseDown={(e) => e.preventDefault()}
@@ -296,6 +312,36 @@ export function Focus(props: Props) {
         </button>
       </div>,
       document.body,
+    );
+  if (note)
+    return (
+      <section
+        className={`focus-panel note-panel note-${noteMetadata(note)?.color ?? 'plain'}`}
+        data-node-id={node.id}
+        aria-label="筆記"
+      >
+        <div ref={scrollRef} className="focus-content conversation-scroll reference-scroll">
+          <div
+            id={'block-' + note.id}
+            data-testid="content-block"
+            className="message-text"
+            onMouseUp={(event) => capture(event.currentTarget, note)}
+          >
+            <ReferenceText
+              block={note}
+              focused={!!highlight}
+              ranges={
+                highlight
+                  ? [{ start: highlight.start, end: highlight.end }]
+                  : state.excerpts
+                      .filter((e) => e.source_block_id === note.id)
+                      .map((e) => ({ start: e.selector.start_char, end: e.selector.end_char }))
+              }
+            />
+          </div>
+        </div>
+        {selectionToolbar}
+      </section>
     );
   if (reference)
     return (
