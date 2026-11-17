@@ -78,10 +78,12 @@ describe('context evaluation harness', () => {
       'branch-overrides-parent/flat': '2/2',
       'sibling-unknown/chain': '2/2',
       'sibling-unknown/flat': '2/2',
+      'general-knowledge/chain': '0/2',
+      'general-knowledge/flat': '0/2',
       'summary-recall/summary': '2/2',
       'summary-recall/truncated': '0/2',
     });
     expect(results.filter((r) => r.error).every((r) => r.error === 'model unavailable')).toBe(true);
-    expect(calls).toBe(21);
+    expect(calls).toBe(25);
   });
 });
