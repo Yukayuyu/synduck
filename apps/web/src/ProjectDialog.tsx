@@ -149,11 +149,8 @@ export function ProjectDialog({
         >
           <X size={18} />
         </button>
-        <span className="overline">YOUR WORK, YOUR COPY</span>
         <h2 id="project-title">备份与恢复</h2>
-        <p className="project-description">
-          保存整张思考地图，包括对话、摘录来源、画布位置和每轮上下文。文件包含原文，请妥善保管。
-        </p>
+        <p className="project-description">文件包含原文，请妥善保管。</p>
         {!candidate ? (
           <>
             <div className="project-actions">
@@ -168,7 +165,6 @@ export function ProjectDialog({
                 <Upload size={17} />
                 <span>
                   <strong>选择备份文件</strong>
-                  <small>先校验，再确认导入</small>
                 </span>
                 <input
                   aria-label="选择项目备份文件"

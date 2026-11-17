@@ -38,15 +38,13 @@ test('creates and renames canvases, preserves separate drafts through switching/
   );
   await expect(page.locator('.react-flow__node')).toHaveCount(0);
   await page.getByRole('button', { name: '開始第一段對話', exact: true }).click();
-  await page.getByLabel('给这段对话起个名字').fill('只属于第二张');
-  await page.getByRole('button', { name: '创建对话', exact: true }).click();
   const secondInput = page.getByLabel('你的问题', { exact: true });
   await secondInput.fill('第二份独立草稿。');
   await switchTo(page, originalName);
   card = page.locator(`.react-flow__node[data-id="${root.node.id}"]`);
   const input = card.getByLabel('你的问题', { exact: true });
   await expect(input).toHaveValue('这是主画布的草稿，先保留。');
-  await expect(page.locator('.card-title').filter({ hasText: '只属于第二张' })).toHaveCount(0);
+  await expect(page.locator('.card-title').filter({ hasText: '新對話' })).toHaveCount(0);
   await input.focus();
   await input.evaluate((element) => Reflect.set(window, 'multiCanvasEditor', element));
   await input.press('Comma');
@@ -68,7 +66,7 @@ test('creates and renames canvases, preserves separate drafts through switching/
   await page.getByRole('button', { name: '對話', exact: true }).click();
   await page
     .getByRole('navigation', { name: '对话列表' })
-    .getByRole('button', { name: '只属于第二张', exact: true })
+    .getByRole('button', { name: '新對話', exact: true })
     .click();
   await expect(page.getByLabel('你的问题', { exact: true })).toHaveValue('第二份独立草稿。');
   await manage(page);

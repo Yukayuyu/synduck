@@ -14,6 +14,15 @@ import {
   type Turn,
   SummarizeRequestSchema,
   SUMMARY_PROMPT,
+  CreateNoteSchema,
+  EditNoteSchema,
+  CreateLinkSchema,
+  UpdateLinkSchema,
+  BrainstormRequestSchema,
+  AcceptIdeasSchema,
+  brainstormPrompt,
+  sourceNodeForTurn,
+  type CanvasNode,
 } from '@acc/domain';
 import {
   Store,
@@ -112,6 +121,26 @@ export function createApp(
     app.post('/api/models/codex/logout', async () => {
       idle();
       return models.codex.logout();
+    });
+    app.get('/api/models/claude', async (_request, reply) =>
+      reply
+        .header('Cache-Control', 'no-store')
+        .send({ ...models.claude.status(), ...(await models.claude.listModels()) }),
+    );
+    app.post('/api/models/claude/connect', async (request) => {
+      idle();
+      const { api_key } = z
+        .object({ api_key: z.string().min(1).max(512) })
+        .strict()
+        .parse(request.body);
+      return models.claude.connect(api_key);
+    });
+    app.post('/api/models/claude/disconnect', async () => {
+      idle();
+      const status = models.claude.disconnect();
+      // Without a key the mode cannot answer; fall back to the offline demo.
+      if (models.name === 'claude' && !status.connected) await models.select('demo');
+      return status;
     });
     app.post('/api/models/select', async (request) => {
       idle();
@@ -407,6 +436,116 @@ export function createApp(
       reply.raw.end();
     }
   };
+  app.post('/api/notes', async (request) => store.createNote(CreateNoteSchema.parse(request.body)));
+  app.put('/api/notes/:id', async (request) =>
+    store.editNote(
+      z.object({ id: Id }).parse(request.params).id,
+      EditNoteSchema.parse(request.body),
+    ),
+  );
+  app.post('/api/links', async (request) => store.createLink(CreateLinkSchema.parse(request.body)));
+  app.patch('/api/links/:id', async (request) =>
+    store.updateLink(
+      z.object({ id: Id }).parse(request.params).id,
+      UpdateLinkSchema.parse(request.body),
+    ),
+  );
+  app.delete('/api/links/:id', async (request) =>
+    store.deleteLink(z.object({ id: Id }).parse(request.params).id),
+  );
+  // Brainstorming proposes directions from one card. Nothing is added to the canvas
+  // until the person accepts the ideas they want.
+  app.post('/api/brainstorm', async (request) => {
+    const input = BrainstormRequestSchema.parse(request.body);
+    const { turn, pkg } = store.transaction(() => {
+      const s = store.snapshot();
+      const node = s.nodes.find((n) => n.id === input.node_id);
+      if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
+      if (node.visibility === 'hidden')
+        throw new DomainError('deleted_node', '請先從回收桶還原卡片。', 409);
+      // An excerpt is brainstormed with its source conversation as background.
+      let current: CanvasNode = node;
+      let selected: string[] = [];
+      let conversationId: string | undefined;
+      if (node.ref_type === 'conversation') conversationId = node.ref_id;
+      else if (node.ref_type === 'turn')
+        conversationId = s.turns.find((t) => t.id === node.ref_id)?.conversation_id;
+      else {
+        const excerpt = s.excerpts.find((e) => e.id === node.ref_id);
+        const block = s.blocks.find((b) => b.id === excerpt?.source_block_id);
+        const sourceTurn = s.turns.find((t) => t.id === block?.turn_id);
+        const visible = s.nodes.filter((n) => n.visibility !== 'hidden');
+        const owner = sourceNodeForTurn(visible, sourceTurn, s.turns);
+        if (owner) {
+          current = owner;
+          selected = [node.id];
+        }
+        conversationId = sourceTurn?.conversation_id;
+      }
+      if (!conversationId) throw new DomainError('missing_source', '找不到這張卡片的內容。', 404);
+      const set: ContextSet = {
+        id: `brainstorm-${input.request_id}`,
+        workspace_id: s.workspace.id,
+        conversation_id: conversationId,
+        target_turn_id: null,
+        current_node_id: current.id,
+        prompt_text: brainstormPrompt(input.count),
+        selected_node_ids: selected,
+        pinned_node_ids: s.workspace.settings.pinned_node_ids,
+        excluded_node_ids: s.workspace.settings.excluded_node_ids,
+        budget: {
+          max_input_tokens: 64000,
+          reserved_output_tokens: 8000,
+          target_context_tokens: 24000,
+        },
+        policy_version: 'context-policy-0.1',
+        graph_snapshot_version: s.workspace.revision,
+        status: 'compiled',
+        created_at: now(),
+      };
+      return store.beginBrainstorm(
+        set,
+        compileContext(s, set),
+        provider.name,
+        provider.model || 'unconfigured',
+      );
+    });
+    const controller = new AbortController();
+    const disconnected = () => controller.abort();
+    request.raw.once('aborted', disconnected);
+    try {
+      const answer = await provider.generate(pkg, undefined, controller.signal);
+      if (controller.signal.aborted)
+        throw new DomainError('generation_cancelled', '已停止腦力激盪。', 499);
+      const ideas = answer.suggested_graph_updates
+        .filter((proposal) => proposal.type === 'idea')
+        .slice(0, input.count);
+      if (!ideas.length)
+        throw new DomainError('brainstorm_empty', '模型沒有提出可用的方向，可再試一次。', 502);
+      store.finishAnswer(turn.id, { ...answer, suggested_graph_updates: ideas });
+      return {
+        turn_id: turn.id,
+        overview: answer.answer,
+        ideas: store.brainstormIdeas(turn.id).ideas,
+      };
+    } catch (error) {
+      store.failAnswer(
+        turn.id,
+        error instanceof DomainError ? error.message : '腦力激盪失敗，可重試。',
+      );
+      throw error instanceof DomainError
+        ? error
+        : new DomainError('generation_failed', '腦力激盪失敗，可重試。', 502);
+    } finally {
+      request.raw.off('aborted', disconnected);
+    }
+  });
+  app.post('/api/brainstorm/:id/accept', async (request) => ({
+    nodes: store.acceptIdeas(
+      z.object({ id: Id }).parse(request.params).id,
+      AcceptIdeasSchema.parse(request.body),
+    ),
+  }));
   // Summaries are requested explicitly: they spend model quota and later stand in
   // for a conversation's older messages when those no longer fit a budget.
   app.post('/api/summaries', async (request) => {

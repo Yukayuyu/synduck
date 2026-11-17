@@ -48,7 +48,7 @@ export function LocalControl({ onOpen }: { onOpen: () => void }) {
     >
       <Terminal size={18} />
       {ready && (
-        <span className="local-status-label">
+        <span className="local-status-label sr-only">
           {!ready.available ? '本机工具未开启' : ready.enabled ? '專案已連接' : '待授權專案'}
         </span>
       )}

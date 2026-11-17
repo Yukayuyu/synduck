@@ -147,5 +147,6 @@ try {
   throw error;
 } finally {
   await stop();
-  await fs.rm(home, { recursive: true, force: true });
+  // Helper processes of the stopped launcher can still be writing for a moment.
+  await fs.rm(home, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
 }

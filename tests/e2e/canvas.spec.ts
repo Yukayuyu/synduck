@@ -5,8 +5,6 @@ test('select text, branch, inspect and exclude context, then persist through rel
 }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '新建对话', exact: true }).last().click();
-  await page.getByLabel('给这段对话起个名字').fill(`浏览器验收 ${Date.now()}`);
-  await page.getByRole('button', { name: '创建对话' }).click();
   await page.getByLabel('你的问题', { exact: true }).fill('如何让上下文更清晰？');
   await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).click();

@@ -23,6 +23,25 @@ Domain entities and provenance are the source of truth.
 11. Do not introduce multi-agent orchestration without an approved issue.
 12. Do not introduce a dedicated Graph DB without benchmark evidence.
 
+# Answer behaviour (model-facing prompts)
+
+The model should answer as it would natively, sharpened by the thread, not boxed in by it.
+
+1. Context informs; it does not restrict. Never instruct the model to answer "only from
+   the supplied context". Provenance stays honest through used_source_ids, not by
+   withholding the model's own knowledge.
+2. One shared answer instruction lives in `packages/domain` (`CONTEXT_ANSWER_INSTRUCTIONS`).
+   Providers may add tool rules, but must not add instructions that narrow it.
+3. Product or tool notes appear only where they apply (`ANSWER_INSTRUCTIONS` for answers
+   without tools), kept to a few sentences.
+4. The input reads like a conversation: background in chain order, the question last.
+5. Ask for answers specific to the thread: build on what was settled, take the angle the
+   thread makes possible, attribute viewpoints to their threads, and challenge earlier
+   answers when there is reason to.
+6. Any change to these prompts or to `modelInput` is checked with `pnpm eval:context`
+   against a real model before release, and the result is recorded in `docs/progress.md`.
+   See `docs/answer-behavior.md`.
+
 # MVP non-goals
 
 - multiplayer collaboration

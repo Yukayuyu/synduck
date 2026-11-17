@@ -120,7 +120,6 @@ export function UpdateControl({ canInstall }: { canInstall: boolean }) {
             >
               <X size={18} />
             </button>
-            <span className="overline">APP UPDATES</span>
             <h2 id="update-title">版本與更新</h2>
             <p>
               目前版本 {state?.current_version || '…'}
@@ -172,9 +171,6 @@ export function UpdateControl({ canInstall }: { canInstall: boolean }) {
               />
               自動下載新版，手動選擇安裝時間
             </label>
-            <p className="project-description">
-              啟動器每 15 分鐘檢查發佈版本。通知不會重載頁面或移動輸入焦點。
-            </p>
             <div className="runtime-buttons">
               <button disabled={working || installing} onClick={() => void action('check')}>
                 立即檢查更新

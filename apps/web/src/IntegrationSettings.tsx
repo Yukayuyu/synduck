@@ -13,7 +13,10 @@ export type Integrations = {
     tools: { name: string; description?: string; inputSchema: unknown }[];
   })[];
   desktop: { enabled: boolean; window_id: string; available: boolean; reason: string };
+  env_names?: string[];
 };
+// Common ways to start a local MCP program; anything else is entered as a path.
+const launchers = ['npx', 'node', 'uvx', 'python', 'python3', 'docker'];
 export function IntegrationSettings({
   integrations,
   busy,
@@ -30,6 +33,8 @@ export function IntegrationSettings({
   const [servers, setServers] = useState<McpServer[]>(() =>
     integrations.mcp.map(({ connected: _, tools: __, ...server }) => server),
   );
+  const envNames = integrations.env_names ?? [];
+  const [custom, setCustom] = useState<Record<string, boolean>>({});
   const [windows, setWindows] = useState<DesktopWindow[]>([]);
   const [windowId, setWindowId] = useState(integrations.desktop.window_id);
   const [enabled, setEnabled] = useState(integrations.desktop.enabled);
@@ -118,14 +123,40 @@ export function IntegrationSettings({
                 <>
                   <label>
                     啟動程式
-                    <input
-                      aria-label={'MCP 啟動程式 ' + (index + 1)}
-                      value={server.command}
+                    <select
+                      aria-label={'MCP 啟動方式 ' + (index + 1)}
+                      value={
+                        custom[server.id] || !launchers.includes(server.command)
+                          ? 'custom'
+                          : server.command
+                      }
                       disabled={busy}
-                      onChange={(e) => patch(index, { command: e.target.value })}
-                      placeholder="npx"
-                    />
+                      onChange={(e) => {
+                        const choice = e.target.value;
+                        setCustom((previous) => ({
+                          ...previous,
+                          [server.id]: choice === 'custom',
+                        }));
+                        if (choice !== 'custom') patch(index, { command: choice });
+                      }}
+                    >
+                      {launchers.map((name) => (
+                        <option key={name}>{name}</option>
+                      ))}
+                      <option value="custom">其他程式…</option>
+                    </select>
                   </label>
+                  {(custom[server.id] || !launchers.includes(server.command)) && (
+                    <label>
+                      程式路徑
+                      <input
+                        aria-label={'MCP 啟動程式 ' + (index + 1)}
+                        value={server.command}
+                        disabled={busy}
+                        onChange={(e) => patch(index, { command: e.target.value })}
+                      />
+                    </label>
+                  )}
                   <label>
                     启动选项（每行一项）
                     <textarea
@@ -135,22 +166,29 @@ export function IntegrationSettings({
                       onChange={(e) => patch(index, { args: e.target.value.split('\n') })}
                     />
                   </label>
-                  <label>
-                    環境變數名稱（逗號分隔）
-                    <input
-                      value={server.env_keys.join(', ')}
-                      disabled={busy}
-                      onChange={(e) =>
-                        patch(index, {
-                          env_keys: e.target.value
-                            .split(',')
-                            .map((value) => value.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                      placeholder="MCP_SERVICE_TOKEN"
-                    />
-                  </label>
+                  <fieldset className="env-choices">
+                    <legend>傳入的後端變數</legend>
+                    {[...new Set([...envNames, ...server.env_keys])].map((name) => (
+                      <label key={name} className="runtime-check">
+                        <input
+                          type="checkbox"
+                          checked={server.env_keys.includes(name)}
+                          disabled={busy}
+                          onChange={(e) =>
+                            patch(index, {
+                              env_keys: e.target.checked
+                                ? [...server.env_keys, name]
+                                : server.env_keys.filter((key) => key !== name),
+                            })
+                          }
+                        />
+                        {name}
+                      </label>
+                    ))}
+                    {envNames.length + server.env_keys.length === 0 && (
+                      <small>後端 .env 沒有 MCP_ 開頭的變數</small>
+                    )}
+                  </fieldset>
                 </>
               ) : (
                 <>
@@ -165,13 +203,20 @@ export function IntegrationSettings({
                     />
                   </label>
                   <label>
-                    Bearer token 的後端變數名称
-                    <input
+                    存取權杖（後端變數）
+                    <select
+                      aria-label={'MCP 權杖變數 ' + (index + 1)}
                       value={server.token_env || ''}
                       disabled={busy}
                       onChange={(e) => patch(index, { token_env: e.target.value || undefined })}
-                      placeholder="MCP_SERVICE_TOKEN"
-                    />
+                    >
+                      <option value="">不使用</option>
+                      {[
+                        ...new Set([...envNames, ...(server.token_env ? [server.token_env] : [])]),
+                      ].map((name) => (
+                        <option key={name}>{name}</option>
+                      ))}
+                    </select>
                   </label>
                 </>
               )}
@@ -255,8 +300,7 @@ export function IntegrationSettings({
         ) : (
           <>
             <p className="quiet-note">
-              選擇後端 Windows
-              的應用視窗。每次觀察與操作需確認，操作時會切換到該視窗。重新啟動後須重新啟用。
+              每次觀察與操作需確認，操作時會切換到該視窗。重新啟動後須重新選擇。
             </p>
             <button
               disabled={working || busy}
@@ -457,7 +501,6 @@ export function ManualIntegrations({
               </label>
               {frame && (
                 <>
-                  <p className="quiet-note">點選圖片設定座標；這不會立即操作桌面。</p>
                   <FrameImage
                     task={task!.id}
                     image={frame}
@@ -526,14 +569,21 @@ export function ManualIntegrations({
               )}
               {operation === 'scroll' && (
                 <label>
-                  捲動量
-                  <input
-                    type="number"
-                    min={-5}
-                    max={5}
-                    value={delta}
-                    onChange={(e) => setDelta(Number(e.target.value))}
-                  />
+                  捲動
+                  <select value={delta} onChange={(e) => setDelta(Number(e.target.value))}>
+                    {[
+                      [5, '向上 · 多'],
+                      [3, '向上'],
+                      [1, '向上 · 少'],
+                      [-1, '向下 · 少'],
+                      [-3, '向下'],
+                      [-5, '向下 · 多'],
+                    ].map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               )}
             </>

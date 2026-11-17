@@ -1,7 +1,7 @@
 {
   "name": "ai-context-canvas",
   "private": true,
-  "version": "0.15.0",
+  "version": "0.16.0",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "engines": {
@@ -47,6 +47,7 @@
     "zod": "4.6.5"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@modelcontextprotocol/sdk": "1.32.1",
     "@openai/codex": "0.160.0"
   },

@@ -271,6 +271,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     (n) => n.ref_type === 'excerpt' && n.ref_id === conversation?.branch_origin_excerpt_id,
   );
   if (origin) add(origin.id, 'branch_origin');
+  const links = new Map<string, NonNullable<ContextItem['link']>>();
   const forkSources = new Map<string, Set<string>>();
   if (conversation?.fork_origin) {
     for (const blockId of conversation.fork_origin.source_block_ids) {
@@ -316,13 +317,15 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       nodeById.get(neighbor)?.ref_type === 'excerpt'
     )
       add(neighbor, 'related');
-    if (
-      neighbor &&
-      edge.edge_class === 'semantic' &&
-      edge.confirmed &&
-      ['supports', 'elaborates', 'related_to', 'depends_on'].includes(edge.type)
-    )
+    // Any confirmed relation brings the linked card in, labelled with how it relates.
+    if (neighbor && edge.edge_class === 'semantic' && edge.confirmed) {
       add(neighbor, 'related');
+      if (!links.has(neighbor))
+        links.set(neighbor, {
+          type: edge.type,
+          direction: edge.source_node_id === set.current_node_id ? 'from_current' : 'to_current',
+        });
+    }
     // Direction convention: the new source supersedes the old target.
     if (
       edge.edge_class === 'semantic' &&
@@ -429,6 +432,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
         source_block_id: block.id,
         node_id: nodeId,
         ...(sourceTurn ? { thread_id: sourceTurn.conversation_id } : {}),
+        ...(links.has(nodeId) ? { link: links.get(nodeId) } : {}),
         actor: sourceTurn?.actor ?? null,
         sequence: sourceTurn?.sequence ?? null,
         role,

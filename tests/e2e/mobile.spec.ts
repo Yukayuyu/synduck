@@ -8,9 +8,8 @@ test('phone layout supports conversation, context inspection, touch selection, p
   const tabs = page.getByRole('navigation', { name: '工作區分頁' });
   await expect(tabs).toBeVisible();
   await page.getByRole('button', { name: '新建对话', exact: true }).last().tap();
-  const title = `手機驗收 ${Date.now()}`;
-  await page.getByLabel('给这段对话起个名字').fill(title);
-  await page.getByRole('button', { name: '创建对话' }).tap();
+  // The conversation is named after its first question.
+  const title = '手機上的上下文';
   await page.getByLabel('你的问题', { exact: true }).fill('手機上的上下文');
   await page.getByLabel('提问选项', { exact: true }).click();
   await page.getByRole('button', { name: '预览上下文', exact: true }).tap();
@@ -120,6 +119,7 @@ test('device login UI polls official authorization status and selects Codex with
   );
   await page.goto('/');
   await page.getByRole('button', { name: '模型與登入', exact: true }).tap();
+  await page.getByLabel('回答模式').selectOption('codex');
   await page.getByText('最近一次 Codex 回答失敗的診斷', { exact: true }).click();
   await expect(page.getByText('codex_schema_rejected', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '使用 ChatGPT 帳號登入', exact: true }).tap();

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { mkdirSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { Store } from '@acc/db';
 import { ProviderRegistry } from '../../../packages/model-gateway/src/registry';
@@ -43,6 +43,16 @@ const local =
           resolve(dirname(process.env.DATABASE_PATH || './data/context-canvas.sqlite')),
           resolve(process.env.APP_CODEX_HOME || './data/codex'),
           resolve(dirname(process.env.MODEL_SETTINGS_PATH || './data/model-settings.json')),
+          resolve(
+            dirname(
+              process.env.CLAUDE_CREDENTIALS_PATH ||
+                join(
+                  dirname(process.env.MODEL_SETTINGS_PATH || './data/model-settings.json'),
+                  'claude',
+                  'credentials.json',
+                ),
+            ),
+          ),
         ],
       );
 await local?.initialize();

@@ -12,10 +12,13 @@ import {
   SlidersHorizontal,
   Plus,
   Minus,
+  Lightbulb,
 } from 'lucide-react';
 import {
   collectionSources,
   referenceBlock,
+  noteBlock,
+  noteMetadata,
   type CanvasNode,
   type ContentBlock,
   type ContextPackage,
@@ -64,6 +67,7 @@ interface Props {
   onSend: () => void;
   onSendDirect: () => void;
   onExcerpt: (selection: SelectedText, branch: boolean) => void;
+  onBrainstormSelection: (selection: SelectedText) => void;
   onBranch: (excerpt: Excerpt) => void;
   onSource: (excerpt: Excerpt) => void;
   onInspect: (pkg: ContextPackage) => void;
@@ -108,6 +112,7 @@ export function Focus(props: Props) {
   const [selection, setSelection] = useState<SelectedText | null>(null);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
   const reference = referenceBlock(state, node);
+  const note = noteBlock(state, node);
   const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
   const sources = excerpt ? collectionSources(state, excerpt) : [];
   const forks = state.conversations.filter(
@@ -268,6 +273,17 @@ export function Focus(props: Props) {
           <GitBranch size={14} />
           延伸提問
         </button>
+        <button
+          aria-label="從選取文字腦力激盪"
+          title="腦力激盪"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            props.onBrainstormSelection(selection);
+            setSelection(null);
+          }}
+        >
+          <Lightbulb size={14} />
+        </button>
         {props.collectingId && (
           <button
             onMouseDown={(e) => e.preventDefault()}
@@ -296,6 +312,36 @@ export function Focus(props: Props) {
         </button>
       </div>,
       document.body,
+    );
+  if (note)
+    return (
+      <section
+        className={`focus-panel note-panel note-${noteMetadata(note)?.color ?? 'plain'}`}
+        data-node-id={node.id}
+        aria-label="筆記"
+      >
+        <div ref={scrollRef} className="focus-content conversation-scroll reference-scroll">
+          <div
+            id={'block-' + note.id}
+            data-testid="content-block"
+            className="message-text"
+            onMouseUp={(event) => capture(event.currentTarget, note)}
+          >
+            <ReferenceText
+              block={note}
+              focused={!!highlight}
+              ranges={
+                highlight
+                  ? [{ start: highlight.start, end: highlight.end }]
+                  : state.excerpts
+                      .filter((e) => e.source_block_id === note.id)
+                      .map((e) => ({ start: e.selector.start_char, end: e.selector.end_char }))
+              }
+            />
+          </div>
+        </div>
+        {selectionToolbar}
+      </section>
     );
   if (reference)
     return (
@@ -348,20 +394,13 @@ export function Focus(props: Props) {
     >
       {active && excerpt && (
         <div className="focus-heading">
-          <span>{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
+          <span className="sr-only">{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
           <button onClick={props.onClose} aria-label="返回画布" title="收起輸入框">
             <X size={15} />
           </button>
         </div>
       )}
       <div className="focus-title">
-        <span className="overline">
-          {excerpt
-            ? 'EXCERPT / 原文摘录'
-            : origin
-              ? 'BRANCH / 分支对话'
-              : 'CONVERSATION / 自由探索'}
-        </span>
         <h2>{node.title}</h2>
       </div>
       {excerpt ? (
@@ -499,16 +538,24 @@ export function Focus(props: Props) {
                 if (parent) props.onOpenNode(parent);
               }}
             >
-              <GitBranch size={13} />
-              {conversation.fork_origin.mode === 'btw' ? '顺手问' : '分支'} · 回到主线
               <CornerUpRight size={13} />
+              <span className="sr-only">
+                {conversation.fork_origin.mode === 'btw' ? '顺手问' : '分支'} · 回到主线
+              </span>
             </button>
           )}
           {forks.length > 0 && (
             <details className="thread-branch-index">
-              <summary>
-                {forks.length} 个分支 ·{' '}
-                {forks.filter((c) => threadStatus(state, c.id) !== '已回答').length} 待答
+              <summary
+                aria-label={`${forks.length} 个分支 · ${
+                  forks.filter((c) => threadStatus(state, c.id) !== '已回答').length
+                } 待答`}
+              >
+                <GitBranch size={12} />
+                {forks.length}
+                {forks.some((c) => threadStatus(state, c.id) !== '已回答') && (
+                  <LoaderCircle className="spin" size={11} />
+                )}
               </summary>
               <div className="thread-branches">
                 {forks.map((child) => (
@@ -530,11 +577,6 @@ export function Focus(props: Props) {
             </details>
           )}
           <div ref={scrollRef} className="focus-content conversation-scroll">
-            {turns.length === 0 && !busy && (
-              <div className="conversation-empty">
-                <p>{origin ? '沿着这段文字，继续提问。' : '写下一个问题。'}</p>
-              </div>
-            )}
             {exchanges.map((exchange, index) => (
               <section
                 className="exchange"
@@ -661,7 +703,7 @@ export function Focus(props: Props) {
                           }}
                         >
                           <ScanLine size={12} />
-                          查看本轮上下文
+                          <span className="sr-only">查看本轮上下文</span>
                         </button>
                       )}
                       {forks.some((c) => c.fork_origin?.turn_id === turn.id) && (
@@ -750,34 +792,48 @@ export function Focus(props: Props) {
               <textarea
                 ref={inputRef}
                 id={`prompt-${node.id}`}
-                placeholder={origin ? '想沿着这个想法探索什么？' : '写下你的问题，让思考开始…'}
-                value={busy && props.pendingInput ? props.pendingInput.prompt : props.prompt}
+                placeholder="提問…"
+                value={props.prompt}
                 onChange={(e) => props.onPrompt(e.target.value)}
                 onKeyDown={(event) => {
+                  // Never act on Enter while an input method is composing text.
                   if (
-                    locked ||
-                    props.preparingForks ||
                     event.key !== 'Enter' ||
                     event.nativeEvent.isComposing ||
                     event.nativeEvent.keyCode === 229 ||
                     event.shiftKey ||
                     event.ctrlKey ||
                     event.altKey ||
-                    event.metaKey ||
-                    props.forkDrafts.length >= 8
+                    event.metaKey
                   )
                     return;
+                  if (locked || props.preparingForks) {
+                    event.preventDefault();
+                    return;
+                  }
                   const input = event.currentTarget;
-                  if (
-                    input.selectionStart !== input.value.length ||
-                    input.selectionEnd !== input.value.length
-                  )
+                  const atEnd =
+                    input.selectionStart === input.value.length &&
+                    input.selectionEnd === input.value.length;
+                  const match =
+                    atEnd && props.forkDrafts.length < 8
+                      ? /(?:^|\n)\/(fork|btw)(?:[ \t]+([^\n]*))?$/.exec(input.value)
+                      : null;
+                  if (match) {
+                    event.preventDefault();
+                    props.onPrompt(input.value.slice(0, match.index));
+                    addDraft(match[1] as ForkDraft['mode'], match[2] ?? '');
                     return;
-                  const match = /(?:^|\n)\/(fork|btw)(?:[ \t]+([^\n]*))?$/.exec(input.value);
-                  if (!match) return;
+                  }
+                  // Enter sends, Shift+Enter starts a new line. Touch keyboards have
+                  // no convenient Shift, so there Enter keeps adding lines.
+                  if (window.matchMedia('(pointer: coarse)').matches) return;
                   event.preventDefault();
-                  props.onPrompt(input.value.slice(0, match.index));
-                  addDraft(match[1] as ForkDraft['mode'], match[2] ?? '');
+                  if (props.forkDrafts.length) {
+                    if (props.forkDrafts.every((d) => d.prompt.trim())) props.onSendForks();
+                  } else if (preview) {
+                    if (preview.sendable) props.onSend();
+                  } else if (props.prompt.trim()) props.onSendDirect();
                 }}
                 readOnly={locked || props.preparingForks}
                 rows={2}
@@ -883,10 +939,9 @@ export function Focus(props: Props) {
                 >
                   <summary aria-label="提问选项" title="预览上下文与预算">
                     <SlidersHorizontal size={16} />
-                    <span>选项</span>
+                    <span className="sr-only">选项</span>
                   </summary>
                   <div className="composer-options">
-                    <small className="composer-mode">画布对话 · 使用选定上下文回答</small>
                     <label>
                       上下文预算
                       <select
@@ -925,7 +980,8 @@ export function Focus(props: Props) {
                     }
                   >
                     <Send size={14} />
-                    分别发送 {props.forkDrafts.length + (!busy && props.prompt.trim() ? 1 : 0)}
+                    <span className="sr-only">分别发送 </span>
+                    {props.forkDrafts.length + (!busy && props.prompt.trim() ? 1 : 0)}
                   </button>
                 ) : preview ? (
                   <button
@@ -935,7 +991,7 @@ export function Focus(props: Props) {
                     onClick={props.onSend}
                   >
                     <Send size={14} />
-                    发送此上下文
+                    <span className="sr-only">发送此上下文</span>
                   </button>
                 ) : (
                   <div className="composer-send-actions">
@@ -946,7 +1002,7 @@ export function Focus(props: Props) {
                       onClick={props.onSendDirect}
                     >
                       <Send size={14} />
-                      傳送
+                      <span className="sr-only">傳送</span>
                     </button>
                   </div>
                 )}
@@ -954,8 +1010,9 @@ export function Focus(props: Props) {
             </form>
           ) : (
             <button className="continue-on-canvas secondary" onClick={props.onOpen}>
+              <span className="sr-only">繼續提問</span>
+              <span aria-hidden="true">提問…</span>
               <Send size={14} />
-              繼續提問
             </button>
           )}
         </>

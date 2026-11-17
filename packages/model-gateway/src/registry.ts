@@ -1,38 +1,44 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { DomainError, type ContextPackage } from '@acc/domain';
 import { DemoProvider, OpenAIProvider, type ModelProvider, type GenerationTools } from './index';
 import { CodexProvider, ReasoningEffort } from './codex';
 import { CodexRpc } from './codex-rpc';
+import { ClaudeProvider } from './claude';
 
-export const ProviderMode = z.enum(['demo', 'openai', 'codex']);
+export const ProviderMode = z.enum(['demo', 'openai', 'codex', 'claude']);
 export class ProviderRegistry implements ModelProvider {
   private active = 0;
   private controllers = new Set<AbortController>();
   private generations = new Set<Promise<unknown>>();
   private mode: z.infer<typeof ProviderMode>;
   readonly codex: CodexProvider;
+  readonly claude: ClaudeProvider;
   private providers: Record<z.infer<typeof ProviderMode>, ModelProvider>;
   constructor(
     private readonly settingsPath: string,
     env: Record<string, string | undefined> = process.env,
     codex?: CodexProvider,
+    claude?: ClaudeProvider,
   ) {
     this.mode = ProviderMode.parse(env.LLM_PROVIDER || 'demo');
     let savedModel: string | undefined;
     let savedEffort: string | null = null;
+    let savedClaudeModel: string | undefined;
     try {
       const settings = z
         .object({
           provider: ProviderMode,
           codex_model: z.string().trim().min(1).max(256).optional(),
           codex_reasoning_effort: ReasoningEffort.nullable().optional(),
+          claude_model: z.string().trim().min(1).max(256).optional(),
         })
         .parse(JSON.parse(readFileSync(settingsPath, 'utf8')));
       this.mode = settings.provider;
       savedModel = settings.codex_model;
       savedEffort = settings.codex_reasoning_effort ?? null;
+      savedClaudeModel = settings.claude_model;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
         throw new Error('Invalid model settings file; restore it before startup.');
@@ -45,10 +51,20 @@ export class ProviderRegistry implements ModelProvider {
         savedEffort,
       );
     if (codex && savedModel !== undefined) this.codex.setSelection(savedModel, savedEffort);
+    this.claude =
+      claude ||
+      new ClaudeProvider(
+        // Beside the model settings, so it always lives in the data directory.
+        env.CLAUDE_CREDENTIALS_PATH || join(dirname(settingsPath), 'claude', 'credentials.json'),
+        savedClaudeModel ?? env.CLAUDE_MODEL?.trim() ?? '',
+        env.ANTHROPIC_API_KEY?.trim() ?? '',
+      );
+    if (claude && savedClaudeModel !== undefined) this.claude.setModel(savedClaudeModel);
     this.providers = {
       demo: new DemoProvider(),
       openai: new OpenAIProvider(env.LLM_MODEL || '', env.LLM_API_KEY || env.OPENAI_API_KEY || ''),
       codex: this.codex,
+      claude: this.claude,
     };
   }
   get name() {
@@ -90,12 +106,27 @@ export class ProviderRegistry implements ModelProvider {
         throw new DomainError('generation_active', '回答正在生成，請稍後切換模型或模式。', 409);
     };
     idle();
-    if ((model !== undefined || reasoningEffort !== undefined) && mode !== 'codex')
-      throw new DomainError(
-        'invalid_model_selection',
-        '目前模型選單只適用於 ChatGPT / Codex。',
-        400,
-      );
+    if (
+      (reasoningEffort !== undefined && mode !== 'codex') ||
+      (model !== undefined && mode !== 'codex' && mode !== 'claude')
+    )
+      throw new DomainError('invalid_model_selection', '這個模式沒有可選的模型或思考深度。', 400);
+    let nextClaudeModel = this.claude.selection;
+    if (mode === 'claude') {
+      if (!this.claude.status().connected)
+        throw new DomainError('claude_not_connected', '請先連接 Claude API key。', 409);
+      if (model !== undefined) {
+        const { models, live } = await this.claude.listModels();
+        // Only a list read from the account can rule a model out.
+        if (live && !models.some((entry) => entry.model === model))
+          throw new DomainError(
+            'claude_model_unavailable',
+            '所選模型不在目前可選列表中，請重新選擇。',
+            409,
+          );
+        nextClaudeModel = model;
+      }
+    }
     let nextModel = this.codex.model;
     let nextEffort = this.codex.reasoningEffort;
     if (mode === 'codex') {
@@ -138,12 +169,14 @@ export class ProviderRegistry implements ModelProvider {
         provider: mode,
         ...(nextModel ? { codex_model: nextModel } : {}),
         ...(nextEffort !== null ? { codex_reasoning_effort: nextEffort } : {}),
+        ...(nextClaudeModel ? { claude_model: nextClaudeModel } : {}),
       }),
       { mode: 0o600 },
     );
     renameSync(`${this.settingsPath}.tmp`, this.settingsPath);
     this.mode = mode;
     if (nextModel) this.codex.setSelection(nextModel, nextEffort);
+    this.claude.setModel(nextClaudeModel);
     return { provider: this.name, model: this.model };
   }
   async close() {

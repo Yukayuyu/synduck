@@ -5,6 +5,7 @@ import {
   DomainError,
   modelInput,
   SUMMARY_PROMPT,
+  BRAINSTORM_MARKER,
   type Answer,
   type ContextPackage,
 } from '@acc/domain';
@@ -50,6 +51,25 @@ export class DemoProvider implements ModelProvider {
   async generate(pkg: ContextPackage, onDraft?: (text: string) => void, signal?: AbortSignal) {
     // Demo mode cannot summarize. It stores clearly labelled openings of each
     // message so the workflow can be tried without pretending to be a model.
+    if (pkg.current_prompt.startsWith(BRAINSTORM_MARKER)) {
+      const count = Number(/Brainstorm (\d+)/.exec(pkg.current_prompt)?.[1] ?? 3);
+      const focus = pkg.items.find((i) => i.role === 'selected') ?? pkg.items.at(-1);
+      const kinds = ['深入', '質疑', '應用', '連結', '替代方案', '拆解', '反例', '下一步'];
+      return validateAnswer(
+        {
+          answer: '【本地演示 · 未調用 AI】以下是固定的示範方向，不是真實的腦力激盪。',
+          used_source_ids: focus ? [focus.source_id] : [],
+          suggested_graph_updates: Array.from({ length: count }, (_, index) => ({
+            type: 'idea',
+            title: `【演示】${kinds[index % kinds.length]}`,
+            prompt: `從「${(focus?.content ?? '這段內容').slice(0, 24)}」出發，${kinds[index % kinds.length]}這個想法。`,
+            reason: '演示模式不調用 AI。',
+            source_ids: focus ? [focus.source_id] : [],
+          })),
+        },
+        pkg,
+      );
+    }
     const text =
       pkg.current_prompt === SUMMARY_PROMPT
         ? `【本地演示 · 未调用 AI · 非真实摘要】各条消息的开头：\n${pkg.items.map((i, n) => `${n + 1}. ${i.content.slice(0, 40)}…`).join('\n')}`

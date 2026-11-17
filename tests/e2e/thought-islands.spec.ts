@@ -54,8 +54,8 @@ test('keeps equal-height conversations in distinct islands and persists explicit
   await view(request, a.node.x, a.node.y);
   await page.goto('/');
   const card = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
-  await expect(card(a.node.id).getByText('主线', { exact: true })).toBeVisible();
-  await expect(card(b.node.id).getByText('主线', { exact: true })).toBeVisible();
+  await expect(card(a.node.id)).toBeVisible();
+  await expect(card(b.node.id)).toBeVisible();
   await card(a.node.id).locator('.card-title').click();
   await card(a.node.id).getByLabel('你的问题', { exact: true }).fill('保留未发送的文字，继续。');
   await card(a.node.id).getByRole('button', { name: '折叠对话', exact: true }).click();
@@ -107,7 +107,10 @@ test('splits one composer into independently answered tasks, with an index on th
     release();
   }
   await expect(input).not.toHaveAttribute('readonly', '');
-  await expect(card.locator('.thread-branch-index summary')).toHaveText('2 个分支 · 0 待答');
+  await expect(card.locator('.thread-branch-index summary')).toHaveAttribute(
+    'aria-label',
+    '2 个分支 · 0 待答',
+  );
   const state: ClientState = await (await request.get('/api/state')).json();
   const children = state.conversations.filter(
     (c) => c.fork_origin?.conversation_id === root.conversation.id,
@@ -182,7 +185,10 @@ test('can ask a new branch while the main answer is still generating', async ({
     await expect(branchInput).not.toHaveAttribute('readonly', '');
     await branchInput.fill('顺便单独讨论更新。');
     await card.getByRole('button', { name: '分别发送 1', exact: true }).click();
-    await expect(card.locator('.thread-branch-index summary')).toHaveText('1 个分支 · 0 待答');
+    await expect(card.locator('.thread-branch-index summary')).toHaveAttribute(
+      'aria-label',
+      '1 个分支 · 0 待答',
+    );
     await expect(input).toHaveAttribute('readonly', '');
   } finally {
     release();

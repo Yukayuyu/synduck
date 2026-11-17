@@ -323,7 +323,7 @@ export class CodexProvider implements ModelProvider {
             baseInstructions: tools ? CONTEXT_ANSWER_INSTRUCTIONS : ANSWER_INSTRUCTIONS,
             developerInstructions:
               tools?.instructions ??
-              'Use only the supplied context package. Do not use tools, files, memory, browsing, or other conversations. Return only the requested structured answer. Graph changes are proposals, never actions.',
+              'Do not use tools, files, memory, browsing or other conversations. Your sources are the supplied context package and your own knowledge. Return only the requested structured answer. Graph changes are proposals, never actions.',
           }),
         );
       threadId = thread.thread.id;

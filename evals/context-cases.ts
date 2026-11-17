@@ -186,6 +186,27 @@ export const contextCases: EvalCase[] = [
       }),
   },
   {
+    name: 'general-knowledge',
+    measures: 'Uses its own knowledge when the thread does not contain the answer.',
+    expect: [/4[,.]?096/],
+    forbid: [],
+    prepare: async () =>
+      withStore((store) => {
+        const thread = store.createConversation('Storage choice');
+        say(store, thread.conversation.id, 'We store every canvas in a single SQLite file.');
+        return chainAndFlat(
+          compileContext(
+            store.snapshot(),
+            contextSet(
+              store,
+              thread.conversation.id,
+              "What is SQLite's default database page size in bytes for new databases? Answer with the number.",
+            ),
+          ),
+        );
+      }),
+  },
+  {
     name: 'summary-recall',
     measures: 'Recalls an early fact from a long conversation through a background summary.',
     expect: [/4[,.]?200/],

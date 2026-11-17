@@ -442,7 +442,6 @@ export function TraceDialog({
         <button className="modal-close" aria-label="關閉操作回看" onClick={onClose}>
           <X size={18} />
         </button>
-        <span className="overline">ACTION TRACE</span>
         <h2>操作回看</h2>
         {error && <p role="alert">{error}</p>}
         {task && (

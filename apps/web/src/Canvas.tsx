@@ -36,6 +36,7 @@ import {
   Check,
   Ban,
   MoreHorizontal,
+  LoaderCircle,
   ScrollText,
   Trash2,
   Pencil,
@@ -47,8 +48,20 @@ import {
   MoveDiagonal2,
   FileText,
   FilePlus2,
+  StickyNote,
+  Lightbulb,
+  Link2,
+  Unlink,
 } from 'lucide-react';
-import { referenceBlock, sourceNodeForTurn, collectionSources, type CanvasNode } from '@acc/domain';
+import {
+  referenceBlock,
+  sourceNodeForTurn,
+  collectionSources,
+  noteBlock,
+  noteMetadata,
+  LINK_TYPES,
+  type CanvasNode,
+} from '@acc/domain';
 import { SourceHandles, type SourceAnchor } from './SourceHandles';
 import { useApi, type ClientState } from './api';
 import { TraceCardContent, type CanvasTrace } from './TaskTrace';
@@ -61,6 +74,9 @@ type CardData = {
   type: CanvasNode['type'];
   branch: boolean;
   reference: boolean;
+  note: 'note' | 'idea' | null;
+  noteColor: string;
+  linking: boolean;
   displayTitle: string;
   count: number;
   active: boolean;
@@ -95,23 +111,31 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
     <article
       ref={card}
       data-manual-size={resizing || data.node.size_mode === 'manual'}
-      className={`canvas-card ${data.reference ? 'reference' : ''} ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
+      className={`canvas-card ${data.reference ? 'reference' : ''} ${data.note ? `note note-${data.noteColor} ${data.note}` : ''} ${data.linking ? 'link-target' : ''} ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
     >
       <Handle type="target" position={Position.Left} />
       <div className="card-eyebrow">
         <span
           className="node-kind"
           aria-label={
-            data.reference
-              ? '參考文件'
-              : data.type === 'excerpt'
-                ? '摘录'
-                : data.branch
-                  ? '分支对话'
-                  : '对话'
+            data.note === 'idea'
+              ? '延伸方向'
+              : data.note
+                ? '筆記'
+                : data.reference
+                  ? '參考文件'
+                  : data.type === 'excerpt'
+                    ? '摘录'
+                    : data.branch
+                      ? '分支对话'
+                      : '对话'
           }
         >
-          {data.reference ? (
+          {data.note === 'idea' ? (
+            <Lightbulb size={15} />
+          ) : data.note ? (
+            <StickyNote size={15} />
+          ) : data.reference ? (
             <FileText size={15} />
           ) : data.type === 'excerpt' ? (
             <Quote size={15} />
@@ -121,11 +145,17 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
             <MessageSquare size={15} />
           )}
         </span>
-        <button className="card-title nodrag" aria-label={data.title} onClick={data.onOpen}>
+        <button
+          className={`card-title nodrag ${data.note === 'note' ? 'note-title' : ''}`}
+          aria-label={data.title}
+          onClick={data.onOpen}
+        >
           {data.displayTitle}
         </button>
-        {data.type === 'conversation' && (
-          <span className="thread-mode">{data.busy ? '生成中' : data.mode}</span>
+        {data.type === 'conversation' && data.busy && (
+          <span className="thread-mode" role="status" aria-label="生成中" title="生成中">
+            <LoaderCircle className="spin" size={13} />
+          </span>
         )}
         {data.type === 'excerpt' && data.sourceCount > 1 && (
           <span className="collection-count">{data.sourceCount}</span>
@@ -155,7 +185,7 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
           {renderContent(data.node, Boolean(width && height))}
         </div>
       ) : (
-        !data.node.collapsed && <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
+        !data.node.collapsed && <p className="card-preview">{data.preview}</p>
       )}
       {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
         <div className="card-footer">
@@ -209,6 +239,8 @@ interface Props {
   activeNode: string | null;
   selected: string[];
   locate: { id: string; tick: number } | null;
+  // Show a group of cards at once, e.g. a brainstorm source with its new ideas.
+  reveal: { ids: string[]; tick: number } | null;
   onOpen: (node: CanvasNode) => void;
   onSelect: (id: string) => void;
   onControl: (id: string, action: 'pin' | 'unpin' | 'exclude' | 'restore') => void;
@@ -235,17 +267,51 @@ interface Props {
   onSource: (node: CanvasNode) => void;
   onSummarize: (node: CanvasNode) => void;
   summarizing: string | null;
+  onNoteAt: (position: { x: number; y: number }) => void;
+  onEditNote: (node: CanvasNode) => void;
+  onAskNote: (node: CanvasNode) => void;
+  onBrainstorm: (node: CanvasNode) => void;
+  onGraphChanged: () => Promise<void>;
   onTrash: () => void;
   onError: (error: unknown) => void;
   onFold: (node: CanvasNode) => void;
 }
 
+export const linkNames: Record<(typeof LINK_TYPES)[number], string> = {
+  supports: '支持',
+  contradicts: '反對',
+  elaborates: '補充',
+  example_of: '例子',
+  depends_on: '依賴',
+  alternative_to: '替代',
+  related_to: '相關',
+  supersedes: '取代',
+};
+const linkColors: Record<string, string> = {
+  supports: '#4f9d69',
+  contradicts: '#d1495b',
+  elaborates: '#3f8fa0',
+  example_of: '#8b7bd8',
+  depends_on: '#c48a2c',
+  alternative_to: '#c4689e',
+  related_to: '#8a9aa6',
+  supersedes: '#6b6b6b',
+};
+// One tap applies a size; dragging the corner grip gives any other size.
+const sizePresets = [
+  { label: '緊湊', width: 420, height: 360 },
+  { label: '小', width: 440, height: 500 },
+  { label: '中', width: 540, height: 650 },
+  { label: '大', width: 760, height: 860 },
+  { label: '寬', width: 960, height: 700 },
+];
 export function Canvas({
   state,
   initialViewport,
   activeNode,
   selected,
   locate,
+  reveal,
   onOpen,
   onSelect,
   onControl,
@@ -267,6 +333,11 @@ export function Canvas({
   onSource,
   onSummarize,
   summarizing,
+  onNoteAt,
+  onEditNote,
+  onAskNote,
+  onBrainstorm,
+  onGraphChanged,
   onTrash,
   onError,
   onFold,
@@ -286,6 +357,39 @@ export function Canvas({
     point?: { x: number; y: number };
   } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // Link mode: choose a card, then the relation; edges can be retyped or removed later.
+  const [linkFrom, setLinkFrom] = useState<string | null>(null);
+  const [relationMenu, setRelationMenu] = useState<{
+    x: number;
+    y: number;
+    source: string;
+    target: string;
+  } | null>(null);
+  const [edgeMenu, setEdgeMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  useEffect(() => {
+    if (!linkFrom) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLinkFrom(null);
+    };
+    window.addEventListener('keydown', cancel);
+    return () => window.removeEventListener('keydown', cancel);
+  }, [linkFrom]);
+  const pickLinkTarget = useCallback(
+    (target: CanvasNode) => {
+      if (!linkFrom || target.id === linkFrom) return;
+      const element = document.querySelector(`.react-flow__node[data-id="${target.id}"]`);
+      const rect = element?.getBoundingClientRect();
+      setRelationMenu({
+        x: rect ? rect.left + 24 : window.innerWidth / 2,
+        y: rect ? rect.top + 40 : window.innerHeight / 2,
+        source: linkFrom,
+        target: target.id,
+      });
+      setLinkFrom(null);
+    },
+    [linkFrom],
+  );
+  const saveLink = (run: () => Promise<unknown>) => void run().then(onGraphChanged).catch(onError);
   const openCardMenu = useCallback((id: string, event: MouseEvent) => {
     const box = event.currentTarget.getBoundingClientRect();
     setMenu({ id, x: box.right, y: box.bottom + 4 });
@@ -346,7 +450,7 @@ export function Canvas({
     for (const excerpt of state.excerpts) {
       const block = state.blocks.find((b) => b.id === excerpt.source_block_id);
       const turn = state.turns.find((t) => t.id === block?.turn_id);
-      const source = sourceNodeForTurn(state.nodes, turn);
+      const source = sourceNodeForTurn(state.nodes, turn, state.turns);
       if (!source) continue;
       const items = result.get(source.id) ?? [];
       items.push({
@@ -408,6 +512,9 @@ export function Canvas({
                 : n.title,
             type: n.type,
             reference: Boolean(referenceBlock(state, n)),
+            note: noteMetadata(noteBlock(state, n))?.kind ?? null,
+            noteColor: noteMetadata(noteBlock(state, n))?.color ?? 'plain',
+            linking: !!linkFrom && linkFrom !== n.id,
             branch:
               !!state.conversations.find((c) => c.id === n.ref_id)?.branch_origin_excerpt_id ||
               !!state.conversations.find((c) => c.id === n.ref_id)?.fork_origin,
@@ -430,17 +537,30 @@ export function Canvas({
               n.ref_type === 'excerpt'
                 ? state.excerpts.find((e) => e.id === n.ref_id)?.snapshot_text || ''
                 : (referenceBlock(state, n)?.text_content?.slice(0, 240) ??
+                  noteBlock(state, n)?.text_content?.slice(0, 240) ??
                   n.representation.summary),
             count: state.turns.filter((t) => t.conversation_id === n.ref_id).length,
             active: activeNode === n.id,
             context: selected.includes(n.id),
             pinned: state.workspace.settings.pinned_node_ids.includes(n.id),
             excluded: state.workspace.settings.excluded_node_ids.includes(n.id),
-            onOpen: () => onOpen(n),
+            // While linking, a click picks the other end of the link instead of opening.
+            onOpen: () => (linkFrom ? pickLinkTarget(n) : onOpen(n)),
             onMenu: (event: MouseEvent) => openCardMenu(n.id, event),
           },
         })),
-    [state, activeNode, selected, onOpen, openCardMenu, collectionOwner, anchors, busyIds],
+    [
+      state,
+      activeNode,
+      selected,
+      onOpen,
+      openCardMenu,
+      collectionOwner,
+      anchors,
+      busyIds,
+      linkFrom,
+      pickLinkTarget,
+    ],
   );
   const traceNodes = useMemo<TraceNode[]>(
     () =>
@@ -504,6 +624,27 @@ export function Canvas({
     void resizeHandler.current(id, patch).catch(onError);
   };
   useEffect(() => {
+    if (!reveal) return;
+    let frame = 0;
+    let tries = 0;
+    // New cards are measured a frame or two after they appear.
+    const fit = () => {
+      const ready = reveal.ids.every((id) => flow.getNode(id)?.measured?.width);
+      if (!ready && tries++ < 30) {
+        frame = requestAnimationFrame(fit);
+        return;
+      }
+      void flow.fitView({
+        nodes: reveal.ids.map((id) => ({ id })),
+        padding: 0.2,
+        maxZoom: 1,
+        duration: 300,
+      });
+    };
+    frame = requestAnimationFrame(fit);
+    return () => cancelAnimationFrame(frame);
+  }, [reveal, flow]);
+  useEffect(() => {
     if (!locate) return;
     const key = locate.id + ':' + locate.tick;
     if (lastLocated.current === key) return;
@@ -558,7 +699,12 @@ export function Canvas({
       const source = state.nodes.find((n) => n.id === e.source_node_id);
       const target = state.nodes.find((n) => n.id === e.target_node_id);
       const owner = target?.ref_type === 'excerpt' ? collectionOwner.get(target.ref_id) : undefined;
-      const color = e.type === 'excerpt_from' ? '#d3a14b' : '#64a3ae';
+      const color =
+        e.edge_class === 'semantic'
+          ? (linkColors[e.type] ?? '#64a3ae')
+          : e.type === 'excerpt_from'
+            ? '#d3a14b'
+            : '#64a3ae';
       return {
         id: e.id,
         source: e.source_node_id,
@@ -571,16 +717,23 @@ export function Canvas({
                 state.conversations.find((c) => c.id === target?.ref_id)?.fork_origin?.turn_id
               ? 'fork:' + target?.ref_id
               : undefined,
-        label: ['branch_from', 'excerpt_from', 'continue_from'].includes(e.type)
-          ? undefined
-          : e.type,
+        label:
+          e.edge_class === 'semantic'
+            ? linkNames[e.type as keyof typeof linkNames]
+            : ['branch_from', 'excerpt_from', 'continue_from', 'generated_from'].includes(e.type)
+              ? undefined
+              : e.type,
+        interactionWidth: e.edge_class === 'semantic' ? 18 : undefined,
         className: `relation-${e.type}`,
         type: 'default',
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
         style: {
           stroke: color,
           strokeWidth: 1.3,
-          strokeDasharray: e.edge_class === 'semantic' && !e.confirmed ? '5 5' : undefined,
+          strokeDasharray:
+            (e.edge_class === 'semantic' && !e.confirmed) || e.type === 'generated_from'
+              ? '5 5'
+              : undefined,
         },
         labelStyle: { fill: 'var(--muted-ink)', fontSize: 10 },
         labelBgStyle: { fill: 'var(--canvas)' },
@@ -713,6 +866,34 @@ export function Canvas({
               },
             ]
           : []),
+        ...(noteBlock(state, menuNode)
+          ? [
+              {
+                label: '編輯筆記',
+                icon: <StickyNote size={16} />,
+                disabled: locked,
+                run: () => onEditNote(menuNode),
+              },
+              {
+                label: '以此提問',
+                icon: <MessageSquare size={16} />,
+                disabled: locked,
+                run: () => onAskNote(menuNode),
+              },
+            ]
+          : []),
+        {
+          label: '腦力激盪',
+          icon: <Lightbulb size={16} />,
+          disabled: locked || busyNodeIds.includes(menuNode.id),
+          run: () => onBrainstorm(menuNode),
+        },
+        {
+          label: '連結到…',
+          icon: <Link2 size={16} />,
+          disabled: locked,
+          run: () => setLinkFrom(menuNode.id),
+        },
         {
           label: selected.includes(menuNode.id) ? '取消本輪上下文' : '選為本輪上下文',
           icon: <Check size={16} />,
@@ -778,6 +959,14 @@ export function Canvas({
             },
           },
           {
+            label: '在這裡新增筆記',
+            icon: <StickyNote size={16} />,
+            disabled: locked,
+            run: () => {
+              if (menu?.point) onNoteAt(menu.point);
+            },
+          },
+          {
             label: '在這裡匯入參考',
             icon: <FilePlus2 size={16} />,
             disabled: locked,
@@ -799,6 +988,11 @@ export function Canvas({
       <ReactFlow
         nodes={nodes}
         edges={[...edges, ...traceEdges]}
+        onEdgeClick={(event, edge) => {
+          const stored = state.edges.find((e) => e.id === edge.id);
+          if (stored?.edge_class === 'semantic' && stored.provenance === 'user')
+            setEdgeMenu({ x: event.clientX, y: event.clientY, id: stored.id });
+        }}
         nodeTypes={nodeTypes}
         onNodesChange={changes}
         onKeyDown={(event) => {
@@ -898,6 +1092,57 @@ export function Canvas({
         />
       </ReactFlow>
       {menu && <ContextMenu x={menu.x} y={menu.y} actions={actions} onClose={closeMenu} />}
+      {linkFrom && (
+        <div className="link-banner" role="status">
+          <Link2 size={15} />
+          <span>選擇要連結的卡片</span>
+          <button aria-label="取消連結" onClick={() => setLinkFrom(null)}>
+            <Unlink size={14} />
+          </button>
+        </div>
+      )}
+      {relationMenu && (
+        <ContextMenu
+          x={relationMenu.x}
+          y={relationMenu.y}
+          onClose={() => setRelationMenu(null)}
+          actions={LINK_TYPES.map((type) => ({
+            label: linkNames[type],
+            icon: <span className="link-dot" style={{ background: linkColors[type] }} />,
+            run: () =>
+              saveLink(() =>
+                api('/links', {
+                  source_node_id: relationMenu.source,
+                  target_node_id: relationMenu.target,
+                  type,
+                }),
+              ),
+          }))}
+        />
+      )}
+      {edgeMenu && (
+        <ContextMenu
+          x={edgeMenu.x}
+          y={edgeMenu.y}
+          onClose={() => setEdgeMenu(null)}
+          actions={[
+            ...LINK_TYPES.map((type) => ({
+              label: linkNames[type],
+              icon: <span className="link-dot" style={{ background: linkColors[type] }} />,
+              run: () =>
+                saveLink(() => api('/links/' + encodeURIComponent(edgeMenu.id), { type }, 'PATCH')),
+            })),
+            {
+              label: '移除連結',
+              icon: <Unlink size={16} />,
+              danger: true,
+              divider: true,
+              run: () =>
+                saveLink(() => api('/links/' + encodeURIComponent(edgeMenu.id), {}, 'DELETE')),
+            },
+          ]}
+        />
+      )}
       {sizeDialog && (
         <div
           className="modal-backdrop"
@@ -915,48 +1160,38 @@ export function Canvas({
               if (event.key === 'Escape' && !event.nativeEvent.isComposing && !savingSize)
                 setSizeDialog(null);
             }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSavingSize(true);
-              void resizeHandler
-                .current(sizeDialog.id, {
-                  width: sizeDialog.width,
-                  height: sizeDialog.height,
-                  size_mode: 'manual',
-                })
-                .then(() => setSizeDialog(null))
-                .catch(onError)
-                .finally(() => setSavingSize(false));
-            }}
+            onSubmit={(event) => event.preventDefault()}
           >
             <h2>对话框尺寸</h2>
-            <label>
-              宽度
-              <input
-                autoFocus
-                type="number"
-                min={340}
-                max={1600}
-                required
-                value={Number.isFinite(sizeDialog.width) ? sizeDialog.width : ''}
-                onChange={(event) =>
-                  setSizeDialog({ ...sizeDialog, width: event.currentTarget.valueAsNumber })
-                }
-              />
-            </label>
-            <label>
-              高度
-              <input
-                type="number"
-                min={360}
-                max={1800}
-                required
-                value={Number.isFinite(sizeDialog.height) ? sizeDialog.height : ''}
-                onChange={(event) =>
-                  setSizeDialog({ ...sizeDialog, height: event.currentTarget.valueAsNumber })
-                }
-              />
-            </label>
+            <div className="size-presets" role="group" aria-label="尺寸">
+              {sizePresets.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  aria-pressed={
+                    sizeDialog.width === preset.width && sizeDialog.height === preset.height
+                  }
+                  disabled={savingSize}
+                  onClick={() => {
+                    setSavingSize(true);
+                    void resizeHandler
+                      .current(sizeDialog.id, {
+                        width: preset.width,
+                        height: preset.height,
+                        size_mode: 'manual',
+                      })
+                      .then(() => setSizeDialog(null))
+                      .catch(onError)
+                      .finally(() => setSavingSize(false));
+                  }}
+                >
+                  {preset.label}
+                  <small>
+                    {preset.width}×{preset.height}
+                  </small>
+                </button>
+              ))}
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
@@ -975,9 +1210,6 @@ export function Canvas({
               </button>
               <button type="button" disabled={savingSize} onClick={() => setSizeDialog(null)}>
                 取消
-              </button>
-              <button className="primary" disabled={savingSize}>
-                保存尺寸
               </button>
             </div>
           </form>

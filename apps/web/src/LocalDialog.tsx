@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X, Terminal, Check, Square } from 'lucide-react';
+import { X, Terminal, Check, Square, FolderOpen, Unplug } from 'lucide-react';
+import { FolderPicker } from './FolderPicker';
 import { useApi } from './api';
 import { MessageText } from './MessageText';
 import type { LocalTask } from '../../../packages/local-runtime/src/executor';
@@ -64,7 +65,7 @@ export function LocalDialog({
 
   const [state, setState] = useState<LocalState | null>(null);
   const [root, setRoot] = useState('');
-  const [enabled, setEnabled] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'codex' | 'manual' | 'integrations'>('codex');
   const [integrations, setIntegrations] = useState<Integrations | null>(null);
@@ -95,7 +96,6 @@ export function LocalDialog({
         setState(next);
         if (initial) {
           setRoot(next.root);
-          setEnabled(next.enabled);
         }
         setSelectedId((previous) => previous || next.tasks[0]?.id || '');
       } catch (e) {
@@ -153,16 +153,9 @@ export function LocalDialog({
         <button className="modal-close" aria-label="關閉本地任務" onClick={onClose}>
           <X size={18} />
         </button>
-        <span className="overline">LOCAL WORKSPACE</span>
         <h2 id="local-title">
           <Terminal size={22} /> 本地任務
         </h2>
-        <p className="project-description">
-          使用已登入的 ChatGPT / Codex
-          模型，在畫布問題中提供後端電腦上的專案目錄，即可在原卡片授權並繼續。
-          普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。
-          项目、账号连接与桌面设置在所有画布间共用；下方保留進階測試與舊任務紀錄。
-        </p>
         {state?.other_canvas_busy && (
           <p role="status" className="quiet-note">
             另一张画布正在执行本地任务，可从左上角画布列表切回查看。
@@ -178,31 +171,63 @@ export function LocalDialog({
         ) : (
           <>
             <div className="runtime-settings">
-              <label>
-                專案完整路徑
+              <div className="folder-field">
+                <FolderOpen size={16} />
+                <code title={state?.root}>
+                  {state?.enabled && state.root ? state.root : '尚未連接專案'}
+                </code>
+                <button
+                  type="button"
+                  disabled={working || state?.busy}
+                  aria-expanded={picking}
+                  onClick={() => setPicking((open) => !open)}
+                >
+                  選擇資料夾
+                </button>
+                {state?.enabled && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="中斷專案"
+                    title="中斷專案"
+                    disabled={working || state.busy}
+                    onClick={() =>
+                      void action(() =>
+                        api('/local/configure', { root: state.root, enabled: false }),
+                      )
+                    }
+                  >
+                    <Unplug size={15} />
+                  </button>
+                )}
+              </div>
+              {picking && (
+                <FolderPicker
+                  start={state?.root || ''}
+                  busy={working || !!state?.busy}
+                  onPick={(path) => {
+                    setPicking(false);
+                    void action(() => api('/local/configure', { root: path, enabled: true }));
+                  }}
+                />
+              )}
+              <details className="folder-manual">
+                <summary>手動輸入路徑</summary>
                 <input
                   aria-label="本地專案路徑"
                   value={root}
                   onChange={(e) => setRoot(e.target.value)}
                   readOnly={state?.busy}
-                  placeholder="例如 C:\Projects\my-app"
                 />
-              </label>
-              <label className="runtime-check">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  disabled={state?.busy}
-                />
-                啟用這個專案
-              </label>
-              <button
-                disabled={working || state?.busy}
-                onClick={() => void action(() => api('/local/configure', { root, enabled }))}
-              >
-                保存專案設定
-              </button>
+                <button
+                  disabled={working || state?.busy || !root.trim()}
+                  onClick={() =>
+                    void action(() => api('/local/configure', { root, enabled: true }))
+                  }
+                >
+                  使用此路徑
+                </button>
+              </details>
             </div>
             <div className="runtime-tabs" role="tablist" aria-label="本地任務模式">
               <button role="tab" aria-selected={tab === 'codex'} onClick={() => setTab('codex')}>
@@ -240,10 +265,6 @@ export function LocalDialog({
                   />
                   附上目前已預覽的畫布上下文
                 </label>
-                <p className="quiet-note">
-                  此处可读取项目、修改文件和运行命令。先保存后端电脑上的源码目录，并选择已登录的
-                  ChatGPT / Codex 模型。
-                </p>
                 {prompt.length > 8000 && (
                   <p role="alert">
                     任务指令最多 8000 字符。请缩短这里的指令；已附上的上下文仍保留完整问题。

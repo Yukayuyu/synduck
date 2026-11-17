@@ -873,6 +873,16 @@ small {
   color: #a9b298;
   text-decoration: underline;
 }
+.tool-badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  background: #2f66b3;
+  color: #fff;
+}
 .context-chain {
   list-style: none;
   margin: 0;
@@ -2118,4 +2128,242 @@ small {
   .local-status-label {
     display: none;
   }
+}
+.folder-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.folder-field code,
+.folder-picker-bar code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.folder-picker {
+  border: 1px solid #dce6d1;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.folder-picker-bar,
+.folder-picker-recent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.folder-picker-recent button {
+  padding: 3px 9px;
+  border: 1px solid #dce6d1;
+  border-radius: 12px;
+  background: none;
+  font-size: 11px;
+}
+.folder-picker-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.folder-picker-list button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+}
+.folder-picker-list button:hover {
+  background: #f1f5ea;
+}
+.folder-picker-empty {
+  padding: 8px;
+  font-size: 11px;
+  color: #a2ad93;
+}
+.folder-manual {
+  margin-top: 8px;
+  font-size: 11px;
+}
+.folder-manual input {
+  margin: 6px 0;
+}
+.env-choices {
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+}
+.size-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.size-presets button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid #dce6d1;
+  border-radius: 8px;
+  background: none;
+}
+.size-presets button[aria-pressed='true'] {
+  border-color: #2f66b3;
+}
+.size-presets small {
+  font-size: 9px;
+  color: #a2ad93;
+}
+.note-dialog {
+  background: var(--note-bg, #fbf3d1);
+}
+.note-dialog textarea {
+  width: 100%;
+  min-height: 120px;
+  border: 0;
+  background: transparent;
+  resize: vertical;
+  font-size: 15px;
+  line-height: 1.7;
+  outline: none;
+}
+.note-dialog.note-plain {
+  --note-bg: #fffefa;
+}
+.note-dialog.note-yellow {
+  --note-bg: #fbf3d1;
+}
+.note-dialog.note-green {
+  --note-bg: #e3f2df;
+}
+.note-dialog.note-blue {
+  --note-bg: #e1ecfa;
+}
+.note-dialog.note-pink {
+  --note-bg: #fae3ea;
+}
+.note-dialog.note-purple {
+  --note-bg: #ece5f8;
+}
+.note-colors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.note-colors .primary {
+  margin-left: auto;
+}
+.note-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--note-bg);
+}
+.note-swatch[aria-checked='true'] {
+  outline: 2px solid #2f66b3;
+  outline-offset: 2px;
+}
+.brainstorm-dialog h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brainstorm-counts {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0 6px;
+}
+.brainstorm-counts button {
+  flex: 1;
+  padding: 16px 0;
+  font-size: 20px;
+  border: 1px solid #dce6d1;
+  border-radius: 10px;
+  background: none;
+}
+.brainstorm-counts button:hover {
+  border-color: #2f66b3;
+}
+.brainstorm-wait {
+  display: flex;
+  justify-content: center;
+  padding: 30px 0;
+}
+.brainstorm-ideas {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+  max-height: 50vh;
+  overflow: auto;
+}
+.brainstorm-ideas label {
+  display: flex;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #eef2e8;
+  cursor: pointer;
+}
+.brainstorm-ideas span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.brainstorm-ideas small {
+  font-size: 12px;
+  color: #77806b;
+  line-height: 1.6;
+}
+.link-banner {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 14px;
+  border-radius: 20px;
+  background: #2f66b3;
+  color: #fff;
+  font-size: 12px;
+}
+.link-banner button {
+  display: flex;
+  border: 0;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  border-radius: 50%;
+  padding: 5px;
+}
+.link-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.brainstorm-ideas input[type='checkbox'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+}
+.brainstorm-ideas strong {
+  font-size: 14px;
+  font-weight: 600;
 }

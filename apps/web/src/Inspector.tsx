@@ -1,13 +1,4 @@
-import {
-  ScanLine,
-  ArrowUpRight,
-  Check,
-  X,
-  AlertTriangle,
-  Layers,
-  Pin,
-  ScrollText,
-} from 'lucide-react';
+import { ScanLine, ArrowUpRight, Check, X, AlertTriangle, Pin, ScrollText } from 'lucide-react';
 import type { ContextPackage, ContextThread } from '@acc/domain';
 import type { ClientState } from './api';
 
@@ -89,24 +80,8 @@ export function Inspector({
         <span className="tiny-tag">CONTEXT</span>
       </div>
       <div className="inspector-scroll">
-        <div className="inspector-intro">
-          <h2>让每一次回答，有据可循。</h2>
-          <p>
-            {historical ? '这次回答保存的输入快照。' : '发送前，看看模型会收到哪些内容。'}
-            包含在输入中，不代表模型一定关注它。
-          </p>
-        </div>
         {!pkg ? (
           <>
-            <div className="context-placeholder">
-              <Layers size={28} strokeWidth={1.3} />
-              <h3>上下文，由你决定</h3>
-              <p>
-                在画布上选择或固定卡片，
-                <br />
-                输入问题后点击「预览上下文」。
-              </p>
-            </div>
             <div className="selection-summary">
               <span>
                 <Check size={14} />
@@ -127,9 +102,6 @@ export function Inspector({
                 明确排除
               </span>
               <b>{state.workspace.settings.excluded_node_ids.length}</b>
-            </div>
-            <div className="quiet-note">
-              固定的内容会保留到下一轮。排除始终优先，也会阻止同一来源从其他路径重新进入。
             </div>
           </>
         ) : (
@@ -186,9 +158,6 @@ export function Inspector({
                     );
                   })}
                 </ol>
-                <p className="chain-note">
-                  模型按此顺序阅读：先背景，后当前对话。未列出的兄弟分支不会进入输入。
-                </p>
               </>
             )}
             {[...trimmed].map(([nodeId, count]) => {

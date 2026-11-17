@@ -158,7 +158,7 @@ export class CanvasRegistry {
     const block = source.blocks.find((b) => b.id === input.source_block_id);
     const turn = source.turns.find((t) => t.id === block?.turn_id);
     const conversation = source.conversations.find((c) => c.id === turn?.conversation_id);
-    const sourceNode = sourceNodeForTurn(source.nodes, turn);
+    const sourceNode = sourceNodeForTurn(source.nodes, turn, source.turns);
     if (
       !block?.text_content ||
       !turn ||

@@ -20,6 +20,16 @@ import {
   CreateReferenceSchema,
   ConversationSummarySchema,
   conversationSummaries,
+  UNTITLED_CONVERSATION,
+  CreateNoteSchema,
+  EditNoteSchema,
+  NoteMetadataSchema,
+  noteBlock,
+  noteMetadata,
+  CreateLinkSchema,
+  UpdateLinkSchema,
+  AcceptIdeasSchema,
+  type NoteMetadata,
   sourceNodeForTurn,
   DomainError,
   type Workspace,
@@ -430,13 +440,18 @@ export class Store {
         (node) =>
           x < node.x + Math.max(node.width, 360) + 60 &&
           x + width + 60 > node.x &&
-          y < node.y + Math.max(node.height, node.ref_type === 'conversation' ? 650 : 420) + 60 &&
+          y <
+            node.y +
+              (node.ref_type === 'conversation' ? Math.max(node.height, 650) : node.height) +
+              60 &&
           y + height + 60 > node.y,
       ))
     ) {
       const next =
         collision.y +
-        Math.max(collision.height, collision.ref_type === 'conversation' ? 650 : 420) +
+        (collision.ref_type === 'conversation'
+          ? Math.max(collision.height, 650)
+          : collision.height) +
         80;
       if (!Number.isFinite(next) || next <= y)
         throw new DomainError(
@@ -486,7 +501,7 @@ export class Store {
   private structural(
     source: string,
     target: string,
-    type: 'excerpt_from' | 'branch_from' | 'continue_from',
+    type: 'excerpt_from' | 'branch_from' | 'continue_from' | 'generated_from',
   ) {
     const at = now();
     this.saveEdge({
@@ -551,7 +566,7 @@ export class Store {
       )
         throw new DomainError('stale_source', '来源已变化，请重新选择文字', 409);
       const turn = s.turns.find((t) => t.id === block.turn_id);
-      const sourceNode = sourceNodeForTurn(s.nodes, turn);
+      const sourceNode = sourceNodeForTurn(s.nodes, turn, s.turns);
       if (!sourceNode) throw new DomainError('missing_source', '来源对话不存在', 404);
       if (sourceNode.visibility === 'hidden')
         throw new DomainError('deleted_node', '請先還原來源卡片，再建立摘錄。', 409);
@@ -809,7 +824,28 @@ export class Store {
         s.turns.some((t) => t.conversation_id === set.conversation_id && t.status === 'streaming')
       )
         throw new DomainError('busy', '对话正在生成回答', 409);
+      const conversation = s.conversations.find((c) => c.id === set.conversation_id);
+      const card = s.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === set.conversation_id,
+      );
+      // An unnamed conversation is named after its first question.
+      const named = set.prompt_text.replace(/\s+/g, ' ').trim().slice(0, 40);
+      const rename =
+        conversation?.title === UNTITLED_CONVERSATION &&
+        named.length > 0 &&
+        !s.turns.some((t) => t.conversation_id === set.conversation_id);
       this.appendTurn(set.conversation_id, 'human', set.prompt_text);
+      if (rename && conversation) {
+        const current = this.snapshot().conversations.find((c) => c.id === conversation.id)!;
+        this.saveConversation({ ...current, title: named });
+        if (card && card.title === UNTITLED_CONVERSATION)
+          this.saveNode({
+            ...card,
+            title: named,
+            representation: { ...card.representation, overview: named },
+            updated_at: now(),
+          });
+      }
       const turn = this.appendTurn(set.conversation_id, 'assistant', null, {
         context: set.id,
         provider,
@@ -859,16 +895,33 @@ export class Store {
   // a backing conversation without a card, so it never appears as a message of the
   // conversation it summarizes.
   beginSummary(set: ContextSet, pkg: ContextPackage, provider: string, model: string) {
+    return this.beginBacking('summary', set, pkg, provider, model);
+  }
+  beginBrainstorm(set: ContextSet, pkg: ContextPackage, provider: string, model: string) {
+    return this.beginBacking('brainstorm', set, pkg, provider, model);
+  }
+  // Summaries and brainstorms are sealed assistant turns stored in a backing
+  // conversation without a card; the context set names the conversation they serve.
+  private beginBacking(
+    kind: 'summary' | 'brainstorm',
+    set: ContextSet,
+    pkg: ContextPackage,
+    provider: string,
+    model: string,
+  ) {
+    const label = kind === 'summary' ? '摘要' : '腦力激盪';
+    if (!set.id.startsWith(kind + '-'))
+      throw new DomainError('invalid_request', '請求類型不符。', 400);
     return this.transaction(() => {
       const s = this.snapshot();
       const target = s.conversations.find((c) => c.id === set.conversation_id);
       if (!target) throw new DomainError('missing_conversation', '找不到对话', 404);
       if (s.context_sets.some((c) => c.id === set.id))
-        throw new DomainError('already_used', '這個摘要請求已處理，請勿重複提交。', 409);
+        throw new DomainError('already_used', `這個${label}請求已處理，請勿重複提交。`, 409);
       if (!pkg.sendable)
         throw new DomainError(
-          'summary_blocked',
-          pkg.diagnostics[0] ?? '这条对话目前不能生成摘要。',
+          kind + '_blocked',
+          pkg.diagnostics[0] ?? `目前不能進行${label}。`,
           409,
         );
       if (
@@ -879,16 +932,16 @@ export class Store {
               (c) =>
                 c.id === t.input_context_set_id &&
                 c.conversation_id === target.id &&
-                c.id.startsWith('summary-'),
+                c.id.startsWith(kind + '-'),
             ),
         )
       )
-        throw new DomainError('busy', '这条对话正在生成摘要。', 409);
+        throw new DomainError('busy', `這條對話正在進行${label}。`, 409);
       const at = now();
       const backing: Conversation = {
         id: id(),
         workspace_id: target.workspace_id,
-        title: `摘要 · ${target.title}`.slice(0, 160),
+        title: `${label} · ${target.title}`.slice(0, 160),
         status: 'active',
         root_turn_id: null,
         summary_block_id: null,
@@ -963,6 +1016,265 @@ export class Store {
       return saved;
     });
   }
+  // ---- Notes -------------------------------------------------------------
+  createNote(
+    input: z.input<typeof CreateNoteSchema>,
+    idea?: NonNullable<NoteMetadata['idea']> & { title: string },
+    by: 'human' | 'ai' = 'human',
+  ) {
+    const request = CreateNoteSchema.parse(input);
+    return this.transaction(() => {
+      const state = this.snapshot();
+      const prior = state.blocks.find(
+        (b) => noteMetadata(b)?.request_id === request.request_id && noteMetadata(b)?.version === 1,
+      );
+      if (prior) {
+        if (prior.text_content !== request.text)
+          throw new DomainError('note_request_reused', '這個新增請求已用於不同內容。', 409);
+        const card = state.nodes.find((n) => n.ref_type === 'turn' && n.ref_id === prior.turn_id);
+        // A later edit moved the card to a newer turn; find it through the conversation.
+        const turn = state.turns.find((t) => t.id === prior.turn_id)!;
+        const current =
+          card ??
+          state.nodes.find(
+            (n) =>
+              n.ref_type === 'turn' &&
+              state.turns.some(
+                (t) => t.id === n.ref_id && t.conversation_id === turn.conversation_id,
+              ),
+          )!;
+        return { node: current, block: prior };
+      }
+      const at = now();
+      const conversationId = id();
+      const title = idea?.title ?? noteTitle(request.text);
+      this.saveConversation({
+        id: conversationId,
+        workspace_id: state.workspace.id,
+        title,
+        status: 'active',
+        root_turn_id: null,
+        summary_block_id: null,
+        branch_origin_excerpt_id: null,
+        created_at: at,
+        updated_at: at,
+      });
+      const turn = this.appendTurn(conversationId, 'human', null);
+      this.saveTurn({ ...turn, status: 'complete' });
+      const metadata: NoteMetadata = {
+        kind: idea ? 'idea' : 'note',
+        color: request.color,
+        request_id: request.request_id,
+        version: 1,
+        ...(idea
+          ? {
+              idea: {
+                brainstorm_turn_id: idea.brainstorm_turn_id,
+                index: idea.index,
+                prompt: idea.prompt,
+                source_node_id: idea.source_node_id,
+              },
+            }
+          : {}),
+      };
+      const block = this.noteText(turn.id, request.text, metadata);
+      const node = this.createNode(
+        'turn',
+        turn.id,
+        title,
+        request.position?.x ?? 100,
+        request.position?.y ?? 100,
+        { width: 300, height: 220 },
+      );
+      const saved = {
+        ...node,
+        created_by: by,
+        representation: { overview: title, summary: request.text.slice(0, 240) },
+      };
+      this.saveNode(saved);
+      if (!state.workspace.root_node_id)
+        this.saveWorkspace({ ...this.workspace(), root_node_id: node.id });
+      this.bump();
+      return { node: saved, block };
+    });
+  }
+  private noteText(turnId: string, text: string, metadata: NoteMetadata) {
+    const at = now();
+    const block: ContentBlock = {
+      id: id(),
+      turn_id: turnId,
+      block_type: 'markdown',
+      ordinal: 0,
+      mime_type: 'text/markdown',
+      text_content: text,
+      asset_id: null,
+      structured_data: { note: NoteMetadataSchema.parse(metadata) },
+      content_hash: contentHash(text),
+      created_at: at,
+      updated_at: at,
+    };
+    this.saveBlock(block);
+    return block;
+  }
+  // Earlier versions stay as turns, so excerpts and sealed inputs that used them stay valid.
+  editNote(nodeId: string, input: z.input<typeof EditNoteSchema>) {
+    const request = EditNoteSchema.parse(input);
+    return this.transaction(() => {
+      const state = this.snapshot();
+      const node = state.nodes.find((n) => n.id === nodeId);
+      const block = node && noteBlock(state, node);
+      const metadata = noteMetadata(block);
+      if (!node || !block || !metadata) throw new DomainError('missing_note', '找不到筆記。', 404);
+      if (node.visibility === 'hidden')
+        throw new DomainError('deleted_node', '請先從回收桶還原卡片。', 409);
+      const color = request.color ?? metadata.color;
+      if (request.text === block.text_content && color === metadata.color) return node;
+      const conversationId = state.turns.find((t) => t.id === block.turn_id)!.conversation_id;
+      const turn = this.appendTurn(conversationId, 'human', null);
+      this.saveTurn({ ...turn, status: 'complete' });
+      this.noteText(turn.id, request.text, { ...metadata, color, version: metadata.version + 1 });
+      // A card named after its text follows the text; a renamed card keeps its name.
+      const title =
+        node.title === noteTitle(block.text_content ?? '') ? noteTitle(request.text) : node.title;
+      const updated = {
+        ...node,
+        ref_id: turn.id,
+        title,
+        representation: { overview: title, summary: request.text.slice(0, 240) },
+        updated_at: now(),
+      };
+      this.saveNode(updated);
+      this.bump();
+      return updated;
+    });
+  }
+  // ---- Links -------------------------------------------------------------
+  createLink(input: z.input<typeof CreateLinkSchema>) {
+    const link = CreateLinkSchema.parse(input);
+    return this.transaction(() => {
+      const state = this.snapshot();
+      for (const nodeId of [link.source_node_id, link.target_node_id]) {
+        const node = state.nodes.find((n) => n.id === nodeId);
+        if (!node) throw new DomainError('missing_node', '找不到卡片。', 404);
+        if (node.visibility === 'hidden')
+          throw new DomainError('deleted_node', '請先從回收桶還原卡片。', 409);
+      }
+      const existing = state.edges.find(
+        (e) =>
+          e.edge_class === 'semantic' &&
+          e.provenance === 'user' &&
+          ((e.source_node_id === link.source_node_id && e.target_node_id === link.target_node_id) ||
+            (e.source_node_id === link.target_node_id && e.target_node_id === link.source_node_id)),
+      );
+      // One link per pair: linking again changes the relation instead of stacking lines.
+      if (existing) return this.updateLink(existing.id, { type: link.type });
+      const at = now();
+      const edge: Edge = {
+        id: id(),
+        workspace_id: state.workspace.id,
+        source_node_id: link.source_node_id,
+        target_node_id: link.target_node_id,
+        edge_class: 'semantic',
+        type: link.type,
+        direction: 'directed',
+        provenance: 'user',
+        confidence: null,
+        confirmed: true,
+        label: null,
+        metadata: {},
+        created_at: at,
+        updated_at: at,
+      };
+      this.saveEdge(edge);
+      this.bump();
+      return edge;
+    });
+  }
+  private userLink(edgeId: string) {
+    const edge = this.snapshot().edges.find((e) => e.id === edgeId);
+    if (!edge || edge.edge_class !== 'semantic' || edge.provenance !== 'user')
+      throw new DomainError('missing_link', '找不到這條連結。', 404);
+    return edge;
+  }
+  updateLink(edgeId: string, input: z.input<typeof UpdateLinkSchema>) {
+    const { type } = UpdateLinkSchema.parse(input);
+    return this.transaction(() => {
+      const edge = this.userLink(edgeId);
+      if (edge.type === type) return edge;
+      const updated = { ...edge, type, updated_at: now() } as Edge;
+      this.saveEdge(updated);
+      this.bump();
+      return updated;
+    });
+  }
+  // Only links the person drew can be removed; structural provenance is permanent.
+  deleteLink(edgeId: string) {
+    return this.transaction(() => {
+      this.userLink(edgeId);
+      this.db.prepare('DELETE FROM edges WHERE id = ?').run(edgeId);
+      this.bump();
+      return { ok: true };
+    });
+  }
+  // ---- Brainstorm ----------------------------------------------------------
+  brainstormIdeas(turnId: string) {
+    const state = this.snapshot();
+    const turn = state.turns.find((t) => t.id === turnId);
+    const set = state.context_sets.find((c) => c.id === turn?.input_context_set_id);
+    if (!turn || !set?.id.startsWith('brainstorm-') || turn.status !== 'complete')
+      throw new DomainError('missing_brainstorm', '找不到這次腦力激盪。', 404);
+    return {
+      set,
+      ideas: turn.suggested_graph_updates.flatMap((proposal, index) =>
+        proposal.type === 'idea' ? [{ index, ...proposal }] : [],
+      ),
+    };
+  }
+  acceptIdeas(turnId: string, input: z.input<typeof AcceptIdeasSchema>) {
+    const { indexes } = AcceptIdeasSchema.parse(input);
+    return this.transaction(() => {
+      const { set, ideas } = this.brainstormIdeas(turnId);
+      const sourceNodeId = set.selected_node_ids[0] ?? set.current_node_id;
+      const state = this.snapshot();
+      const source = state.nodes.find((n) => n.id === sourceNodeId);
+      if (!source) throw new DomainError('missing_node', '找不到腦力激盪的來源卡片。', 404);
+      const created: CanvasNode[] = [];
+      let row = 0;
+      for (const index of [...new Set(indexes)].sort((a, b) => a - b)) {
+        const idea = ideas.find((entry) => entry.index === index);
+        if (!idea) throw new DomainError('missing_idea', '找不到這個方向。', 404);
+        const existing = this.snapshot().nodes.find((n) => {
+          const meta = noteMetadata(noteBlock(this.snapshot(), n));
+          return meta?.idea?.brainstorm_turn_id === turnId && meta.idea.index === index;
+        });
+        if (existing) {
+          created.push(existing);
+          continue;
+        }
+        const { node } = this.createNote(
+          {
+            request_id: randomUUID(),
+            text: idea.prompt,
+            color: 'blue',
+            position: { x: source.x + source.width + 120, y: source.y + row * 260 },
+          },
+          {
+            brainstorm_turn_id: turnId,
+            index,
+            prompt: idea.prompt,
+            source_node_id: source.id,
+            title: idea.title,
+          },
+          'ai',
+        );
+        this.structural(source.id, node.id, 'generated_from');
+        created.push(node);
+        row++;
+      }
+      this.bump();
+      return created;
+    });
+  }
   failAnswer(turnId: string, message: string) {
     this.transaction(() => {
       const t = this.snapshot().turns.find((t) => t.id === turnId);
@@ -995,3 +1307,10 @@ export {
   listRecoverySnapshots,
   recoveryProject,
 } from './project.ts';
+// A note's card is named after the start of its text.
+export const noteTitle = (text: string) =>
+  text
+    .replace(/[#*_>`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40) || '筆記';

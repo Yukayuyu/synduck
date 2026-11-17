@@ -61,9 +61,6 @@ export function TrashDialog({
           <Trash2 size={20} />
           回收桶
         </h2>
-        <p className="drawer-caption">
-          刪除的卡片不會加入新的 AI 上下文。原文和來源仍可檢視、還原。
-        </p>
         <label className="sr-only" htmlFor="trash-search">
           搜尋已刪除卡片
         </label>

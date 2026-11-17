@@ -4,7 +4,6 @@ import {
   Plus,
   Network,
   MessageSquare,
-  ArrowUpRight,
   X,
   GitBranch,
   ScanLine,
@@ -18,6 +17,7 @@ import {
   Palette,
   MoreHorizontal,
   FilePlus2,
+  StickyNote,
 } from 'lucide-react';
 import {
   DEFAULT_BUDGET,
@@ -26,8 +26,13 @@ import {
   type ContextPackage,
   type Excerpt,
   type Conversation,
+  UNTITLED_CONVERSATION,
+  noteBlock,
+  noteMetadata,
 } from '@acc/domain';
 import { ReferenceDialog } from './ReferenceDialog';
+import { NoteDialog } from './NoteDialog';
+import { BrainstormDialog } from './BrainstormDialog';
 import { useApi, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
 import { Canvas } from './Canvas';
@@ -142,8 +147,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   };
   const [locate, setLocate] = useState<{ id: string; tick: number } | null>(null);
   const [highlight, setHighlight] = useState<SourceHighlight | null>(null);
-  const [newDialog, setNewDialog] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
   const [help, setHelp] = useState(false);
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
@@ -165,6 +168,12 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   const [pendingDelete, setPendingDelete] = useState<CanvasNode | null>(null);
   const [cardActionBusy, setCardActionBusy] = useState(false);
   const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [noteDialog, setNoteDialog] = useState<{
+    position?: { x: number; y: number };
+    edit?: CanvasNode;
+  } | null>(null);
+  const [brainstormNode, setBrainstormNode] = useState<CanvasNode | null>(null);
+  const [reveal, setReveal] = useState<{ ids: string[]; tick: number } | null>(null);
   const [lastDeleted, setLastDeleted] = useState<{
     id: string;
     title: string;
@@ -197,7 +206,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     setWorkspaceMenu(null);
     setAppearanceOpen(false);
     setHelp(false);
-    setNewDialog(false);
     setReferenceDialog(false);
     setRenameTarget(null);
     setPendingDelete(null);
@@ -286,17 +294,15 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     },
     [refresh, invalidate, fail],
   );
-  const create = async (title: string, position?: { x: number; y: number }) => {
+  const create = async (position?: { x: number; y: number }) => {
     try {
       const result = await api<{ node: CanvasNode }>('/conversations', {
-        title,
+        title: UNTITLED_CONVERSATION,
         position,
       });
       await refresh();
       open(result.node);
       moveTo(result.node.id);
-      setNewDialog(false);
-      setNewTitle('');
     } catch (e) {
       fail(e);
     }
@@ -426,7 +432,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     if (!state) return;
     const b = state.blocks.find((b) => b.id === e.source_block_id);
     const t = state.turns.find((t) => t.id === b?.turn_id);
-    const n = sourceNodeForTurn(state.nodes, t);
+    const n = sourceNodeForTurn(state.nodes, t, state.turns);
     if (n) {
       if (n.visibility === 'hidden') {
         setTrashTarget({
@@ -470,7 +476,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           const origin = navigation.origin;
           const block = fresh.blocks.find((b) => b.id === origin.source_block_id);
           const turn = fresh.turns.find((t) => t.id === block?.turn_id);
-          const node = sourceNodeForTurn(fresh.nodes, turn);
+          const node = sourceNodeForTurn(fresh.nodes, turn, fresh.turns);
           if (
             fresh.workspace.id !== origin.workspace_id ||
             !node ||
@@ -529,6 +535,65 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   };
   // Summaries spend model quota, so they are only made on request. A current
   // preview is recompiled afterwards so the inspector shows the real effect.
+  // New notes land in the middle of the current view unless a point was chosen.
+  const viewCenter = () => {
+    const view = localViewport.current ?? state?.workspace.settings.viewport;
+    if (!view) return undefined;
+    return {
+      x: Math.round((window.innerWidth / 2 - view.x) / view.zoom - 150),
+      y: Math.round((window.innerHeight / 2 - view.y) / view.zoom - 110),
+    };
+  };
+  const saveNote = async (text: string, color: string) => {
+    try {
+      if (noteDialog?.edit) {
+        await api('/notes/' + encodeURIComponent(noteDialog.edit.id), { text, color }, 'PUT');
+        await refresh();
+      } else {
+        const result = await api<{ node: CanvasNode }>('/notes', {
+          request_id: crypto.randomUUID(),
+          text,
+          color,
+          position: noteDialog?.position ?? viewCenter(),
+        });
+        await refresh();
+        moveTo(result.node.id);
+      }
+      setNoteDialog(null);
+    } catch (e) {
+      fail(e);
+    }
+  };
+  // Asking from a note or reference opens a new conversation with it as context.
+  const askAbout = (node: CanvasNode) =>
+    void api<{ node: CanvasNode }>('/conversations', {
+      title: ('關於 ' + node.title).slice(0, 160),
+      position: { x: node.x + 480, y: node.y },
+    })
+      .then(async (result) => {
+        await refresh();
+        setSelected([node.id]);
+        // An idea card already holds the question to ask next.
+        const idea = noteMetadata(noteBlock(state!, node))?.idea;
+        if (idea) setPrompts((previous) => ({ ...previous, [result.node.ref_id]: idea.prompt }));
+        openOnCanvas(result.node);
+      })
+      .catch(fail);
+  const brainstormSelection = async (selection: SelectedText) => {
+    try {
+      const result = await api<{ node: CanvasNode }>('/excerpts', {
+        source_block_id: selection.block.id,
+        source_content_hash: selection.block.content_hash,
+        selector: selection.selector,
+        branch: false,
+      });
+      await refresh();
+      window.getSelection()?.removeAllRanges();
+      setBrainstormNode(result.node);
+    } catch (e) {
+      fail(e);
+    }
+  };
   const summarize = async (targetConversation: string) => {
     if (summarizing) return;
     setSummarizing(targetConversation);
@@ -585,6 +650,15 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     };
     let started = false;
     updateJob(targetConversation, job);
+    // The question moves into the thread as soon as it is sent. A failed request
+    // puts it back so nothing typed is lost.
+    if (!retryId)
+      setPrompts((previous) =>
+        previous[targetConversation] === submittedPrompt ||
+        previous[targetConversation] === undefined
+          ? { ...previous, [targetConversation]: '' }
+          : previous,
+      );
     setRequestErrors((previous) => {
       const next = { ...previous };
       delete next[targetConversation];
@@ -645,7 +719,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             : previous,
         );
     } catch (error) {
-      if (started && !retryId)
+      if (!retryId)
         setPrompts((previous) =>
           previous[targetConversation] === ''
             ? { ...previous, [targetConversation]: submittedPrompt }
@@ -883,6 +957,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             activeNode={activeId}
             selected={selected}
             locate={locate}
+            reveal={reveal}
             tool={tool}
             traceEpoch={traceEpoch}
             onTraceCount={setTraceCount}
@@ -895,6 +970,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               setRenameTitle(node.title);
             }}
             onSummarize={(node) => void summarize(node.ref_id)}
+            onNoteAt={(position) => setNoteDialog({ position })}
+            onEditNote={(node) => setNoteDialog({ edit: node })}
+            onAskNote={askAbout}
+            onBrainstorm={setBrainstormNode}
+            onGraphChanged={async () => {
+              await refresh();
+              invalidate();
+            }}
             summarizing={summarizing}
             onBranch={(node) => {
               const excerpt = state.excerpts.find((e) => e.id === node.ref_id);
@@ -922,7 +1005,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             onSelect={select}
             onControl={control}
             onCreateAt={(position) => {
-              void create('新的提問', position);
+              void create(position);
             }}
             onImportAt={(position) => {
               setReferencePosition(position);
@@ -1000,24 +1083,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
                 onSend={() => void generate(node.ref_id)}
                 onSendDirect={() => void generate(node.ref_id, undefined, true)}
                 onExcerpt={(s, b) => void excerpt(s, b)}
+                onBrainstormSelection={(s) => void brainstormSelection(s)}
                 onBranch={(e) => void branch(e)}
                 onSource={source}
                 onReference={canvas.onReference}
                 onExternalSource={canvas.onSourceJump}
                 referenceSelected={selected.includes(node.id)}
                 onSelectReference={() => select(node.id)}
-                onAskReference={() => {
-                  void api<{ node: CanvasNode }>('/conversations', {
-                    title: ('關於 ' + node.title).slice(0, 160),
-                    position: { x: node.x + 480, y: node.y },
-                  })
-                    .then(async (result) => {
-                      await refresh();
-                      setSelected([node.id]);
-                      openOnCanvas(result.node);
-                    })
-                    .catch(fail);
-                }}
+                onAskReference={() => askAbout(node)}
                 onInspect={(pkg) => {
                   setInspected({ pkg, historical: true });
                   setPanel('context');
@@ -1032,13 +1105,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <span className="empty-symbol">
               <Network size={30} strokeWidth={1.4} />
             </span>
-            <h1>把想法，攤開來。</h1>
-            <p>在畫布上提問，選取文字，讓下一個想法接著生長。</p>
-            <button className="primary" onClick={() => setNewDialog(true)}>
-              <Plus size={16} />
-              開始第一段對話
+            <button
+              className="primary"
+              aria-label="開始第一段對話"
+              title="開始第一段對話"
+              onClick={() => void create()}
+            >
+              <Plus size={18} />
             </button>
-            <small>也可以雙擊空白處，在那裡開始。</small>
           </div>
         )}
       </main>
@@ -1066,12 +1140,13 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           className="new-canvas-conversation"
           aria-label="新建对话"
           title="新建对话"
-          onClick={() => {
-            setNewDialog(true);
-          }}
+          onClick={() => void create()}
         >
           <Plus size={18} />
-          <span>提問</span>
+          <span className="sr-only">提問</span>
+        </button>
+        <button aria-label="新增筆記" title="新增筆記" onClick={() => setNoteDialog({})}>
+          <StickyNote size={18} />
         </button>
         <span className="tool-divider" />
         <button
@@ -1083,7 +1158,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           }}
         >
           <FilePlus2 size={18} />
-          <span>參考</span>
+          <span className="sr-only">參考</span>
         </button>
         <button
           aria-label="畫布"
@@ -1092,7 +1167,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(null)}
         >
           <Network size={18} />
-          <span>畫布</span>
+          <span className="sr-only">畫布</span>
         </button>
         <button
           aria-label="對話"
@@ -1101,7 +1176,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(panel === 'conversations' ? null : 'conversations')}
         >
           <MessageSquare size={18} />
-          <span>對話</span>
+          <span className="sr-only">對話</span>
         </button>
         <button
           aria-label="上下文"
@@ -1110,7 +1185,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           onClick={() => setPanel(panel === 'context' ? null : 'context')}
         >
           <ScanLine size={18} />
-          <span>上下文{selected.length > 0 ? ` · ${selected.length}` : ''}</span>
+          <span className="sr-only">上下文</span>
+          {selected.length > 0 && <span className="tool-badge">{selected.length}</span>}
         </button>
         <button
           aria-label="回收桶"
@@ -1173,7 +1249,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           ) : (
             <>
               <h2>對話</h2>
-              <p className="drawer-caption">所有思路，都在同一張畫布上。</p>
               <nav className="conversation-list" aria-label="对话列表">
                 {state.conversations
                   .filter((c) =>
@@ -1212,7 +1287,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               </nav>
               {!state.nodes.some(
                 (n) => n.ref_type === 'conversation' && n.visibility !== 'hidden',
-              ) && <p className="drawer-caption">點擊下方「提問」，開始第一段對話。</p>}
+              ) && <p className="drawer-caption">尚無對話</p>}
             </>
           )}
         </section>
@@ -1355,6 +1430,32 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           </button>
         </div>
       )}
+      {noteDialog && (
+        <NoteDialog
+          editing={!!noteDialog.edit}
+          initial={(() => {
+            const block = noteDialog.edit && noteBlock(state, noteDialog.edit);
+            const meta = noteMetadata(block);
+            return block && meta
+              ? { text: block.text_content ?? '', color: meta.color }
+              : undefined;
+          })()}
+          onSave={saveNote}
+          onClose={() => setNoteDialog(null)}
+        />
+      )}
+      {brainstormNode && (
+        <BrainstormDialog
+          node={brainstormNode}
+          onClose={() => setBrainstormNode(null)}
+          onAccepted={async (nodes) => {
+            await refresh();
+            setBrainstormNode(null);
+            setActiveId(null);
+            setReveal({ ids: [brainstormNode.id, ...nodes.map((n) => n.id)], tick: Date.now() });
+          }}
+        />
+      )}
       {referenceDialog && (
         <ReferenceDialog
           position={referencePosition}
@@ -1366,42 +1467,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             invalidate();
           }}
         />
-      )}
-      {newDialog && (
-        <div className="modal-backdrop" onClick={() => setNewDialog(false)}>
-          <form
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-title"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void create(newTitle.trim() || '新的探索');
-            }}
-          >
-            <span className="overline">NEW CONVERSATION</span>
-            <h2 id="new-title">从哪里开始探索？</h2>
-            <label htmlFor="conversation-title">给这段对话起个名字</label>
-            <input
-              autoFocus
-              id="conversation-title"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              maxLength={160}
-              placeholder="例如：我的下一个产品"
-            />
-            <div className="modal-actions">
-              <button type="button" className="secondary" onClick={() => setNewDialog(false)}>
-                取消
-              </button>
-              <button className="primary" type="submit">
-                创建对话
-                <ArrowUpRight size={15} />
-              </button>
-            </div>
-          </form>
-        </div>
       )}
       {help && (
         <div className="modal-backdrop" onClick={() => setHelp(false)}>
@@ -1415,7 +1480,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <button className="modal-close" aria-label="关闭帮助" onClick={() => setHelp(false)}>
               <X size={18} />
             </button>
-            <span className="overline">HOW IT WORKS</span>
             <h2 id="help-title">从对话，到思考地图。</h2>
             <ol>
               <li>

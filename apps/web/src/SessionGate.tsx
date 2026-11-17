@@ -43,9 +43,6 @@ export function SessionGate({ children }: { children: ReactNode }) {
           }}
         >
           <h2>登入你的工作區</h2>
-          <p className="project-description">
-            輸入後端設定的工作區密碼。ChatGPT 帳號可在進入後連接。
-          </p>
           <label htmlFor="workspace-password">工作區密碼</label>
           <input
             id="workspace-password"

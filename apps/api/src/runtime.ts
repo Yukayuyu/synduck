@@ -291,6 +291,16 @@ export function registerRuntime(
         .header('Content-Disposition', 'attachment; filename="canvas-task-' + id + '.zip"')
         .send(Buffer.from(await local.exportTrace(id, context)));
     });
+    app.get('/api/local/folders', async (request, reply) =>
+      reply.header('Cache-Control', 'no-store').send(
+        await local.browseFolders(
+          z
+            .object({ path: z.string().max(2000).optional() })
+            .strict()
+            .parse(request.query).path,
+        ),
+      ),
+    );
     app.post('/api/local/configure', async (request) => {
       const { enabled, root } = z
         .object({ enabled: z.boolean(), root: z.string().max(2000) })
