@@ -102,3 +102,57 @@ describe('SQLite provenance', () => {
     }
   });
 });
+
+describe('untitled conversations', () => {
+  it('takes a name from the first question only, on the conversation and its card', async () => {
+    const { Store, id, now } = await import('@acc/db');
+    const { compileContext } = await import('@acc/context-compiler');
+    const { DEFAULT_BUDGET, UNTITLED_CONVERSATION } = await import('@acc/domain');
+    const store = new Store(':memory:');
+    try {
+      const ask = (conversationId: string, nodeId: string, prompt: string) => {
+        const set = {
+          id: id(),
+          workspace_id: store.workspace().id,
+          conversation_id: conversationId,
+          target_turn_id: null,
+          current_node_id: nodeId,
+          prompt_text: prompt,
+          selected_node_ids: [],
+          pinned_node_ids: [],
+          excluded_node_ids: [],
+          budget: DEFAULT_BUDGET,
+          policy_version: 'context-policy-0.1' as const,
+          graph_snapshot_version: store.workspace().revision,
+          status: 'compiled' as const,
+          created_at: now(),
+        };
+        store.saveContext(set, compileContext(store.snapshot(), set));
+        const { turn } = store.beginAnswer(set.id, 'demo', 'demo');
+        store.finishAnswer(turn.id, {
+          answer: 'ok',
+          used_source_ids: [],
+          suggested_graph_updates: [],
+        });
+      };
+      const fresh = store.createConversation(UNTITLED_CONVERSATION);
+      ask(fresh.conversation.id, fresh.node.id, `  How do we\n keep it local?  ${'x'.repeat(80)}`);
+      const named = store.snapshot();
+      const title = named.conversations.find((c) => c.id === fresh.conversation.id)!.title;
+      expect(title).toBe('How do we keep it local? ' + 'x'.repeat(15));
+      expect(named.nodes.find((n) => n.id === fresh.node.id)!.title).toBe(title);
+      ask(fresh.conversation.id, fresh.node.id, 'A later question');
+      expect(
+        store.snapshot().conversations.find((c) => c.id === fresh.conversation.id)!.title,
+      ).toBe(title);
+      // A name the user chose is never replaced.
+      const chosen = store.createConversation('My plan');
+      ask(chosen.conversation.id, chosen.node.id, 'First question');
+      expect(
+        store.snapshot().conversations.find((c) => c.id === chosen.conversation.id)!.title,
+      ).toBe('My plan');
+    } finally {
+      store.close();
+    }
+  });
+});

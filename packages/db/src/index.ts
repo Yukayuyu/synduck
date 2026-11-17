@@ -20,6 +20,7 @@ import {
   CreateReferenceSchema,
   ConversationSummarySchema,
   conversationSummaries,
+  UNTITLED_CONVERSATION,
   sourceNodeForTurn,
   DomainError,
   type Workspace,
@@ -809,7 +810,28 @@ export class Store {
         s.turns.some((t) => t.conversation_id === set.conversation_id && t.status === 'streaming')
       )
         throw new DomainError('busy', '对话正在生成回答', 409);
+      const conversation = s.conversations.find((c) => c.id === set.conversation_id);
+      const card = s.nodes.find(
+        (n) => n.ref_type === 'conversation' && n.ref_id === set.conversation_id,
+      );
+      // An unnamed conversation is named after its first question.
+      const named = set.prompt_text.replace(/\s+/g, ' ').trim().slice(0, 40);
+      const rename =
+        conversation?.title === UNTITLED_CONVERSATION &&
+        named.length > 0 &&
+        !s.turns.some((t) => t.conversation_id === set.conversation_id);
       this.appendTurn(set.conversation_id, 'human', set.prompt_text);
+      if (rename && conversation) {
+        const current = this.snapshot().conversations.find((c) => c.id === conversation.id)!;
+        this.saveConversation({ ...current, title: named });
+        if (card && card.title === UNTITLED_CONVERSATION)
+          this.saveNode({
+            ...card,
+            title: named,
+            representation: { ...card.representation, overview: named },
+            updated_at: now(),
+          });
+      }
       const turn = this.appendTurn(set.conversation_id, 'assistant', null, {
         context: set.id,
         provider,

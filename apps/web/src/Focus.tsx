@@ -348,7 +348,7 @@ export function Focus(props: Props) {
     >
       {active && excerpt && (
         <div className="focus-heading">
-          <span>{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
+          <span className="sr-only">{excerpt ? '原文摘錄' : '在這裡繼續提問'}</span>
           <button onClick={props.onClose} aria-label="返回画布" title="收起輸入框">
             <X size={15} />
           </button>
@@ -492,16 +492,24 @@ export function Focus(props: Props) {
                 if (parent) props.onOpenNode(parent);
               }}
             >
-              <GitBranch size={13} />
-              {conversation.fork_origin.mode === 'btw' ? '顺手问' : '分支'} · 回到主线
               <CornerUpRight size={13} />
+              <span className="sr-only">
+                {conversation.fork_origin.mode === 'btw' ? '顺手问' : '分支'} · 回到主线
+              </span>
             </button>
           )}
           {forks.length > 0 && (
             <details className="thread-branch-index">
-              <summary>
-                {forks.length} 个分支 ·{' '}
-                {forks.filter((c) => threadStatus(state, c.id) !== '已回答').length} 待答
+              <summary
+                aria-label={`${forks.length} 个分支 · ${
+                  forks.filter((c) => threadStatus(state, c.id) !== '已回答').length
+                } 待答`}
+              >
+                <GitBranch size={12} />
+                {forks.length}
+                {forks.some((c) => threadStatus(state, c.id) !== '已回答') && (
+                  <LoaderCircle className="spin" size={11} />
+                )}
               </summary>
               <div className="thread-branches">
                 {forks.map((child) => (
@@ -523,11 +531,6 @@ export function Focus(props: Props) {
             </details>
           )}
           <div ref={scrollRef} className="focus-content conversation-scroll">
-            {turns.length === 0 && !busy && (
-              <div className="conversation-empty">
-                <p>{origin ? '沿着这段文字，继续提问。' : '写下一个问题。'}</p>
-              </div>
-            )}
             {exchanges.map((exchange, index) => (
               <section
                 className="exchange"
@@ -654,7 +657,7 @@ export function Focus(props: Props) {
                           }}
                         >
                           <ScanLine size={12} />
-                          查看本轮上下文
+                          <span className="sr-only">查看本轮上下文</span>
                         </button>
                       )}
                       {forks.some((c) => c.fork_origin?.turn_id === turn.id) && (
@@ -961,8 +964,9 @@ export function Focus(props: Props) {
             </form>
           ) : (
             <button className="continue-on-canvas secondary" onClick={props.onOpen}>
+              <span className="sr-only">繼續提問</span>
+              <span aria-hidden="true">提問…</span>
               <Send size={14} />
-              繼續提問
             </button>
           )}
         </>

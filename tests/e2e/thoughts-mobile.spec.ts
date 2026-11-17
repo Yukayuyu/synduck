@@ -39,7 +39,10 @@ test('adds and sends a side question with touch controls and native punctuation 
     await editor.evaluate((element) => element === Reflect.get(window, 'phoneForkEditor')),
   ).toBe(true);
   await card.getByRole('button', { name: '分别发送 1', exact: true }).tap();
-  await expect(card.locator('.thread-branch-index summary')).toHaveText('1 个分支 · 0 待答');
+  await expect(card.locator('.thread-branch-index summary')).toHaveAttribute(
+    'aria-label',
+    '1 个分支 · 0 待答',
+  );
   await card.locator('.thread-branch-index summary').tap();
   await card.locator('.thread-branch-index').getByRole('button').tap();
   await expect(

@@ -93,7 +93,7 @@ test('phone options keep geometry stable and project settings preserve the draft
   await expect(card.getByRole('button', { name: '交给本地任务', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '本地任務', exact: true }).tap();
   const dialog = page.getByRole('dialog', { name: '本地任務', exact: true });
-  await expect(dialog).toContainText('普通畫布對話會自動判斷並使用工具');
+  await expect(dialog.getByRole('heading', { name: '本地任務' })).toBeVisible();
   await dialog.getByRole('button', { name: '關閉本地任務', exact: true }).tap();
   await expect(editor).toHaveValue(draft);
   await card.getByRole('button', { name: '卡片操作：手机开发入口', exact: true }).tap();

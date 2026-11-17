@@ -36,6 +36,7 @@ import {
   Check,
   Ban,
   MoreHorizontal,
+  LoaderCircle,
   ScrollText,
   Trash2,
   Pencil,
@@ -124,8 +125,10 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
         <button className="card-title nodrag" aria-label={data.title} onClick={data.onOpen}>
           {data.displayTitle}
         </button>
-        {data.type === 'conversation' && (
-          <span className="thread-mode">{data.busy ? '生成中' : data.mode}</span>
+        {data.type === 'conversation' && data.busy && (
+          <span className="thread-mode" role="status" aria-label="生成中" title="生成中">
+            <LoaderCircle className="spin" size={13} />
+          </span>
         )}
         {data.type === 'excerpt' && data.sourceCount > 1 && (
           <span className="collection-count">{data.sourceCount}</span>
@@ -155,7 +158,7 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
           {renderContent(data.node, Boolean(width && height))}
         </div>
       ) : (
-        !data.node.collapsed && <p className="card-preview">{data.preview || '放大以閱讀與提問'}</p>
+        !data.node.collapsed && <p className="card-preview">{data.preview}</p>
       )}
       {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
         <div className="card-footer">

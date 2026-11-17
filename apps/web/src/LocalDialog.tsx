@@ -157,12 +157,6 @@ export function LocalDialog({
         <h2 id="local-title">
           <Terminal size={22} /> 本地任務
         </h2>
-        <p className="project-description">
-          使用已登入的 ChatGPT / Codex
-          模型，在畫布問題中提供後端電腦上的專案目錄，即可在原卡片授權並繼續。
-          普通畫布對話會自動判斷並使用工具，確認與紀錄直接顯示在該段回答中，無需轉交任務。
-          项目、账号连接与桌面设置在所有画布间共用；下方保留進階測試與舊任務紀錄。
-        </p>
         {state?.other_canvas_busy && (
           <p role="status" className="quiet-note">
             另一张画布正在执行本地任务，可从左上角画布列表切回查看。
@@ -240,10 +234,6 @@ export function LocalDialog({
                   />
                   附上目前已預覽的畫布上下文
                 </label>
-                <p className="quiet-note">
-                  此处可读取项目、修改文件和运行命令。先保存后端电脑上的源码目录，并选择已登录的
-                  ChatGPT / Codex 模型。
-                </p>
                 {prompt.length > 8000 && (
                   <p role="alert">
                     任务指令最多 8000 字符。请缩短这里的指令；已附上的上下文仍保留完整问题。

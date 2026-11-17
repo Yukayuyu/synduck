@@ -128,10 +128,7 @@ export function ReferenceDialog({
             />
           </label>
         )}
-        <p className="quiet-note">
-          TXT／Markdown 使用 UTF-8；PDF／DOCX 擷取文字，不含原始版面、圖片或 OCR。單檔 5
-          MiB，擷取文字 1 MiB。匯入後自行選擇加入對話。
-        </p>
+        <p className="quiet-note">TXT · Markdown · PDF · DOCX（僅文字），單檔 5 MiB</p>
         {error && <p role="alert">{error}</p>}
         <div className="modal-actions">
           <button type="button" disabled={working} onClick={onClose}>

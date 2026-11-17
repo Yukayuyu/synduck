@@ -118,17 +118,6 @@ export function ConnectionCard({
         </span>
       </div>
       {connected && id === 'github' && state?.github.login && <p>@{state.github.login}</p>}
-      {connected && (
-        <p className="quiet-note">所有画布都能继续使用这份连接。具体操作仍按任务授权执行。</p>
-      )}
-      {!connected && !waiting && !preparing && (
-        <p className="quiet-note">
-          {id === 'github'
-            ? '在 GitHub 官方页面登录一次，之后可直接使用仓库，无需配置工具或输入密钥。'
-            : state?.services.find((entry) => entry.id === id)?.description ||
-              '完成服务的网页登录，之后可以在画布直接提出需求。'}
-        </p>
-      )}
       {waiting && code && (
         <div className="connection-code">
           <span>在 GitHub 页面输入一次性验证码</span>
@@ -156,11 +145,7 @@ export function ConnectionCard({
           {code ? '复制验证码并打开 GitHub' : '前往 ' + title + ' 授权'}
         </a>
       )}
-      {waiting && (
-        <p className="quiet-note">
-          完成后会自动继续。账号信息只在服务方页面输入，不需要发到对话里。
-        </p>
-      )}
+      {waiting && <p className="quiet-note">账号信息只在服务方页面输入。</p>}
       {(error || loadError || (current?.phase === 'error' && current.message)) && (
         <p role="alert">{error || current?.message || loadError}</p>
       )}
@@ -216,9 +201,6 @@ export function ConnectionsPanel() {
   if (state && !state.available) return <p>这次启动尚未开启本机连接，请使用安装包启动 Synduck。</p>;
   return (
     <div className="connections-panel">
-      <p className="project-description">
-        连接一次，以后在任何画布直接提出需求。账号授权保存在运行 Synduck 的电脑上。
-      </p>
       {error && <p role="alert">{error}</p>}
       {state && <ConnectionCard id="github" shared={state} />}
       {!state && <p>正在读取连接…</p>}

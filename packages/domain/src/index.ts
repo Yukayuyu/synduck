@@ -483,9 +483,11 @@ export interface ProjectPreview {
     nodes: number;
   };
 }
+// A conversation started without a name takes one from its first question.
+export const UNTITLED_CONVERSATION = '新對話';
 export const CreateConversationSchema = z
   .object({
-    title: z.string().trim().min(1).max(160),
+    title: z.string().trim().min(1).max(160).default(UNTITLED_CONVERSATION),
     position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict().optional(),
   })
   .strict();

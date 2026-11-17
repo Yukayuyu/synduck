@@ -4,7 +4,6 @@ import {
   Plus,
   Network,
   MessageSquare,
-  ArrowUpRight,
   X,
   GitBranch,
   ScanLine,
@@ -26,6 +25,7 @@ import {
   type ContextPackage,
   type Excerpt,
   type Conversation,
+  UNTITLED_CONVERSATION,
 } from '@acc/domain';
 import { ReferenceDialog } from './ReferenceDialog';
 import { useApi, ApiError, streamAnswer, type ClientState } from './api';
@@ -142,8 +142,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   };
   const [locate, setLocate] = useState<{ id: string; tick: number } | null>(null);
   const [highlight, setHighlight] = useState<SourceHighlight | null>(null);
-  const [newDialog, setNewDialog] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
   const [help, setHelp] = useState(false);
   const [projectDialog, setProjectDialog] = useState(false);
   const [modelDialog, setModelDialog] = useState(false);
@@ -197,7 +195,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     setWorkspaceMenu(null);
     setAppearanceOpen(false);
     setHelp(false);
-    setNewDialog(false);
     setReferenceDialog(false);
     setRenameTarget(null);
     setPendingDelete(null);
@@ -286,17 +283,15 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
     },
     [refresh, invalidate, fail],
   );
-  const create = async (title: string, position?: { x: number; y: number }) => {
+  const create = async (position?: { x: number; y: number }) => {
     try {
       const result = await api<{ node: CanvasNode }>('/conversations', {
-        title,
+        title: UNTITLED_CONVERSATION,
         position,
       });
       await refresh();
       open(result.node);
       moveTo(result.node.id);
-      setNewDialog(false);
-      setNewTitle('');
     } catch (e) {
       fail(e);
     }
@@ -931,7 +926,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             onSelect={select}
             onControl={control}
             onCreateAt={(position) => {
-              void create('新的提問', position);
+              void create(position);
             }}
             onImportAt={(position) => {
               setReferencePosition(position);
@@ -1041,13 +1036,14 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             <span className="empty-symbol">
               <Network size={30} strokeWidth={1.4} />
             </span>
-            <h1>把想法，攤開來。</h1>
-            <p>在畫布上提問，選取文字，讓下一個想法接著生長。</p>
-            <button className="primary" onClick={() => setNewDialog(true)}>
-              <Plus size={16} />
-              開始第一段對話
+            <button
+              className="primary"
+              aria-label="開始第一段對話"
+              title="開始第一段對話"
+              onClick={() => void create()}
+            >
+              <Plus size={18} />
             </button>
-            <small>也可以雙擊空白處，在那裡開始。</small>
           </div>
         )}
       </main>
@@ -1075,9 +1071,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           className="new-canvas-conversation"
           aria-label="新建对话"
           title="新建对话"
-          onClick={() => {
-            setNewDialog(true);
-          }}
+          onClick={() => void create()}
         >
           <Plus size={18} />
           <span className="sr-only">提問</span>
@@ -1221,7 +1215,7 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               </nav>
               {!state.nodes.some(
                 (n) => n.ref_type === 'conversation' && n.visibility !== 'hidden',
-              ) && <p className="drawer-caption">點擊下方「提問」，開始第一段對話。</p>}
+              ) && <p className="drawer-caption">尚無對話</p>}
             </>
           )}
         </section>
@@ -1375,41 +1369,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             invalidate();
           }}
         />
-      )}
-      {newDialog && (
-        <div className="modal-backdrop" onClick={() => setNewDialog(false)}>
-          <form
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-title"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void create(newTitle.trim() || '新的探索');
-            }}
-          >
-            <h2 id="new-title">从哪里开始探索？</h2>
-            <label htmlFor="conversation-title">给这段对话起个名字</label>
-            <input
-              autoFocus
-              id="conversation-title"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              maxLength={160}
-              placeholder="例如：我的下一个产品"
-            />
-            <div className="modal-actions">
-              <button type="button" className="secondary" onClick={() => setNewDialog(false)}>
-                取消
-              </button>
-              <button className="primary" type="submit">
-                创建对话
-                <ArrowUpRight size={15} />
-              </button>
-            </div>
-          </form>
-        </div>
       )}
       {help && (
         <div className="modal-backdrop" onClick={() => setHelp(false)}>

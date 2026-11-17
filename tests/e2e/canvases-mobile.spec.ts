@@ -20,8 +20,6 @@ test('creates and switches canvases with touch without losing a saved draft', as
     '手机里的第二张画布',
   );
   await page.getByRole('button', { name: '開始第一段對話', exact: true }).tap();
-  await page.getByLabel('给这段对话起个名字').fill('手机草稿独立保存');
-  await page.getByRole('button', { name: '创建对话', exact: true }).tap();
   await page.getByLabel('你的问题', { exact: true }).fill('手机输入，普通标点。');
   await page.getByRole('button', { name: '切换画布', exact: true }).tap();
   dialog = page.getByRole('dialog', { name: '画布管理', exact: true });

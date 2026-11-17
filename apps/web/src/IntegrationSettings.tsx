@@ -255,8 +255,7 @@ export function IntegrationSettings({
         ) : (
           <>
             <p className="quiet-note">
-              選擇後端 Windows
-              的應用視窗。每次觀察與操作需確認，操作時會切換到該視窗。重新啟動後須重新啟用。
+              每次觀察與操作需確認，操作時會切換到該視窗。重新啟動後須重新選擇。
             </p>
             <button
               disabled={working || busy}
@@ -457,7 +456,6 @@ export function ManualIntegrations({
               </label>
               {frame && (
                 <>
-                  <p className="quiet-note">點選圖片設定座標；這不會立即操作桌面。</p>
                   <FrameImage
                     task={task!.id}
                     image={frame}

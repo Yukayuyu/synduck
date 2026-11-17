@@ -750,3 +750,14 @@
 .canvas-first[data-canvas-style='ink'] .canvas-context-menu button.danger {
   color: #ff9eb1;
 }
+/* The collapsed composer reads as an input: placeholder left, send mark right. */
+.canvas-first .continue-on-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+}
+.canvas-first .continue-on-canvas > span[aria-hidden] {
+  color: var(--muted-ink);
+  font-size: 12px;
+}
