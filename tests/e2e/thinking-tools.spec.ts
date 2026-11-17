@@ -32,6 +32,8 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   page,
   request,
 }) => {
+  // Unique words per run: other tests and repeats share this server.
+  const run = Date.now().toString(36);
   const created = await request.post('/api/conversations', {
     data: { title: '留存分析', position: { x: -170000, y: -170000 } },
   });
@@ -46,29 +48,46 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   });
   await sent.body();
   await request.patch('/api/workspace', {
-    data: { viewport: { x: 170000 + 120, y: 170000 + 120, zoom: 0.8 } },
+    data: { viewport: { x: 170000 + 120, y: 170000 + 120, zoom: 1 } },
   });
   await page.goto('/');
 
   // 1. A note: no question, no answer.
   await page.getByRole('button', { name: '新增筆記', exact: true }).click();
   const noteDialog = page.getByRole('dialog', { name: '新增筆記' });
-  await noteDialog.getByLabel('筆記內容').fill('線索：流失集中在沒有完成引導的用戶');
+  await noteDialog.getByLabel('筆記內容').fill(`線索${run}：流失集中在沒有完成引導的用戶`);
   await noteDialog.getByRole('radio', { name: '粉' }).click();
   await noteDialog.getByLabel('筆記內容').press('Enter');
   await expect(noteDialog).toHaveCount(0);
-  const note = page.locator('.canvas-card.note').filter({ hasText: '流失集中在沒有完成引導' });
+  const note = page
+    .locator('.canvas-card.note')
+    .filter({ hasText: `線索${run}：流失集中在沒有完成引導` });
   await expect(note).toHaveClass(/note-pink/);
   let state: ClientState = await (await request.get('/api/state')).json();
-  const noteNode = state.nodes.find((n) => n.title.startsWith('線索：流失集中'))!;
+  const noteNode = state.nodes.find((n) => n.title.startsWith(`線索${run}：`))!;
   // The note's own conversation holds the words and no answer.
   const noteTurn = state.turns.find((t) => t.id === noteNode.ref_id)!;
   expect(
     state.turns.filter((t) => t.conversation_id === noteTurn.conversation_id).map((t) => t.actor),
   ).toEqual(['human']);
 
+  // Show both cards: other tests share this server, so positions vary.
+  const talkNode = state.nodes.find((n) => n.id === talk.node.id)!;
+  const zoom = 0.6;
+  const left = Math.min(talkNode.x, noteNode.x);
+  const top = Math.min(talkNode.y, noteNode.y);
+  await request.patch('/api/workspace', {
+    data: { viewport: { x: -left * zoom + 80, y: -top * zoom + 100, zoom } },
+  });
+  await page.reload();
+  expect(Math.abs(talkNode.x - noteNode.x) * zoom).toBeLessThan(1100);
+  expect(Math.abs(talkNode.y - noteNode.y) * zoom).toBeLessThan(500);
+
   // 2. Link the note to the conversation as a counterpoint.
-  await page.getByRole('button', { name: '卡片操作：' + noteNode.title, exact: true }).click();
+  await page
+    .locator(`.react-flow__node[data-id="${noteNode.id}"]`)
+    .getByRole('button', { name: '卡片操作：' + noteNode.title, exact: true })
+    .click();
   await page.getByRole('menuitem', { name: '連結到…', exact: true }).click();
   await expect(page.locator('.link-banner')).toBeVisible();
   const talkCard = page.locator(`.react-flow__node[data-id="${talk.node.id}"]`);
@@ -87,7 +106,7 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   const linked = pkg.items.find((i: { node_id: string }) => i.node_id === noteNode.id);
   expect(linked.link).toEqual({ type: 'contradicts', direction: 'to_current' });
   await expect(
-    page.locator('.context-item').filter({ hasText: '流失集中在沒有完成引導' }),
+    page.locator('.context-item').filter({ hasText: `線索${run}：流失集中在沒有完成引導` }),
   ).toBeVisible();
   await page.getByRole('button', { name: '關閉面板', exact: true }).click();
 
@@ -101,11 +120,13 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   await expect(ideas).toHaveCount(3);
   await ideas.nth(1).uncheck();
   await page.screenshot({ path: 'test-results/brainstorm.png' });
+  const before = new Set(
+    ((await (await request.get('/api/state')).json()) as ClientState).nodes.map((n) => n.id),
+  );
   await brainstorm.getByRole('button', { name: '加入 2 張', exact: true }).click();
   await expect(brainstorm).toHaveCount(0);
-  await expect(page.locator('.canvas-card.note.idea')).toHaveCount(2);
   state = await (await request.get('/api/state')).json();
-  const ideaNodes = state.nodes.filter((n) => n.created_by === 'ai');
+  const ideaNodes = state.nodes.filter((n) => n.created_by === 'ai' && !before.has(n.id));
   expect(ideaNodes).toHaveLength(2);
   expect(
     state.edges.filter(
@@ -123,13 +144,18 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   });
   await page.reload();
   // 4. Edit the note; the card keeps its place and shows the new words.
-  await page.getByRole('button', { name: '卡片操作：' + noteNode.title, exact: true }).click();
+  await page
+    .locator(`.react-flow__node[data-id="${noteNode.id}"]`)
+    .getByRole('button', { name: '卡片操作：' + noteNode.title, exact: true })
+    .click();
   await page.getByRole('menuitem', { name: '編輯筆記', exact: true }).click();
   const edit = page.getByRole('dialog', { name: '編輯筆記' });
-  await expect(edit.getByLabel('筆記內容')).toHaveValue('線索：流失集中在沒有完成引導的用戶');
-  await edit.getByLabel('筆記內容').fill('線索：流失集中在跳過引導的新用戶');
+  await expect(edit.getByLabel('筆記內容')).toHaveValue(`線索${run}：流失集中在沒有完成引導的用戶`);
+  await edit.getByLabel('筆記內容').fill(`線索${run}：流失集中在跳過引導的新用戶`);
   await edit.getByRole('button', { name: '保存筆記' }).click();
-  await expect(page.locator('.canvas-card.note').filter({ hasText: '跳過引導' })).toBeVisible();
+  await expect(
+    page.locator('.canvas-card.note').filter({ hasText: `線索${run}：流失集中在跳過引導` }),
+  ).toBeVisible();
   await page.screenshot({ path: 'test-results/note-card.png' });
 
   // 5. Retype the link from the line itself, then remove it.
@@ -140,7 +166,8 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
   await page.getByRole('menuitem', { name: '移除連結', exact: true }).click();
   await expect(page.locator('.react-flow__edge.relation-supports')).toHaveCount(0);
   await page.reload();
-  await expect(page.locator('.canvas-card.note.idea')).toHaveCount(2);
+  for (const node of ideaNodes)
+    await expect(page.locator(`.react-flow__node[data-id="${node.id}"]`)).toHaveCount(1);
 
   // 6. Expanding an idea opens a conversation with its question ready to send.
   const idea = ideaNodes[0];
@@ -151,7 +178,10 @@ test('jots a note, links it to a conversation the AI then sees, and brainstorms 
     data: { viewport: { x: -idea.x + 200, y: -idea.y + 200, zoom: 1 } },
   });
   await page.reload();
-  await page.getByRole('button', { name: '卡片操作：' + idea.title, exact: true }).click();
+  await page
+    .locator(`.react-flow__node[data-id="${idea.id}"]`)
+    .getByRole('button', { name: '卡片操作：' + idea.title, exact: true })
+    .click();
   await page.getByRole('menuitem', { name: '以此提問', exact: true }).click();
   await expect(page.locator('.focus-panel[data-active="true"]').getByLabel('你的问题')).toHaveValue(
     ideaPrompt,
