@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,7 +86,12 @@ describe('local project executor', () => {
     expect(restarted.snapshot().enabled).toBe(true);
   });
   it('browses folders by name only, hides app data and remembers recent projects', async () => {
-    const { executor, project, home, history } = await fixture();
+    const created = await fixture();
+    const { executor } = created;
+    // The browser reports canonical paths (/private/var on macOS, long names on Windows).
+    const home = await realpath(created.home);
+    const project = join(home, 'project');
+    const history = join(home, 'history');
     await mkdir(join(project, 'src'));
     await mkdir(join(project, '.git'));
     await writeFile(join(project, 'notes.txt'), 'file contents stay private');
