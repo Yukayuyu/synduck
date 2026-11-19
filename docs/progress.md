@@ -300,3 +300,7 @@ Following the owner's framing of the canvas as a place where scattered human clu
 Checks on Linux (Node 22): typecheck, lint and build pass; 179 of 181 unit/integration tests and 60 of 61 Chromium scenarios pass, each with the single Node 24 host failure. The answer instruction gained a paragraph on links, and a brainstorm prompt was added; per AGENTS.md these prompt changes still need a real-model `pnpm eval:context` run before release. The quality of real brainstorm directions has not been observed.
 
 Release decision (2026-11-17): the owner chose to publish 0.16.0 without the real-model `pnpm eval:context` run that AGENTS.md asks for after prompt changes, because the product has no users yet. The evaluation remains outstanding and should be run once a model is connected.
+
+## 0.16.0 release preparation (2026-11-20)
+
+The latest main commit passed Linux, Windows and Intel Mac validation. Its Apple Silicon macOS 15 job was cancelled because GitHub could not allocate a hosted runner; a retry again remained queued. CI and release packaging now use GitHub's stable macOS 26 Apple Silicon image, retaining macOS 15 Intel coverage and every existing test. The portable package allowlist also includes the 0.14–0.16 user guides and their screenshots so links in the bundled setup documentation resolve. The version stays 0.16.0; the tag is published only after the resulting main commit passes CI. The owner's recorded decision to defer the real-model evaluation remains in force.
