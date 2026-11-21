@@ -188,7 +188,8 @@ it('exposes login through the protected API without requiring a project or leaki
   const task = await local.manual('canvas_mcp_tools', { server_id: 'fixture' });
   await vi.waitFor(() => expect(task.actions[0]?.status).toBe('waiting'));
   await local.approve(task.id, task.actions[0].id, true);
-  await vi.waitFor(() => expect(local.busy).toBe(false));
+  // Approving starts the real MCP fixture as a Node process, which can take over a second on slow runners.
+  await vi.waitFor(() => expect(local.busy).toBe(false), { timeout: 10_000 });
   expect(task.actions[0].status).toBe('complete');
   await local.manual(
     'canvas_mcp_call',
@@ -202,7 +203,7 @@ it('exposes login through the protected API without requiring a project or leaki
   );
   await vi.waitFor(() => expect(task.actions[1]?.status).toBe('waiting'));
   await local.approve(task.id, task.actions[1].id, true);
-  await vi.waitFor(() => expect(local.busy).toBe(false));
+  await vi.waitFor(() => expect(local.busy).toBe(false), { timeout: 10_000 });
   expect(task.actions[1].success).toBe(true);
   expect(task.actions[1].output).toContain('无需本地目录');
   expect(local.status().enabled).toBe(false);
