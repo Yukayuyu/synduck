@@ -701,6 +701,25 @@ export const ANSWER_INSTRUCTIONS = [
   'This answer has no tools: it cannot read files, run commands, browse or act on accounts, and nothing has been done outside this reply. If the person asks for that, say briefly that it needs the ChatGPT / Codex mode with a connected project, chosen in 模型與登入, where GitHub and other services can also be connected with a sign-in button. Do not ask the person to edit configuration files, paste secrets, install tools or hand the question to another task.',
 ].join('\n');
 
+// The answer format sent to providers that take a raw JSON Schema (Codex, OpenAI).
+// Strict structured output accepts only a subset of JSON Schema: alternatives must be
+// anyOf (oneOf is rejected), and every object must list all its keys as required with
+// no extra properties. Zod emits oneOf for discriminated unions, so normalize here once
+// instead of per provider. The Claude SDK helper performs its own equivalent conversion.
+export function answerJsonSchema(): Record<string, unknown> {
+  const strict = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(strict);
+    if (!value || typeof value !== 'object') return value;
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === '$schema') continue;
+      out[key === 'oneOf' ? 'anyOf' : key] = strict(child);
+    }
+    return out;
+  };
+  return strict(z.toJSONSchema(AnswerSchema)) as Record<string, unknown>;
+}
+
 // One canonical serialization is shared by budget accounting and the model gateway.
 // Excluded source content, graph payloads and credentials never enter this object.
 export function modelInput(

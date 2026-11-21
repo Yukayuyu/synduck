@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import {
-  AnswerSchema,
   ANSWER_INSTRUCTIONS,
   CONTEXT_ANSWER_INSTRUCTIONS,
   DomainError,
   modelInput,
+  answerJsonSchema,
   type ContextPackage,
 } from '@acc/domain';
 import { validateAnswer, partialAnswer, type ModelProvider, type GenerationTools } from './index';
@@ -499,7 +499,7 @@ export class CodexProvider implements ModelProvider {
               },
             ],
             environments: [],
-            outputSchema: z.toJSONSchema(AnswerSchema),
+            outputSchema: answerJsonSchema(),
           })
           .then((response) => {
             const turn = (response as { turn?: CodexTurn } | undefined)?.turn;

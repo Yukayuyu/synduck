@@ -79,7 +79,7 @@ export function codexError(error: unknown): DomainError {
   if (/invalid schema|schema.*(?:invalid|not supported)|response_format/i.test(message))
     return new DomainError(
       'codex_schema_rejected',
-      'Codex 拒絕回答的 JSON 格式規格，請更新應用程式後重試。',
+      'Codex 不接受這個版本的回答格式。這是應用程式的問題，不是你的設定或問題；請回報，或暫時改用其他模式。',
       502,
     );
   if (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OpenAIProvider, partialAnswer, validateAnswer } from '@acc/model-gateway';
-import { DEFAULT_BUDGET, type ContextPackage } from '@acc/domain';
+import { DEFAULT_BUDGET, answerJsonSchema, type ContextPackage } from '@acc/domain';
 
 const pkg: ContextPackage = {
   package_id: 'pkg',
@@ -63,6 +63,9 @@ describe('server-only structured gateway', () => {
     expect(await provider.generate(pkg, (text) => drafts.push(text))).toEqual(answer);
     expect(body.store).toBe(false);
     expect(body.model).toBe('test-model');
+    expect((body.text as { format: { schema: unknown } }).format.schema).toEqual(
+      answerJsonSchema(),
+    );
     expect(body.input).not.toContain('excluded-secret-id');
     expect(body.input).not.toContain('test-key');
     expect(drafts.at(-1)).toBe(answer.answer);

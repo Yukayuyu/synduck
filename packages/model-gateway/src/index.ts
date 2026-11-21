@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import {
   AnswerSchema,
   ANSWER_INSTRUCTIONS,
   DomainError,
   modelInput,
+  answerJsonSchema,
   SUMMARY_PROMPT,
   BRAINSTORM_MARKER,
   type Answer,
@@ -141,7 +141,7 @@ export class OpenAIProvider implements ModelProvider {
               type: 'json_schema',
               name: 'context_canvas_answer',
               strict: true,
-              schema: z.toJSONSchema(AnswerSchema),
+              schema: answerJsonSchema(),
             },
           },
         }),

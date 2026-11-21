@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { Store } from '@acc/db';
 import { createApp } from '../apps/api/src/app';
-import { DEFAULT_BUDGET, type ContextPackage } from '@acc/domain';
+import { DEFAULT_BUDGET, answerJsonSchema, type ContextPackage } from '@acc/domain';
 import { CodexProvider } from '../packages/model-gateway/src/codex';
 import {
   CodexRpc,
@@ -228,7 +228,13 @@ describe('ChatGPT through official Codex protocol', () => {
       sandbox: 'read-only',
       config: { 'features.shell_tool': false, 'features.apps': false, web_search: 'disabled' },
     });
-    const turn = JSON.stringify(rpc.calls.find((c) => c.method === 'turn/start')!.params);
+    const turnParams = rpc.calls.find((c) => c.method === 'turn/start')!.params as {
+      outputSchema: unknown;
+    };
+    // Codex enforces strict structured output: the schema must avoid oneOf.
+    expect(turnParams.outputSchema).toEqual(answerJsonSchema());
+    expect(JSON.stringify(turnParams.outputSchema)).not.toContain('"oneOf"');
+    const turn = JSON.stringify(turnParams);
     expect(turn).toContain('Explain context');
     expect(turn).not.toContain('excluded-secret-id');
     expect(drafts).toEqual([answer.answer]);
