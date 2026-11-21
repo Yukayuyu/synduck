@@ -98,7 +98,7 @@ pnpm start:local
 
 维护者在已构建的 Git checkout 中运行 `pnpm package:windows`，输出位于 `release-output/`。打包从明确清单生成编译文件、前端、固定运行依赖清单、MIT 许可证和配置说明；没有真实 `.env`、数据或开发 `node_modules`。目标电脑首次启动时安装平台对应依赖。程序的 JavaScript 和桌面桥接仍可查看。
 
-推送 `main` 运行 CI；对应提交通过后，推送匹配版本的 `canvas-v<版本>` 标签发布到更新频道，详见[发布配置](github-updates.md)。
+推送 `main` 运行 CI；若 `package.json` 版本尚未发布，提交通过后 CI 会自动打上 `canvas-v<版本>` 标签并发布到更新频道，详见[发布配置](github-updates.md)。
 
 ## 验证范围
 

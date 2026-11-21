@@ -51,3 +51,48 @@ jobs:
         with:
           name: browser-test-results-${{ matrix.os }}
           path: test-results/
+  # A commit on main whose package.json version has no canvas-v<version> tag yet is
+  # released automatically once every validation job above has passed. Existing tags
+  # are never moved or overwritten. Tags created with the workflow token do not start
+  # release.yml on their own, so it is called directly below.
+  tag-release:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Yukayuyu/synduck'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Tag this commit if its version is unreleased
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          tag="canvas-v$version"
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" --silent 2>/dev/null; then
+            echo "$tag already exists; nothing to release."
+            exit 0
+          fi
+          main_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [[ "$main_sha" != "$GITHUB_SHA" ]] && ! gh api "repos/$GH_REPO/compare/$GITHUB_SHA...$main_sha" --jq '.status' | grep -qx ahead; then
+            echo "::error::This commit is not on main."
+            exit 1
+          fi
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
+          echo "Tagged $GITHUB_SHA as $tag."
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+  release:
+    needs: tag-release
+    if: needs.tag-release.outputs.tag != ''
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag-release.outputs.tag }}

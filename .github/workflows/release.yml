@@ -2,10 +2,17 @@ name: Context Canvas release
 on:
   push:
     tags: ['canvas-v*']
+  # Main CI calls this after it has validated a commit and tagged it (see ci.yml).
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag on the commit that main CI validated, e.g. canvas-v0.16.1'
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 jobs:
   preflight:
@@ -23,7 +30,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           node --input-type=module -e '
             import { readFileSync } from "node:fs";
@@ -41,7 +48,10 @@ jobs:
             echo '::error::The release tag changed after this run started.'
             exit 1
           fi
+      # When main CI calls this workflow, it runs only after every validation job passed,
+      # and that CI run is still in progress, so there is nothing to wait for.
       - name: Require successful main CI for this commit
+        if: inputs.tag == ''
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -117,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           metadata=$(gh api "repos/$GH_REPO")
           REPO_METADATA="$metadata" node --input-type=module -e '
