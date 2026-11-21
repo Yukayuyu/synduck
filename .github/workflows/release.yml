@@ -69,7 +69,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, target: windows }
-          - { os: macos-15, target: macos }
+          - { os: macos-26, target: macos }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

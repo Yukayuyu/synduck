@@ -301,4 +301,8 @@ Checks on Linux (Node 22): typecheck, lint and build pass; 179 of 181 unit/integ
 
 Release decision (2026-11-17): the owner chose to publish 0.16.0 without the real-model `pnpm eval:context` run that AGENTS.md asks for after prompt changes, because the product has no users yet. The evaluation remains outstanding and should be run once a model is connected.
 
+## 0.16.0 release preparation (2026-11-20)
+
+The latest main commit passed Linux, Windows and Intel Mac validation. Its Apple Silicon macOS 15 job was cancelled because GitHub could not allocate a hosted runner; a retry again remained queued. CI and release packaging now use GitHub's stable macOS 26 Apple Silicon image, retaining macOS 15 Intel coverage and every existing test. The portable package allowlist also includes the 0.14–0.16 user guides and their screenshots so links in the bundled setup documentation resolve. The version stays 0.16.0; the tag is published only after the resulting main commit passes CI. The owner's recorded decision to defer the real-model evaluation remains in force.
+
 Fix before release (2026-11-21): Codex rejected every answer with "Codex 拒絕回答的 JSON 格式規格". The new `idea` proposal made `suggested_graph_updates` a discriminated union, and `z.toJSONSchema` writes that as `oneOf`, which OpenAI/Codex strict structured output does not accept (the Claude SDK already rewrites it to `anyOf`). `answerJsonSchema()` in `packages/domain` now produces the one shared schema for every provider in the strict-compatible subset, and `tests/answer-schema.test.ts` fails if a future schema change leaves that subset. The Codex error message now says the fault is in the app, not the user's settings. Unit tests: 182 of 184 pass on Node 22, with the known Node 24 host failure.
