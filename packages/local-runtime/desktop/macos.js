@@ -160,7 +160,10 @@ function run() {
       board.setStringForType($(String(request.text)), $.NSPasteboardTypeString);
       delay(0.05);
       key(keyCodes.V, true);
-      delay(0.25);
+      // The target app reads the clipboard only when it handles the paste. On a busy
+      // or slow Mac that can take well over a quarter second, and restoring earlier
+      // would paste the previous clipboard instead of the text, so wait longer.
+      delay(1);
       board.clearContents;
       if (!previous.isNil()) board.setStringForType(previous, $.NSPasteboardTypeString);
     } else if (request.operation === 'key') {

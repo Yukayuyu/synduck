@@ -71,7 +71,12 @@ try {
     assert.equal(execFileSync('/usr/bin/pbpaste').toString(), 'clipboard-before');
     await act({ operation: 'key', capture_id: reference.capture_id, key: 'Control+A' });
     await act({ operation: 'key', capture_id: reference.capture_id, key: 'Control+C' });
-    const copied = execFileSync('/usr/bin/pbpaste').toString();
+    // TextEdit fills the clipboard when it handles Command+C, which can lag on slow runners.
+    let copied = '';
+    for (let attempt = 0; attempt < 20 && !copied.includes(marker); attempt++) {
+      copied = execFileSync('/usr/bin/pbpaste').toString();
+      if (!copied.includes(marker)) await sleep(250);
+    }
     assert.ok(copied.includes(marker), 'typed text was not found in the window');
     await act({
       operation: 'scroll',
