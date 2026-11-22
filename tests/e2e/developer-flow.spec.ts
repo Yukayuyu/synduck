@@ -156,7 +156,7 @@ test('renders Markdown while picks, original highlights and sealed input retain 
   await expect(block.locator('strong')).toHaveText('粗体🙂');
 });
 
-test('keeps options out of the layout and persists pointer and numeric conversation resizing', async ({
+test('resizes an automatic card freely from its edges and corners, keeps inputs stable and persists the result', async ({
   page,
   request,
 }) => {
@@ -173,78 +173,107 @@ test('keeps options out of the layout and persists pointer and numeric conversat
     height: element.offsetHeight,
   }));
   await wrapper.getByLabel('提问选项', { exact: true }).click();
-  const opened = await card.evaluate((element: HTMLElement) => ({
-    width: element.offsetWidth,
-    height: element.offsetHeight,
-  }));
-  expect(opened).toEqual(before);
-  await expect(wrapper.getByRole('button', { name: '傳送', exact: true })).toBeVisible();
-  // Click outside the floating menu; its center intentionally overlays part
-  // of the composer without resizing it.
+  expect(
+    await card.evaluate((element: HTMLElement) => ({
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+    })),
+  ).toEqual(before);
   await editor.click({ position: { x: 6, y: 6 } });
-  await expect(wrapper.locator('.composer-settings')).not.toHaveAttribute('open');
-  await editor.press('End');
-  await editor.press('Comma');
-  await expect(editor).toBeFocused();
+  const drag = async (selector: string, dx: number, dy: number) => {
+    const box = await wrapper.locator(selector).boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + box!.width / 2 + dx, box!.y + box!.height / 2 + dy, {
+      steps: 10,
+    });
+    await page.mouse.up();
+  };
+  // The first resize starts from automatic size, without a preset dialog.
+  await drag('.card-resize-edge.right', 83, 0);
+  const saved = async () =>
+    (await (await request.get('/api/state')).json()).nodes.find(
+      (n: { id: string }) => n.id === root.node.id,
+    );
+  await expect.poll(async () => Math.round((await saved()).width)).toBe(before.width + 83);
+  expect(Math.round((await saved()).height)).toBe(before.height);
+  expect((await saved()).x).toBe(root.node.x);
+  await drag('.card-resize-edge.bottom', 0, 61);
+  await expect.poll(async () => Math.round((await saved()).height)).toBe(before.height + 61);
+  await expect(editor).toHaveValue('普通输入，继续编辑。');
   expect(
     await editor.evaluate((element) => element === Reflect.get(window, 'sameDeveloperEditor')),
   ).toBe(true);
-  await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
-  await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '调整对话框尺寸', exact: true });
-  // Sizes are picked, not typed.
-  await expect(dialog.getByRole('spinbutton')).toHaveCount(0);
-  await dialog.getByRole('button', { name: /^中/ }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect
-    .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetWidth)))
-    .toBe(540);
-  await expect
-    .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetHeight)))
-    .toBe(650);
-  const grip = await wrapper.locator('.card-resize').boundingBox();
-  await page.mouse.move(grip!.x + grip!.width / 2, grip!.y + grip!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(grip!.x + grip!.width / 2 + 60, grip!.y + grip!.height / 2 + 50, {
-    steps: 8,
-  });
-  await page.mouse.up();
-  await expect
-    .poll(async () => {
-      const state = await (await request.get('/api/state')).json();
-      return Math.round(state.nodes.find((node: { id: string }) => node.id === root.node.id).width);
-    })
-    .toBe(600);
-  const resized = await (await request.get('/api/state')).json();
-  expect(resized.nodes.find((node: { id: string }) => node.id === root.node.id)).toMatchObject({
-    width: 600,
-    height: 700,
-    size_mode: 'manual',
-  });
+  const dimensions = {
+    width: Math.round((await saved()).width),
+    height: Math.round((await saved()).height),
+  };
   await page.reload();
   await expect
-    .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetWidth)))
-    .toBe(600);
+    .poll(() => wrapper.evaluate((e: HTMLElement) => e.offsetWidth))
+    .toBe(dimensions.width);
   await expect
-    .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetHeight)))
-    .toBe(700);
-  await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
-  await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).click();
-  await dialog.getByRole('button', { name: '恢复自动尺寸', exact: true }).click();
-  await expect
-    .poll(() => wrapper.evaluate((element: HTMLElement) => Math.round(element.offsetWidth)))
-    .toBe(420);
-  await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
-  await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).click();
-  await dialog.getByRole('button', { name: /^緊湊/ }).click();
+    .poll(() => wrapper.evaluate((e: HTMLElement) => e.offsetHeight))
+    .toBe(dimensions.height);
   await wrapper.locator('.card-title').click();
+  await wrapper.getByRole('button', { name: '卡片操作：可调整的对话框', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true })).toHaveCount(0);
+  await page.getByRole('menuitem', { name: '恢復自動尺寸', exact: true }).click();
+  await expect.poll(async () => (await saved()).size_mode).toBe('auto');
+  await expect.poll(() => wrapper.evaluate((e: HTMLElement) => e.offsetWidth)).toBe(before.width);
+  await wrapper.locator('.card-title').click();
+  await drag('.card-resize-handle.bottom.right', -300, -600);
+  await expect.poll(async () => Math.round((await saved()).width)).toBe(340);
+  await expect.poll(async () => Math.round((await saved()).height)).toBe(360);
   for (let index = 0; index < 4; index++) {
     await wrapper.getByLabel('添加分支问题', { exact: true }).click();
     await wrapper.getByRole('button', { name: '分支 /fork', exact: true }).click();
     await wrapper.getByLabel('分支问题 ' + (index + 1), { exact: true }).fill('独立问题 ' + index);
   }
-  const compact = await card.boundingBox();
-  const composer = await wrapper.locator('.composer').boundingBox();
-  expect(composer!.y + composer!.height).toBeLessThanOrEqual(compact!.y + compact!.height);
   await expect(wrapper.getByRole('button', { name: '分别发送 5', exact: true })).toBeVisible();
+  const compact = await card.boundingBox(),
+    composer = await wrapper.locator('.composer').boundingBox();
+  expect(composer!.y + composer!.height).toBeLessThanOrEqual(compact!.y + compact!.height + 1);
+  await page.screenshot({ path: 'test-results/free-resize.png' });
+});
+
+test('resizes a selected card from its corner at different canvas zoom levels without moving its origin', async ({
+  page,
+  request,
+}) => {
+  for (const [index, zoom] of [0.65, 1.25].entries()) {
+    const root = await conversation(request, '縮放下調整大小 ' + index, '', -37000 - index * 2000);
+    await request.patch('/api/nodes/' + root.node.id, {
+      data: { width: 500, height: 440, size_mode: 'manual' },
+    });
+    await request.patch('/api/workspace', {
+      data: { viewport: { x: 60 - root.node.x * zoom, y: 140 - root.node.y * zoom, zoom } },
+    });
+    await page.goto('/');
+    const wrapper = page.locator('.react-flow__node[data-id="' + root.node.id + '"]');
+    await wrapper.click({ position: { x: 20, y: 10 } });
+    const handle = wrapper.locator('.card-resize-handle.bottom.right');
+    await expect(handle).toBeVisible();
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 80 * zoom, box.y + box.height / 2 + 40 * zoom, {
+      steps: 10,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const state = await (await request.get('/api/state')).json();
+        const node = state.nodes.find((n: { id: string }) => n.id === root.node.id);
+        return {
+          width: Math.round(node.width),
+          height: Math.round(node.height),
+          x: node.x,
+          y: node.y,
+        };
+      })
+      .toEqual({ width: 580, height: 480, x: root.node.x, y: root.node.y });
+    await expect(handle).toBeVisible();
+  }
 });

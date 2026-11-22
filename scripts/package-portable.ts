@@ -118,6 +118,7 @@ export async function packagePortable(target: ReleaseTarget) {
     'summaries.md',
     'macos-desktop.md',
     'thinking-tools.md',
+    'excerpt-memos.md',
     'answer-behavior.md',
     'references.md',
     'ui-previews/context-chain.png',

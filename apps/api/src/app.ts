@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   CreateConversationSchema,
   CreateExcerptSchema,
+  EditExcerptMemoSchema,
   CreateForksSchema,
   CompileRequestSchema,
   DomainError,
@@ -221,6 +222,12 @@ export function createApp(
   );
   app.post('/api/excerpts', async (request) =>
     store.createExcerpt(CreateExcerptSchema.parse(request.body)),
+  );
+  app.put('/api/excerpts/:id/memo', async (request) =>
+    store.saveExcerptMemo(
+      z.object({ id: Id }).parse(request.params).id,
+      EditExcerptMemoSchema.parse(request.body),
+    ),
   );
   app.post('/api/branches', async (request) =>
     store.branchExcerpt(z.object({ excerpt_id: Id }).strict().parse(request.body).excerpt_id),

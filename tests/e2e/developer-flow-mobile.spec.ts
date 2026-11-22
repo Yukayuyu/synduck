@@ -96,10 +96,10 @@ test('phone options keep geometry stable and project settings preserve the draft
   await expect(dialog.getByRole('heading', { name: '本地任務' })).toBeVisible();
   await dialog.getByRole('button', { name: '關閉本地任務', exact: true }).tap();
   await expect(editor).toHaveValue(draft);
+  await expect(card.locator('.card-resize-handle.bottom.right')).toBeVisible();
+  await expect(card.locator('.card-resize-edge.right')).toBeVisible();
   await card.getByRole('button', { name: '卡片操作：手机开发入口', exact: true }).tap();
-  await page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true }).tap();
-  const size = page.getByRole('dialog', { name: '调整对话框尺寸', exact: true });
-  await size.getByRole('button', { name: /^小/ }).tap();
-  await expect(size).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: '调整对话框尺寸', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

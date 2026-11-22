@@ -11,6 +11,7 @@ export default defineConfig({
     'automatic-tools.spec.ts',
     'connections.spec.ts',
     'references.spec.ts',
+    'excerpt-memos.spec.ts',
   ],
   use: {
     ...base.use,

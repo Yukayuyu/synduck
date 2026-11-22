@@ -24,6 +24,7 @@ import {
   sourceNodeForTurn,
   type CanvasNode,
   type ContextPackage,
+  excerptMemo,
   type Excerpt,
   type Conversation,
   UNTITLED_CONVERSATION,
@@ -32,6 +33,8 @@ import {
 } from '@acc/domain';
 import { ReferenceDialog } from './ReferenceDialog';
 import { NoteDialog } from './NoteDialog';
+import { ExcerptMemoDialog } from './ExcerptMemoDialog';
+import { AppendExcerptDialog } from './AppendExcerptDialog';
 import { BrainstormDialog } from './BrainstormDialog';
 import { useApi, ApiError, streamAnswer, type ClientState } from './api';
 import { ContextMenu } from './ContextMenu';
@@ -90,7 +93,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
   );
   const [preparingForks, setPreparingForks] = useState<string[]>([]);
   const preparingRef = useRef(new Set<string>());
-  const [collectingId, setCollectingId] = useState<string | null>(null);
+  const [memoDialog, setMemoDialog] = useState<Excerpt | null>(null);
+  const [appendSelection, setAppendSelection] = useState<SelectedText | null>(null);
   const [budget, setBudget] = useState(canvas.initialView?.budget ?? 6000);
   const [preview, setPreview] = useState<ContextPackage | null>(null);
   const [inspected, setInspected] = useState<{ pkg: ContextPackage; historical: boolean } | null>(
@@ -321,7 +325,6 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
       });
       setPrompts((previous) => ({ ...previous, [node.ref_id]: '' }));
       setForkDrafts((previous) => ({ ...previous, [node.ref_id]: [] }));
-      if (collectingId === node.ref_id) setCollectingId(null);
       setSelected((previous) => previous.filter((id) => id !== node.id));
       setActiveId((previous) => (previous === node.id ? null : previous));
       setPendingDelete(null);
@@ -396,20 +399,19 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
       fail(e);
     }
   };
-  const collect = async (selection: SelectedText) => {
-    if (!collectingId) return;
-    try {
-      await api('/excerpts/' + encodeURIComponent(collectingId) + '/sources', {
-        source_block_id: selection.block.id,
-        source_content_hash: selection.block.content_hash,
-        selector: selection.selector,
-      });
-      invalidate();
-      await refresh();
-      window.getSelection()?.removeAllRanges();
-    } catch (error) {
-      fail(error);
-    }
+  const appendExcerpt = async (target: Excerpt) => {
+    if (!appendSelection) return;
+    await api('/excerpts/' + encodeURIComponent(target.id) + '/sources', {
+      source_block_id: appendSelection.block.id,
+      source_content_hash: appendSelection.block.content_hash,
+      selector: appendSelection.selector,
+    });
+    invalidate();
+    await refresh();
+    window.getSelection()?.removeAllRanges();
+    setAppendSelection(null);
+    const targetNode = state?.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === target.id);
+    if (targetNode) openOnCanvas(targetNode);
   };
   const removeSource = async (excerptId: string, sourceId: string) => {
     try {
@@ -928,23 +930,33 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
           </button>
         </div>
       </header>
-      {collectingId && (
-        <aside className="collecting-bar" role="status">
-          <GitBranch size={15} />
-          <span>收集中 · 选取文字后「加入汇合点」</span>
-          <button
-            onClick={() => {
-              const target = state.nodes.find(
-                (n) => n.ref_type === 'excerpt' && n.ref_id === collectingId,
-              );
-              if (target) openOnCanvas(target);
-            }}
-          >
-            查看汇合点
-          </button>
-          <button onClick={() => setCollectingId(null)}>完成</button>
-        </aside>
+      {memoDialog && (
+        <ExcerptMemoDialog
+          initial={excerptMemo(state, memoDialog)?.text_content ?? ''}
+          onClose={() => setMemoDialog(null)}
+          onSave={async (text) => {
+            await api(
+              '/excerpts/' + encodeURIComponent(memoDialog.id) + '/memo',
+              {
+                text,
+                expected_block_id: memoDialog.memo_block_id ?? null,
+              },
+              'PUT',
+            );
+            invalidate();
+            await refresh();
+            setMemoDialog(null);
+          }}
+        />
       )}
+      {appendSelection && (
+        <AppendExcerptDialog
+          state={state}
+          onAppend={appendExcerpt}
+          onClose={() => setAppendSelection(null)}
+        />
+      )}
+
       <main className="canvas-stage" aria-label="思考畫布">
         <ReactFlowProvider key={canvasEpoch}>
           <Canvas
@@ -970,6 +982,10 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
               setRenameTitle(node.title);
             }}
             onSummarize={(node) => void summarize(node.ref_id)}
+            onEditMemo={(node) => {
+              const e = state.excerpts.find((e) => e.id === node.ref_id);
+              if (e) setMemoDialog(e);
+            }}
             onNoteAt={(position) => setNoteDialog({ position })}
             onEditNote={(node) => setNoteDialog({ edit: node })}
             onAskNote={askAbout}
@@ -1040,9 +1056,9 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
                   setForkDrafts((previous) => ({ ...previous, [node.ref_id]: drafts }));
                 }}
                 onSendForks={() => void sendForks(node)}
-                collectingId={collectingId}
-                onCollect={collect}
-                onCollecting={(id) => setCollectingId((previous) => (previous === id ? null : id))}
+                onError={fail}
+                onAppendExcerpt={setAppendSelection}
+                onEditMemo={setMemoDialog}
                 onRemoveSource={(id) => void removeSource(node.ref_id, id)}
                 onOpenNode={openOnCanvas}
                 budget={budget}
@@ -1550,7 +1566,8 @@ export default function App({ canvas }: { canvas: CanvasSession }) {
             setSelected([]);
             setPrompts({});
             setForkDrafts({});
-            setCollectingId(null);
+            setMemoDialog(null);
+            setAppendSelection(null);
             setRequestErrors({});
             setInspected(null);
             setHighlight(null);

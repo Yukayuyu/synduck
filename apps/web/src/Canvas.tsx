@@ -24,7 +24,7 @@ import {
   type NodeChange,
   type Viewport,
   MarkerType,
-  NodeResizeControl,
+  NodeResizer,
   type ResizeParams,
 } from '@xyflow/react';
 import {
@@ -45,7 +45,6 @@ import {
   GitBranch,
   ChevronDown,
   ChevronUp,
-  MoveDiagonal2,
   FileText,
   FilePlus2,
   StickyNote,
@@ -102,104 +101,107 @@ const CardContentContext = createContext<(node: CanvasNode, ready: boolean) => R
   () => null,
 );
 
-function Card({ data, width, height }: NodeProps<CardNode>) {
+function Card({ data, width, height, selected }: NodeProps<CardNode>) {
   const zoom = useStore((s) => s.transform[2]);
   const renderContent = useContext(CardContentContext);
   const card = useRef<HTMLElement>(null);
   const [resizing, setResizing] = useState(false);
   return (
-    <article
-      ref={card}
-      data-manual-size={resizing || data.node.size_mode === 'manual'}
-      className={`canvas-card ${data.reference ? 'reference' : ''} ${data.note ? `note note-${data.noteColor} ${data.note}` : ''} ${data.linking ? 'link-target' : ''} ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
-    >
-      <Handle type="target" position={Position.Left} />
-      <div className="card-eyebrow">
-        <span
-          className="node-kind"
-          aria-label={
-            data.note === 'idea'
-              ? '延伸方向'
-              : data.note
-                ? '筆記'
-                : data.reference
-                  ? '參考文件'
-                  : data.type === 'excerpt'
-                    ? '摘录'
-                    : data.branch
-                      ? '分支对话'
-                      : '对话'
-          }
-        >
-          {data.note === 'idea' ? (
-            <Lightbulb size={15} />
-          ) : data.note ? (
-            <StickyNote size={15} />
-          ) : data.reference ? (
-            <FileText size={15} />
-          ) : data.type === 'excerpt' ? (
-            <Quote size={15} />
-          ) : data.branch ? (
-            <GitBranch size={15} />
-          ) : (
-            <MessageSquare size={15} />
-          )}
-        </span>
-        <button
-          className={`card-title nodrag ${data.note === 'note' ? 'note-title' : ''}`}
-          aria-label={data.title}
-          onClick={data.onOpen}
-        >
-          {data.displayTitle}
-        </button>
-        {data.type === 'conversation' && data.busy && (
-          <span className="thread-mode" role="status" aria-label="生成中" title="生成中">
-            <LoaderCircle className="spin" size={13} />
-          </span>
-        )}
-        {data.type === 'excerpt' && data.sourceCount > 1 && (
-          <span className="collection-count">{data.sourceCount}</span>
-        )}
-        {data.pinned && <Pin size={13} aria-label="已固定" />}
-        {data.excluded && <Ban size={13} aria-label="已排除" />}
-        {data.type === 'conversation' && (
-          <button
-            className="fold-thread nodrag"
-            aria-label={data.node.collapsed ? '展开对话' : '折叠对话'}
-            onClick={data.onFold}
+    <>
+      <article
+        ref={card}
+        data-manual-size={resizing || data.node.size_mode === 'manual'}
+        className={`canvas-card ${data.reference ? 'reference' : ''} ${data.note ? `note note-${data.noteColor} ${data.note}` : ''} ${data.linking ? 'link-target' : ''} ${data.branch ? 'branch' : ''} ${data.type} ${data.node.collapsed ? 'collapsed' : ''} ${data.active ? 'active' : ''} ${data.context ? 'context-selected' : ''} ${data.excluded ? 'excluded' : ''}`}
+      >
+        <Handle type="target" position={Position.Left} />
+        <div className="card-eyebrow">
+          <span
+            className="node-kind"
+            aria-label={
+              data.note === 'idea'
+                ? '延伸方向'
+                : data.note
+                  ? '筆記'
+                  : data.reference
+                    ? '參考文件'
+                    : data.type === 'excerpt'
+                      ? '摘录'
+                      : data.branch
+                        ? '分支对话'
+                        : '对话'
+            }
           >
-            {data.node.collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            {data.note === 'idea' ? (
+              <Lightbulb size={15} />
+            ) : data.note ? (
+              <StickyNote size={15} />
+            ) : data.reference ? (
+              <FileText size={15} />
+            ) : data.type === 'excerpt' ? (
+              <Quote size={15} />
+            ) : data.branch ? (
+              <GitBranch size={15} />
+            ) : (
+              <MessageSquare size={15} />
+            )}
+          </span>
+          <button
+            className={`card-title nodrag ${data.note === 'note' ? 'note-title' : ''}`}
+            aria-label={data.title}
+            onClick={data.onOpen}
+          >
+            {data.displayTitle}
           </button>
+          {data.type === 'conversation' && data.busy && (
+            <span className="thread-mode" role="status" aria-label="生成中" title="生成中">
+              <LoaderCircle className="spin" size={13} />
+            </span>
+          )}
+          {data.type === 'excerpt' && data.sourceCount > 1 && (
+            <span className="collection-count">{data.sourceCount}</span>
+          )}
+          {data.pinned && <Pin size={13} aria-label="已固定" />}
+          {data.excluded && <Ban size={13} aria-label="已排除" />}
+          {data.type === 'conversation' && (
+            <button
+              className="fold-thread nodrag"
+              aria-label={data.node.collapsed ? '展开对话' : '折叠对话'}
+              onClick={data.onFold}
+            >
+              {data.node.collapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+            </button>
+          )}
+          <button
+            className="card-menu-button nodrag nopan nokey"
+            aria-label={'卡片操作：' + data.title}
+            title="卡片操作"
+            onClick={data.onMenu}
+          >
+            <MoreHorizontal size={17} />
+          </button>
+        </div>
+        {!data.node.collapsed && (data.active || zoom > 0.45) ? (
+          <div className="card-content nodrag nopan nowheel nokey">
+            {renderContent(data.node, Boolean(width && height))}
+          </div>
+        ) : (
+          !data.node.collapsed && <p className="card-preview">{data.preview}</p>
         )}
-        <button
-          className="card-menu-button nodrag nopan nokey"
-          aria-label={'卡片操作：' + data.title}
-          title="卡片操作"
-          onClick={data.onMenu}
-        >
-          <MoreHorizontal size={17} />
-        </button>
-      </div>
-      {!data.node.collapsed && (data.active || zoom > 0.45) ? (
-        <div className="card-content nodrag nopan nowheel nokey">
-          {renderContent(data.node, Boolean(width && height))}
-        </div>
-      ) : (
-        !data.node.collapsed && <p className="card-preview">{data.preview}</p>
-      )}
-      {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
-        <div className="card-footer">
-          <span>{data.count} 条消息</span>
-        </div>
-      )}
-      <Handle type="source" position={Position.Right} />
-      {!data.node.collapsed && data.sources.length > 0 && (
-        <SourceHandles nodeId={data.node.id} container={card} sources={data.sources} />
-      )}
-      {data.active && data.type === 'conversation' && !data.node.collapsed && (
-        <NodeResizeControl
-          position="bottom-right"
-          className="card-resize nodrag nopan nokey"
+        {zoom > 0.55 && data.type !== 'excerpt' && data.count > 0 && (
+          <div className="card-footer">
+            <span>{data.count} 条消息</span>
+          </div>
+        )}
+        <Handle type="source" position={Position.Right} />
+        {!data.node.collapsed && data.sources.length > 0 && (
+          <SourceHandles nodeId={data.node.id} container={card} sources={data.sources} />
+        )}
+      </article>
+      {data.type === 'conversation' && !data.node.collapsed && (
+        <NodeResizer
+          isVisible={data.active || selected}
+          handleClassName="card-resize-handle nodrag nopan nokey"
+          lineClassName="card-resize-edge nodrag nopan nokey"
           minWidth={340}
           minHeight={360}
           maxWidth={1600}
@@ -209,13 +211,9 @@ function Card({ data, width, height }: NodeProps<CardNode>) {
             data.onResize(size);
             setResizing(false);
           }}
-        >
-          <span title="拖动调整对话框宽高">
-            <MoveDiagonal2 size={16} />
-          </span>
-        </NodeResizeControl>
+        />
       )}
-    </article>
+    </>
   );
 }
 type TraceNode = Node<{ trace: CanvasTrace; onOpen: () => void; onRemove: () => void }, 'trace'>;
@@ -269,6 +267,7 @@ interface Props {
   summarizing: string | null;
   onNoteAt: (position: { x: number; y: number }) => void;
   onEditNote: (node: CanvasNode) => void;
+  onEditMemo: (node: CanvasNode) => void;
   onAskNote: (node: CanvasNode) => void;
   onBrainstorm: (node: CanvasNode) => void;
   onGraphChanged: () => Promise<void>;
@@ -297,14 +296,6 @@ const linkColors: Record<string, string> = {
   related_to: '#8a9aa6',
   supersedes: '#6b6b6b',
 };
-// One tap applies a size; dragging the corner grip gives any other size.
-const sizePresets = [
-  { label: '緊湊', width: 420, height: 360 },
-  { label: '小', width: 440, height: 500 },
-  { label: '中', width: 540, height: 650 },
-  { label: '大', width: 760, height: 860 },
-  { label: '寬', width: 960, height: 700 },
-];
 export function Canvas({
   state,
   initialViewport,
@@ -335,6 +326,7 @@ export function Canvas({
   summarizing,
   onNoteAt,
   onEditNote,
+  onEditMemo,
   onAskNote,
   onBrainstorm,
   onGraphChanged,
@@ -343,13 +335,6 @@ export function Canvas({
   onFold,
 }: Props) {
   const api = useApi();
-  const [sizeDialog, setSizeDialog] = useState<{
-    id: string;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [savingSize, setSavingSize] = useState(false);
-
   const [menu, setMenu] = useState<{
     x: number;
     y: number;
@@ -595,6 +580,7 @@ export function Canvas({
               }
             : {}),
           measured: previous.find((old) => old.id === node.id)?.measured,
+          selected: previous.find((old) => old.id === node.id)?.selected ?? false,
         })),
       ),
     [mapped, traceNodes],
@@ -808,24 +794,11 @@ export function Canvas({
         ...(menuNode.ref_type === 'conversation'
           ? [
               {
-                label: '调整对话框尺寸',
-                icon: <MoveDiagonal2 size={16} />,
+                label: '恢復自動尺寸',
+                icon: <RotateCcw size={16} />,
+                disabled: menuNode.size_mode !== 'manual',
                 run: () => {
-                  const measured = flow.getNode(menuNode.id)?.measured;
-                  setSizeDialog({
-                    id: menuNode.id,
-                    width: Math.round(
-                      menuNode.size_mode === 'manual' ? menuNode.width : (measured?.width ?? 420),
-                    ),
-                    height: Math.max(
-                      360,
-                      Math.round(
-                        menuNode.size_mode === 'manual'
-                          ? menuNode.height
-                          : (measured?.height ?? 650),
-                      ),
-                    ),
-                  });
+                  void resizeHandler.current(menuNode.id, { size_mode: 'auto' }).catch(onError);
                 },
               },
             ]
@@ -853,6 +826,12 @@ export function Canvas({
           : []),
         ...(menuNode.ref_type === 'excerpt'
           ? [
+              {
+                label: '編輯摘錄備註',
+                icon: <Pencil size={16} />,
+                disabled: locked,
+                run: () => onEditMemo(menuNode),
+              },
               {
                 label: '從摘錄延伸提問',
                 icon: <GitBranch size={16} />,
@@ -1142,78 +1121,6 @@ export function Canvas({
             },
           ]}
         />
-      )}
-      {sizeDialog && (
-        <div
-          className="modal-backdrop"
-          onClick={() => {
-            if (!savingSize) setSizeDialog(null);
-          }}
-        >
-          <form
-            className="modal card-size-dialog nokey"
-            role="dialog"
-            aria-label="调整对话框尺寸"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              event.stopPropagation();
-              if (event.key === 'Escape' && !event.nativeEvent.isComposing && !savingSize)
-                setSizeDialog(null);
-            }}
-            onSubmit={(event) => event.preventDefault()}
-          >
-            <h2>对话框尺寸</h2>
-            <div className="size-presets" role="group" aria-label="尺寸">
-              {sizePresets.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  aria-pressed={
-                    sizeDialog.width === preset.width && sizeDialog.height === preset.height
-                  }
-                  disabled={savingSize}
-                  onClick={() => {
-                    setSavingSize(true);
-                    void resizeHandler
-                      .current(sizeDialog.id, {
-                        width: preset.width,
-                        height: preset.height,
-                        size_mode: 'manual',
-                      })
-                      .then(() => setSizeDialog(null))
-                      .catch(onError)
-                      .finally(() => setSavingSize(false));
-                  }}
-                >
-                  {preset.label}
-                  <small>
-                    {preset.width}×{preset.height}
-                  </small>
-                </button>
-              ))}
-            </div>
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="secondary"
-                disabled={savingSize}
-                onClick={() => {
-                  setSavingSize(true);
-                  void resizeHandler
-                    .current(sizeDialog.id, { size_mode: 'auto' })
-                    .then(() => setSizeDialog(null))
-                    .catch(onError)
-                    .finally(() => setSavingSize(false));
-                }}
-              >
-                恢复自动尺寸
-              </button>
-              <button type="button" disabled={savingSize} onClick={() => setSizeDialog(null)}>
-                取消
-              </button>
-            </div>
-          </form>
-        </div>
       )}
     </CardContentContext.Provider>
   );

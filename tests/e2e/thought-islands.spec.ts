@@ -230,21 +230,21 @@ test('adds picks from different conversations into an existing hub and follows i
     .getByRole('toolbar', { name: '文字选区操作' })
     .getByRole('button', { name: '摘录', exact: true })
     .click();
-  await page
+  const anchorNodeId = await page
     .locator('.canvas-card.excerpt.active')
-    .getByRole('button', { name: '收集更多摘录', exact: true })
-    .click();
-  await expect(page.locator('.collecting-bar')).toBeVisible();
+    .evaluate((element) => element.closest('.react-flow__node')!.getAttribute('data-id'));
+  await expect(page.getByRole('button', { name: '收集更多摘录', exact: true })).toHaveCount(0);
   await open(page, '摘录来源 B');
   const cardB = page.locator(`.react-flow__node[data-id="${b.node.id}"]`);
   await select(cardB.getByTestId('turn-human').getByTestId('content-block'), '保留出处');
   await page
     .getByRole('toolbar', { name: '文字选区操作' })
-    .getByRole('button', { name: '加入汇合点', exact: true })
+    .getByRole('button', { name: '更多選取操作', exact: true })
     .click();
+  await page.getByRole('menuitem', { name: '追加到摘錄…', exact: true }).click();
   await page
-    .locator('.collecting-bar')
-    .getByRole('button', { name: '查看汇合点', exact: true })
+    .getByRole('dialog', { name: '追加到摘錄', exact: true })
+    .getByRole('button', { name: /保留主线/ })
     .click();
   const hub = page.locator('.canvas-card.excerpt.active');
   await expect(hub.locator('.collection-source')).toHaveCount(2);
@@ -261,7 +261,9 @@ test('adds picks from different conversations into an existing hub and follows i
   await branch.getByRole('button', { name: '傳送', exact: true }).click();
   await expect(branch.getByTestId('turn-assistant')).toContainText('本地演示');
   const state: ClientState = await (await request.get('/api/state')).json();
-  const origin = state.excerpts.find((e) => e.collection_source_ids)!;
+  const origin = state.excerpts.find(
+    (e) => e.id === state.nodes.find((n) => n.id === anchorNodeId)!.ref_id,
+  )!;
   const child = state.conversations.find((c) => c.branch_origin_excerpt_id === origin.id)!;
   const answer = state.turns.find(
     (t) => t.conversation_id === child.id && t.actor === 'assistant',

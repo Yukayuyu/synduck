@@ -2203,29 +2203,6 @@ small {
   padding: 0;
   margin: 8px 0;
 }
-.size-presets {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
-  gap: 8px;
-  margin: 14px 0;
-}
-.size-presets button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 10px 6px;
-  border: 1px solid #dce6d1;
-  border-radius: 8px;
-  background: none;
-}
-.size-presets button[aria-pressed='true'] {
-  border-color: #2f66b3;
-}
-.size-presets small {
-  font-size: 9px;
-  color: #a2ad93;
-}
 .note-dialog {
   background: var(--note-bg, #fbf3d1);
 }

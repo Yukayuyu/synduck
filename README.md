@@ -11,6 +11,7 @@
 | 用 iPhone／iPad 访问电脑上的画布     | [Windows 与 iOS 访问](docs/windows-ios.md)                  |
 | 连接 MCP、使用桌面控制、回看操作     | [MCP 与桌面控制](docs/mcp-desktop-traces.md)                |
 | 升级、保留数据、恢复失败的安装       | [本地执行器与版本更新](docs/local-runtime-updates.md)       |
+| 在摘录中写备注、右键追加及拖曳尺寸   | [摘录与自由调整](docs/excerpt-memos.md)                     |
 | 连接 GitHub、笔记与设计服务          | [账号与服务连接](docs/connections.md)                       |
 | 为开源项目设置 GitHub 发布与自动更新 | [GitHub 发布配置](docs/github-updates.md)                   |
 | 在 Synduck 界面中开发项目或自身      | [开发任务、Markdown 与尺寸调整](docs/developer-workflow.md) |

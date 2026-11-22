@@ -13,9 +13,13 @@ import {
   Plus,
   Minus,
   Lightbulb,
+  Pencil,
+  MoreHorizontal,
+  Copy,
 } from 'lucide-react';
 import {
   collectionSources,
+  excerptMemo,
   referenceBlock,
   noteBlock,
   noteMetadata,
@@ -31,6 +35,8 @@ import { ConversationTools } from './ConversationTools';
 import { ReferenceText } from './ReferenceText';
 import { MessageText } from './MessageText';
 import { selectionSource } from './source-ranges';
+import { ContextMenu } from './ContextMenu';
+import type { MouseEvent } from 'react';
 
 export interface SelectedText {
   block: ContentBlock;
@@ -78,9 +84,9 @@ interface Props {
   preparingForks: boolean;
   onForkDrafts: (drafts: ForkDraft[]) => void;
   onSendForks: () => void;
-  collectingId: string | null;
-  onCollect: (selection: SelectedText) => void;
-  onCollecting: (id: string) => void;
+  onAppendExcerpt: (selection: SelectedText) => void;
+  onEditMemo: (excerpt: Excerpt) => void;
+  onError: (error: unknown) => void;
   onRemoveSource: (id: string) => void;
   onOpenNode: (node: CanvasNode) => void;
   onReference: (selection: SelectedText) => void;
@@ -110,6 +116,10 @@ export function Focus(props: Props) {
   }, [active, props.inputReady, node.id]);
   const [selectionPosition, setSelectionPosition] = useState({ left: 0, top: 0 });
   const [selection, setSelection] = useState<SelectedText | null>(null);
+  const [selectionMenu, setSelectionMenu] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!selection) setSelectionMenu(null);
+  }, [selection]);
   const conversation = state.conversations.find((c) => c.id === node.ref_id);
   const reference = referenceBlock(state, node);
   const note = noteBlock(state, node);
@@ -284,18 +294,17 @@ export function Focus(props: Props) {
         >
           <Lightbulb size={14} />
         </button>
-        {props.collectingId && (
-          <button
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              props.onCollect(selection);
-              setSelection(null);
-            }}
-          >
-            <Plus size={14} />
-            加入汇合点
-          </button>
-        )}
+        <button
+          aria-label="更多選取操作"
+          title="更多選取操作"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect();
+            setSelectionMenu({ x: box.left, y: box.bottom });
+          }}
+        >
+          <MoreHorizontal size={14} />
+        </button>
         <button
           aria-label="引用到其他画布"
           title="引用到其他画布"
@@ -313,11 +322,83 @@ export function Focus(props: Props) {
       </div>,
       document.body,
     );
+  const selectionContextMenu =
+    selection &&
+    selectionMenu &&
+    createPortal(
+      <ContextMenu
+        x={selectionMenu.x}
+        y={selectionMenu.y}
+        onClose={() => setSelectionMenu(null)}
+        actions={[
+          {
+            label: '複製選取文字',
+            icon: <Copy size={15} />,
+            run: () => {
+              const text = window.getSelection()?.toString() || selection.selector.exact;
+              if (!navigator.clipboard) {
+                props.onError(new Error('請使用鍵盤或系統選單複製文字。'));
+                return;
+              }
+              void navigator.clipboard
+                .writeText(text)
+                .catch(() => props.onError(new Error('無法寫入剪貼簿，請使用鍵盤複製。')));
+            },
+          },
+          {
+            label: '追加到摘錄…',
+            icon: <Plus size={15} />,
+            run: () => {
+              props.onAppendExcerpt(selection);
+              setSelection(null);
+            },
+          },
+          {
+            label: '建立新摘錄',
+            icon: <Quote size={15} />,
+            run: () => {
+              props.onExcerpt(selection, false);
+              setSelection(null);
+            },
+          },
+          {
+            label: '從這裡延伸提問',
+            icon: <GitBranch size={15} />,
+            run: () => {
+              props.onExcerpt(selection, true);
+              setSelection(null);
+            },
+          },
+        ]}
+      />,
+      document.body,
+    );
+  const openSelectionContextMenu = (event: MouseEvent) => {
+    if (
+      !selection ||
+      !window.getSelection()?.toString() ||
+      (event.target as Element).closest('input,textarea,[contenteditable]')
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectionMenu({ x: event.clientX, y: event.clientY });
+  };
+  const memoContent = (source: Excerpt) => {
+    const memo = excerptMemo(state, source);
+    return memo?.text_content ? (
+      <aside className="excerpt-memo" aria-label="摘錄備註">
+        <small>備註</small>
+        <MessageText text={memo.text_content} />
+      </aside>
+    ) : null;
+  };
   if (note)
     return (
       <section
         className={`focus-panel note-panel note-${noteMetadata(note)?.color ?? 'plain'}`}
         data-node-id={node.id}
+        onContextMenu={openSelectionContextMenu}
         aria-label="筆記"
       >
         <div ref={scrollRef} className="focus-content conversation-scroll reference-scroll">
@@ -341,11 +422,17 @@ export function Focus(props: Props) {
           </div>
         </div>
         {selectionToolbar}
+        {selectionContextMenu}
       </section>
     );
   if (reference)
     return (
-      <section className="focus-panel reference-panel" data-node-id={node.id} aria-label="參考文件">
+      <section
+        className="focus-panel reference-panel"
+        data-node-id={node.id}
+        aria-label="參考文件"
+        onContextMenu={openSelectionContextMenu}
+      >
         <div className="reference-actions">
           <button
             className={props.referenceSelected ? 'primary' : 'secondary'}
@@ -383,6 +470,7 @@ export function Focus(props: Props) {
           <p>文字 SHA-256：{reference.content_hash}</p>
         </details>
         {selectionToolbar}
+        {selectionContextMenu}
       </section>
     );
   return (
@@ -390,6 +478,7 @@ export function Focus(props: Props) {
       className={`focus-panel ${active ? 'editing' : 'reading'} ${props.forkDrafts.length ? 'splitting-input' : ''} ${turns.length || busy ? 'has-turns' : 'empty-conversation'}`}
       data-node-id={node.id}
       data-active={active}
+      onContextMenu={openSelectionContextMenu}
       aria-label={excerpt ? '摘录详情' : '对话详情'}
     >
       {active && excerpt && (
@@ -448,11 +537,13 @@ export function Focus(props: Props) {
                     >
                       <Minus size={14} />
                     </button>
+                    {source.id !== excerpt.id && memoContent(source)}
                   </div>
                 );
               })}
             </div>
           )}
+          {memoContent(excerpt)}
           <div className="excerpt-actions">
             <button
               className="secondary"
@@ -477,12 +568,11 @@ export function Focus(props: Props) {
             </button>
             <button
               className="secondary"
-              aria-label="收集更多摘录"
-              aria-pressed={props.collectingId === excerpt.id}
-              onClick={() => props.onCollecting(excerpt.id)}
+              aria-label="編輯摘錄備註"
+              onClick={() => props.onEditMemo(excerpt)}
             >
-              <Plus size={14} />
-              收集
+              <Pencil size={14} />
+              備註
             </button>
           </div>
           {active && (
@@ -766,6 +856,7 @@ export function Focus(props: Props) {
             </p>
           )}
           {selectionToolbar}
+          {selectionContextMenu}
           {active ? (
             <form
               className="composer"

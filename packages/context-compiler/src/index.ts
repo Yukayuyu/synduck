@@ -5,6 +5,8 @@ import {
   ContextSetSchema,
   modelInput,
   collectionSources,
+  excerptMemo,
+  ExcerptMemoMetadataSchema,
   conversationSummaries,
   SUMMARY_PROMPT,
   type GraphSnapshot,
@@ -23,10 +25,13 @@ export const estimateTokens = (text: string) => Buffer.byteLength(text, 'utf8');
 const hash = (text: string) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 
 const blocksForNode = (snapshot: GraphSnapshot, node: CanvasNode) => {
-  if (node.ref_type === 'excerpt')
-    return [snapshot.excerpts.find((e) => e.id === node.ref_id)?.source_block_id].filter(
+  if (node.ref_type === 'excerpt') {
+    const excerpt = snapshot.excerpts.find((e) => e.id === node.ref_id);
+    const memo = excerpt && excerptMemo(snapshot, excerpt);
+    return [excerpt?.source_block_id, memo?.text_content?.trim() ? memo.id : undefined].filter(
       (value): value is string => Boolean(value),
     );
+  }
   const turns = new Set(
     node.ref_type === 'turn'
       ? [node.ref_id]
@@ -45,6 +50,16 @@ export function excludedSources(snapshot: GraphSnapshot, excludedNodeIds: string
   const nodes = new Set([...excludedNodeIds, ...deletedNodes]);
   const blocks = new Set<string>();
   const derivedBlocks = new Set<string>();
+  const memoHistory = new Map<string, string[]>();
+  for (const block of snapshot.blocks) {
+    if (!block.structured_data?.excerpt_memo) continue;
+    const memo = ExcerptMemoMetadataSchema.safeParse(block.structured_data.excerpt_memo).data;
+    if (memo) {
+      const ids = memoHistory.get(memo.excerpt_id) ?? [];
+      ids.push(block.id);
+      memoHistory.set(memo.excerpt_id, ids);
+    }
+  }
   for (const node of snapshot.nodes) {
     if (!nodes.has(node.id)) continue;
     const collection =
@@ -57,6 +72,9 @@ export function excludedSources(snapshot: GraphSnapshot, excludedNodeIds: string
         if (excerpt) blocks.add(excerpt.source_block_id);
       }
     } else blocksForNode(snapshot, node).forEach((id) => blocks.add(id));
+    if (node.ref_type === 'excerpt')
+      for (const id of new Set([node.ref_id, ...(collection ?? [])]))
+        for (const block of memoHistory.get(id) ?? []) blocks.add(block);
   }
   // Follow immutable inputs transitively; answers can paraphrase uncited inputs.
   let changed = true;
@@ -212,6 +230,7 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
   const explicitNodes = new Set([...set.selected_node_ids, ...set.pinned_node_ids]);
   const collectionStates = new Map<string, ContextState>();
   const collectionRoots = new Map<string, string>();
+  const memoOnlyNodes = new Set<string>();
   const priorities: Record<ContextItem['role'], number> = {
     selected: 1,
     pinned: 0.98,
@@ -221,7 +240,21 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
     historical: 0.3,
   };
   const add = (nodeId: string, role: ContextItem['role'], expand = true) => {
+    if (explicitlyExcluded.has(nodeId)) return;
     const node = nodeById.get(nodeId);
+    const memoOwner = node?.ref_type === 'excerpt' ? excerptById.get(node.ref_id) : undefined;
+    if (memoOwner?.memo_block_id && !excerptMemo(snapshot, memoOwner)) {
+      blocked = true;
+      conflicts.push({
+        a: nodeId,
+        b: memoOwner.memo_block_id,
+        type: 'missing_reference',
+        resolution: 'restore the excerpt memo',
+        status: 'unresolved',
+      });
+      omit(nodeId, 'missing or invalid excerpt memo');
+      return;
+    }
     const collection =
       expand && node?.ref_type === 'excerpt'
         ? excerptById.get(node.ref_id)?.collection_source_ids
@@ -249,6 +282,14 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
             status: 'unresolved',
           });
         }
+      }
+      // A collection may remove its anchor quote while retaining its own memo.
+      if (
+        !collection.includes(node!.ref_id) &&
+        excerptMemo(snapshot, excerptById.get(node!.ref_id)!)?.text_content?.trim()
+      ) {
+        memoOnlyNodes.add(nodeId);
+        add(nodeId, role, false);
       }
       return;
     }
@@ -377,9 +418,10 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
       (state === 'deprecated' ? 0.2 : 0);
     const blockIds = blocksForNode(snapshot, node).filter(
       (id) =>
-        originalRole !== 'branch_origin' ||
-        !forkSources.has(nodeId) ||
-        forkSources.get(nodeId)!.has(id),
+        (!memoOnlyNodes.has(nodeId) || id === excerptById.get(node.ref_id)?.memo_block_id) &&
+        (originalRole !== 'branch_origin' ||
+          !forkSources.has(nodeId) ||
+          forkSources.get(nodeId)!.has(id)),
     );
     // A conversation that is here as background (not explicitly chosen) may give up
     // older messages under budget pressure, and may be represented by a summary.
@@ -405,11 +447,14 @@ export function compileContext(snapshot: GraphSnapshot, raw: ContextSet): Contex
         if (explicit) blocked = true;
         continue;
       }
-      const excerpt = node.ref_type === 'excerpt' ? excerptById.get(node.ref_id) : null;
+      const owner = node.ref_type === 'excerpt' ? excerptById.get(node.ref_id) : null;
+      const isMemo = owner?.memo_block_id === blockId;
+      const excerpt = isMemo ? null : owner;
       const content = excerpt?.snapshot_text ?? block.text_content;
       const sourceTurn = snapshot.turns.find((t) => t.id === block.turn_id);
       if (
         hash(block.text_content) !== block.content_hash ||
+        (isMemo && sourceTurn?.actor !== 'human') ||
         (excerpt &&
           (excerpt.source_content_hash !== block.content_hash ||
             block.text_content.slice(excerpt.selector.start_char, excerpt.selector.end_char) !==

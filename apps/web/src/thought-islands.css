@@ -231,28 +231,6 @@
   display: grid;
   place-items: center;
 }
-.card-size-dialog {
-  width: 340px;
-  max-width: calc(100vw - 32px);
-}
-.card-size-dialog label {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 14px 0;
-}
-.card-size-dialog input {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--stroke);
-  border-radius: 8px;
-  padding: 8px;
-  background: var(--input-surface);
-  color: var(--ink);
-}
-.card-size-dialog .modal-actions {
-  flex-wrap: wrap;
-}
 .canvas-first .composer-bottom > .primary,
 .canvas-first .composer-send-actions {
   margin-left: auto;
@@ -450,32 +428,6 @@
   min-height: 52px;
   font-size: 12px;
 }
-.collecting-bar {
-  position: fixed;
-  z-index: 30;
-  top: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: calc(100vw - 24px);
-  padding: 10px 14px;
-  color: var(--excerpt-ink);
-  background: var(--excerpt-surface);
-  border: 1px solid var(--excerpt-stroke);
-  border-radius: 20px;
-  box-shadow: var(--node-shadow);
-  font-size: 11px;
-}
-.collecting-bar span {
-  flex: 1;
-}
-.collecting-bar button {
-  color: inherit;
-  white-space: nowrap;
-  text-decoration: underline;
-}
 .canvas-first .react-flow__handle.pick-source-handle {
   background: #d3a14b;
   width: 5px;
@@ -500,15 +452,6 @@
   box-decoration-break: clone;
 }
 @media (max-width: 600px) {
-  .collecting-bar {
-    top: 65px;
-    gap: 8px;
-    width: max-content;
-    font-size: 10px;
-  }
-  .collecting-bar > svg {
-    display: none;
-  }
 }
 
 .canvas-first .react-flow__node-card.node-reference {
@@ -557,4 +500,121 @@
 .reference-pages input {
   min-width: 0;
   max-width: 160px;
+}
+
+/* The resize controls belong to the Flow node, outside the clipped card. */
+.canvas-first .card-resize-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: var(--surface);
+  z-index: 20;
+  touch-action: none;
+}
+.canvas-first .card-resize-edge {
+  border-color: var(--accent);
+  z-index: 19;
+  touch-action: none;
+}
+.canvas-first .card-resize-edge.left,
+.canvas-first .card-resize-edge.right {
+  width: 8px;
+}
+.canvas-first .card-resize-edge.top,
+.canvas-first .card-resize-edge.bottom {
+  height: 8px;
+}
+.excerpt-memo {
+  padding: 12px 14px;
+  margin: 12px 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, #f1d67b 20%, var(--surface));
+  border-left: 3px solid #d0b45a;
+  font-size: 13px;
+  line-height: 1.7;
+  max-height: 260px;
+  overflow: auto;
+  white-space: normal;
+}
+.excerpt-memo > small {
+  display: block;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.collection-source > .excerpt-memo {
+  grid-column: 2 / -1;
+}
+.excerpt-memo-dialog {
+  width: 480px;
+}
+.excerpt-memo-dialog label {
+  display: grid;
+  gap: 10px;
+}
+.excerpt-memo-dialog textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 160px;
+  margin-bottom: 14px;
+}
+.append-excerpt-dialog {
+  width: 440px;
+}
+.append-excerpt-dialog > input {
+  width: 100%;
+  margin: 0 0 14px;
+}
+.append-excerpt-list {
+  display: grid;
+  gap: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.append-excerpt-list > button {
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  align-items: start;
+  padding: 12px;
+}
+.append-excerpt-list strong,
+.append-excerpt-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.append-excerpt-list small {
+  color: var(--muted);
+  margin-top: 5px;
+  font-weight: normal;
+}
+@media (pointer: coarse) {
+  .canvas-first .card-resize-handle {
+    width: 20px;
+    height: 20px;
+  }
+  .canvas-first .card-resize-edge.left,
+  .canvas-first .card-resize-edge.right {
+    width: 14px;
+  }
+  .canvas-first .card-resize-edge.top,
+  .canvas-first .card-resize-edge.bottom {
+    height: 14px;
+  }
+}
+/* Notes stay readable when another conversation becomes active. */
+.canvas-first .canvas-card.excerpt:not(.active) .excerpt-detail:has(> .excerpt-memo) {
+  display: block;
+}
+.canvas-first .canvas-card.excerpt:not(.active) .excerpt-detail > .excerpt-memo {
+  max-height: 150px;
+}
+.canvas-first .canvas-card.excerpt:not(.active) .excerpt-actions {
+  display: none;
+}
+.excerpt-memo-dialog,
+.append-excerpt-dialog {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
 }

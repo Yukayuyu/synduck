@@ -9,6 +9,9 @@ import {
   TurnSchema,
   ContentBlockSchema,
   ExcerptSchema,
+  EditExcerptMemoSchema,
+  excerptMemo,
+  ExcerptMemoMetadataSchema,
   NodeSchema,
   EdgeSchema,
   ContextSetSchema,
@@ -607,6 +610,68 @@ export class Store {
       const branch = request.branch ? this.branchExcerpt(excerpt.id) : null;
       this.bump();
       return { excerpt, node, branch };
+    });
+  }
+  saveExcerptMemo(excerptId: string, input: z.input<typeof EditExcerptMemoSchema>) {
+    const request = EditExcerptMemoSchema.parse(input);
+    return this.transaction(() => {
+      const state = this.snapshot();
+      const excerpt = state.excerpts.find((e) => e.id === excerptId);
+      const node = state.nodes.find((n) => n.ref_type === 'excerpt' && n.ref_id === excerptId);
+      if (!excerpt || !node || node.visibility === 'hidden')
+        throw new DomainError('missing_excerpt', '找不到可編輯的摘錄。', 404);
+      const current = excerptMemo(state, excerpt);
+      if (excerpt.memo_block_id && !current)
+        throw new DomainError('missing_memo', '備註記錄不完整。', 409);
+      if ((current?.text_content ?? '') === request.text)
+        return { excerpt, block: current ?? null };
+      if ((excerpt.memo_block_id ?? null) !== request.expected_block_id)
+        throw new DomainError('memo_changed', '備註已在其他地方更新，請重新開啟後再修改。', 409);
+      let conversationId =
+        current && state.turns.find((t) => t.id === current.turn_id)?.conversation_id;
+      if (!conversationId) {
+        if (excerpt.memo_block_id) throw new DomainError('missing_memo', '備註記錄不完整。', 409);
+        conversationId = id();
+        const at = now();
+        this.saveConversation({
+          id: conversationId,
+          workspace_id: state.workspace.id,
+          title: '摘錄備註',
+          status: 'active',
+          root_turn_id: null,
+          summary_block_id: null,
+          branch_origin_excerpt_id: null,
+          created_at: at,
+          updated_at: at,
+        });
+      }
+      const turn = this.appendTurn(conversationId, 'human', null);
+      this.saveTurn({ ...turn, status: 'complete' });
+      const block: ContentBlock = {
+        id: id(),
+        turn_id: turn.id,
+        block_type: 'markdown',
+        ordinal: 0,
+        mime_type: 'text/markdown',
+        text_content: request.text,
+        asset_id: null,
+        structured_data: {
+          excerpt_memo: ExcerptMemoMetadataSchema.parse({
+            excerpt_id: excerptId,
+            version:
+              (ExcerptMemoMetadataSchema.safeParse(current?.structured_data?.excerpt_memo).data
+                ?.version ?? 0) + 1,
+          }),
+        },
+        content_hash: contentHash(request.text),
+        created_at: now(),
+        updated_at: now(),
+      };
+      this.saveBlock(block);
+      const updated = { ...excerpt, memo_block_id: block.id };
+      this.saveExcerpt(updated);
+      this.bump();
+      return { excerpt: updated, block };
     });
   }
   branchExcerpt(excerptId: string) {

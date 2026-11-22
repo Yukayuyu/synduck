@@ -4,6 +4,7 @@ import {
   ExternalOriginSchema,
   ConversationSummarySchema,
   NoteMetadataSchema,
+  ExcerptMemoMetadataSchema,
   ReferenceMetadataSchema,
   MAX_PROJECT_BYTES,
   ProjectFileSchema,
@@ -184,6 +185,18 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
       )
         invalid('对话摘要的来源记录无效。');
     }
+    if (b.structured_data?.excerpt_memo) {
+      const memo = ExcerptMemoMetadataSchema.safeParse(b.structured_data.excerpt_memo);
+      if (
+        !memo.success ||
+        !excerpts.has(memo.data.excerpt_id) ||
+        !b.turn_id ||
+        turns.get(b.turn_id)?.actor !== 'human' ||
+        turns.get(b.turn_id)?.status !== 'complete' ||
+        b.text_content === null
+      )
+        invalid('摘錄備註的內容或來源記錄無效。');
+    }
     if (b.structured_data?.note) {
       const note = NoteMetadataSchema.safeParse(b.structured_data.note);
       if (
@@ -214,6 +227,15 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
     }
   }
   for (const e of s.excerpts) {
+    if (e.memo_block_id) {
+      const memo = blocks.get(e.memo_block_id);
+      if (
+        !memo ||
+        ExcerptMemoMetadataSchema.safeParse(memo.structured_data?.excerpt_memo).data?.excerpt_id !==
+          e.id
+      )
+        invalid('摘錄備註引用不存在或不屬於這個摘錄。');
+    }
     const b = blocks.get(e.source_block_id);
     if (
       !b ||
@@ -341,9 +363,12 @@ export function validateProject(raw: unknown): { project: ProjectFile; warnings:
           item.source_id !== block.id ||
           item.content !== block.text_content ||
           !turn ||
-          (node.ref_type === 'conversation'
-            ? node.ref_id !== turn.conversation_id
-            : node.ref_type !== 'turn' || node.ref_id !== turn.id)
+          (node.ref_type === 'excerpt'
+            ? ExcerptMemoMetadataSchema.safeParse(block.structured_data?.excerpt_memo).data
+                ?.excerpt_id !== node.ref_id
+            : node.ref_type === 'conversation'
+              ? node.ref_id !== turn.conversation_id
+              : node.ref_type !== 'turn' || node.ref_id !== turn.id)
         )
           invalid('输入包内容来源不一致。');
       }

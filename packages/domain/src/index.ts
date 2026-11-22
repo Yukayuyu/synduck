@@ -341,6 +341,7 @@ export const ExcerptSchema = z
     // Optional collection membership. Original quote provenance stays immutable,
     // even when the anchor quote is removed from the current collection.
     collection_source_ids: z.array(Id).min(1).max(200).optional(),
+    memo_block_id: Id.optional(),
     external_origin: ExternalOriginSchema.optional(),
     title: z.string().max(160),
     created_by: z.enum(['human', 'ai', 'system']),
@@ -352,6 +353,30 @@ export const ExcerptSchema = z
       (!e.external_origin || e.external_origin.selector.exact === e.snapshot_text),
     { message: 'Snapshot must match selector and external origin' },
   );
+export const ExcerptMemoMetadataSchema = z
+  .object({
+    excerpt_id: Id,
+    version: z.number().int().positive(),
+  })
+  .strict();
+export const EditExcerptMemoSchema = z
+  .object({
+    text: z.string().trim().max(20000),
+    expected_block_id: Id.nullable(),
+  })
+  .strict();
+export function excerptMemo(
+  snapshot: Pick<GraphSnapshot, 'blocks'>,
+  excerpt: Pick<Excerpt, 'id' | 'memo_block_id'>,
+) {
+  if (!excerpt.memo_block_id) return undefined;
+  return snapshot.blocks.find(
+    (block) =>
+      block.id === excerpt.memo_block_id &&
+      ExcerptMemoMetadataSchema.safeParse(block.structured_data?.excerpt_memo).data?.excerpt_id ===
+        excerpt.id,
+  );
+}
 export const NodeSchema = z
   .object({
     id: Id,
