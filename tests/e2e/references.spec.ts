@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { waitForSavedViewport } from '../helpers/saved-viewport';
 test('imports pasted reference, explicitly sends it as context and restores the document after reload', async ({
   page,
   request,
@@ -28,6 +29,16 @@ test('imports pasted reference, explicitly sends it as context and restores the 
       p.items.some((i) => i.node_id === node.id && i.content === text),
     ),
   ).toBe(true);
+  // Locate the reference again: the reply camera can leave it off screen on a
+  // phone, and reloading must not rely on Chromium scrolling transformed nodes.
+  await conversation.getByRole('button', { name: '查看本轮上下文' }).click();
+  await page
+    .getByRole('complementary', { name: '上下文检查器' })
+    .getByRole('button')
+    .filter({ has: page.getByRole('heading', { name: '產品參考文件', exact: true }) })
+    .click();
+  await expect(ref.locator('.card-title')).toBeInViewport();
+  await waitForSavedViewport(page, request);
   await page.reload();
   const saved = page.locator('.react-flow__node[data-id="' + node.id + '"]');
   await saved.locator('.card-title').click();

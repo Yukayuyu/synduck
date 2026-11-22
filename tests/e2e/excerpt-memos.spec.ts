@@ -1,5 +1,6 @@
 import { test, expect, type Locator } from '@playwright/test';
 import type { ClientState } from '../../apps/web/src/api';
+import { waitForSavedViewport } from '../helpers/saved-viewport';
 
 async function select(element: Locator, exact: string) {
   await element.evaluate((element, exact) => {
@@ -90,6 +91,7 @@ test('keeps editable memos on excerpts and collections, appends through the cont
   )!;
   const firstMemo = before.blocks.find((b) => b.id === excerpt.memo_block_id)!;
   expect(firstMemo.text_content).toBe(text.trim());
+  await waitForSavedViewport(page, request);
   await page.reload();
   await page
     .locator(
